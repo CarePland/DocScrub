@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "entityGroups": [
+    {
+      "id": "person:natarajan:p",
+      "canonicalName": "Participant Priya Natarajan",
+      "detectedType": "person",
+      "memberKeys": [
+        "person:participant priya natarajan",
+        "person:priya natarajan"
+      ],
+      "confidence": 82,
+      "memberConfidences": {
+        "person:participant priya natarajan": 95,
+        "person:priya natarajan": 82
+      },
+      "reasons": [
+        "deterministic_grouping",
+        "shared_name_signature"
+      ]
+    }
+  ]
+}

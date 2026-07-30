@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic tracked changes case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 2,
+      "occurrenceIds": [
+        "person:farrukh islamov:body paragraph 2:27:1",
+        "person:farrukh islamov:body paragraph 4:0:2"
+      ]
+    }
+  ]
+}

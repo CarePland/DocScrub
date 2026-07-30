@@ -1,0 +1,30 @@
+{
+  "institution_term": [
+    "Registrar",
+    "Records",
+    "Faculty",
+    "Department",
+    "ITS",
+    "Canvas",
+    "Cal State",
+    "Admissions",
+    "Enrollment"
+  ],
+  "season_or_academic_term": [
+    "Spring",
+    "Summer",
+    "Fall",
+    "Winter",
+    "Semester",
+    "Quarter",
+    "Session",
+    "Fully Online"
+  ],
+  "abbreviation": [
+    "FYI",
+    "PERC",
+    "etc"
+  ],
+  "known_first_name": [],
+  "known_surname": []
+}

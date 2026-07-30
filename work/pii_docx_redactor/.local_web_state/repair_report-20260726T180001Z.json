@@ -1,0 +1,1333 @@
+{
+  "generated_at": "2026-07-26T18:01:48.506568+00:00",
+  "dry_run_basis": "20260726T180001Z completed dry-run evidence rules",
+  "backup_file": ".local_web_state/review_state.backup-20260726T180001Z.json",
+  "state_file": ".local_web_state/review_state.json",
+  "upload_file_hash": "bd73a6fe412a97c039e1b043b82767399e0fee1d2be8c5176e5d9a24cb35804b",
+  "repair_summary": {
+    "groups_reconstructed": 29,
+    "groups_skipped": 1,
+    "candidate_links_added": 61,
+    "occurrence_links_added": 2287,
+    "lifecycle_fields_backfilled_per_candidate": [
+      "canonical_group_id",
+      "covered_occurrence_ids",
+      "uncovered_occurrence_count",
+      "review_stage",
+      "review_status",
+      "reviewer_decision",
+      "decision_timestamp",
+      "inherited_decision_source"
+    ],
+    "unresolved_groups_remaining": 1,
+    "reviewer_decision_overwrites": 0
+  },
+  "candidate_quality_comparison": {
+    "before": {
+      "raw_candidates": 614,
+      "filtered": 138,
+      "remaining_review": 476
+    },
+    "after": {
+      "raw_candidates": 614,
+      "filtered": 112,
+      "remaining_review": 441
+    }
+  },
+  "items_disappearing_from_candidate_quality": [
+    "person:amy",
+    "person:amy miller",
+    "person:an goodloe",
+    "person:and",
+    "person:and thank you andrew",
+    "person:andrew are goodloe",
+    "person:andrew goodloe",
+    "person:assoc deans",
+    "person:associate deans",
+    "person:associated deans",
+    "person:canvas",
+    "person:canvas studio",
+    "person:christopher",
+    "person:christopher cobb",
+    "person:civitas",
+    "person:civitas college",
+    "person:correct",
+    "person:correct begin",
+    "person:did",
+    "person:did dr",
+    "person:fall",
+    "person:fall term activation",
+    "person:for",
+    "person:for fall",
+    "person:grad",
+    "person:grad app",
+    "person:grades",
+    "person:grades due",
+    "person:happy monday",
+    "person:happy rainy monday",
+    "person:hello",
+    "person:hello everyone",
+    "person:i'd",
+    "person:i'd canvas",
+    "person:i'm",
+    "person:i'm sorry",
+    "person:julie",
+    "person:julie ford",
+    "person:math",
+    "person:math option",
+    "person:nelly",
+    "person:nelly perias",
+    "person:reg",
+    "person:reg mgrs team",
+    "person:registrar team",
+    "person:schedule planner",
+    "person:smart planner",
+    "person:summer",
+    "person:summer session",
+    "person:tanesha",
+    "person:tanesha can",
+    "person:tanesha can collier",
+    "person:tanesha collier",
+    "person:this",
+    "person:this fully online",
+    "person:will",
+    "person:will diana",
+    "person:winter",
+    "person:winter grading",
+    "person:yes",
+    "person:yes thank"
+  ],
+  "groups_reconstructed": [
+    {
+      "group_id": "person:activation:f",
+      "canonical_group_id": "entity:person:activation:f",
+      "canonical_values": [
+        "Fall Term Activation"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 20,
+      "candidates": [
+        {
+          "key": "person:fall",
+          "text": "Fall",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_371",
+          "occurrence_count": 18,
+          "covered_occurrence_count": 18,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:12:59.829059+00:00",
+          "support_event_index": 35,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:fall term activation",
+          "text": "Fall Term Activation",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_34",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:12:59.829059+00:00",
+          "support_event_index": 35,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:andrew:a",
+      "canonical_group_id": "entity:person:andrew:a",
+      "canonical_values": [
+        "And Thank You Andrew"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 12,
+      "candidates": [
+        {
+          "key": "person:and",
+          "text": "And",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_358",
+          "occurrence_count": 10,
+          "covered_occurrence_count": 10,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:45.811293+00:00",
+          "support_event_index": 58,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:and thank you andrew",
+          "text": "And Thank You Andrew",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_261",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:45.811293+00:00",
+          "support_event_index": 58,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:app:g",
+      "canonical_group_id": "entity:person:app:g",
+      "canonical_values": [],
+      "candidate_count": 2,
+      "occurrence_count": 7,
+      "candidates": [
+        {
+          "key": "person:grad",
+          "text": "Grad",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_377",
+          "occurrence_count": 6,
+          "covered_occurrence_count": 6,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:23.939377+00:00",
+          "support_event_index": 68,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:grad app",
+          "text": "Grad App",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_205",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:23.939377+00:00",
+          "support_event_index": 68,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:begin:c",
+      "canonical_group_id": "entity:person:begin:c",
+      "canonical_values": [
+        "Correct Begin"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 6,
+      "candidates": [
+        {
+          "key": "person:correct",
+          "text": "Correct",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_323",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:57.610928+00:00",
+          "support_event_index": 64,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:correct begin",
+          "text": "Correct Begin",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_122",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:57.610928+00:00",
+          "support_event_index": 64,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:can:t",
+      "canonical_group_id": "entity:person:can:t",
+      "canonical_values": [],
+      "candidate_count": 2,
+      "occurrence_count": 35,
+      "candidates": [
+        {
+          "key": "person:tanesha",
+          "text": "Tanesha",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_321",
+          "occurrence_count": 34,
+          "covered_occurrence_count": 34,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:11.046317+00:00",
+          "support_event_index": 66,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:tanesha can",
+          "text": "Tanesha \u00a0Can",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_241",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:11.046317+00:00",
+          "support_event_index": 66,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:canvas:i",
+      "canonical_group_id": "entity:person:canvas:i",
+      "canonical_values": [
+        "I'd Canvas"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 10,
+      "candidates": [
+        {
+          "key": "person:i'd",
+          "text": "I'd",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_412",
+          "occurrence_count": 8,
+          "covered_occurrence_count": 8,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:50:45.624676+00:00",
+          "support_event_index": 60,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:i'd canvas",
+          "text": "Canvas, I'd",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_147",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:50:45.624676+00:00",
+          "support_event_index": 60,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:cobb:c",
+      "canonical_group_id": "entity:person:cobb:c",
+      "canonical_values": [
+        "Christopher Cobb"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 8,
+      "candidates": [
+        {
+          "key": "person:christopher",
+          "text": "Christopher",
+          "decision": "Rename everywhere",
+          "replacement": "Christopher Cobb",
+          "occurrence_count": 3,
+          "covered_occurrence_count": 3,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:39.558516+00:00",
+          "support_event_index": 45,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:christopher cobb",
+          "text": "Cobb, Christopher",
+          "decision": "Rename everywhere",
+          "replacement": "Christopher Cobb",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:39.558516+00:00",
+          "support_event_index": 45,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:college:c",
+      "canonical_group_id": "entity:person:college:c",
+      "canonical_values": [],
+      "candidate_count": 2,
+      "occurrence_count": 4,
+      "candidates": [
+        {
+          "key": "person:civitas",
+          "text": "Civitas",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_514",
+          "occurrence_count": 3,
+          "covered_occurrence_count": 3,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:18.462764+00:00",
+          "support_event_index": 67,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:civitas college",
+          "text": "Civitas College",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_238",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:18.462764+00:00",
+          "support_event_index": 67,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:collier:t",
+      "canonical_group_id": "entity:person:collier:t",
+      "canonical_values": [
+        "Collier, Tanesha",
+        "Tanesha Can Collier"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 400,
+      "candidates": [
+        {
+          "key": "person:tanesha can collier",
+          "text": "Collier, \u00a0 Tanesha \u00a0Can",
+          "decision": "Rename everywhere",
+          "replacement": "Collier, Tanesha",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-25T23:25:38.765753+00:00",
+          "support_event_index": 31,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:tanesha collier",
+          "text": "Collier, Tanesha",
+          "decision": "Rename everywhere",
+          "replacement": "Collier, Tanesha",
+          "occurrence_count": 399,
+          "covered_occurrence_count": 399,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-25T23:25:38.765753+00:00",
+          "support_event_index": 31,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:deans:a",
+      "canonical_group_id": "entity:person:deans:a",
+      "canonical_values": [
+        "Assoc Deans"
+      ],
+      "candidate_count": 3,
+      "occurrence_count": 7,
+      "candidates": [
+        {
+          "key": "person:assoc deans",
+          "text": "Assoc Deans",
+          "decision": "Rename everywhere",
+          "replacement": "Assoc Deans",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:56.166353+00:00",
+          "support_event_index": 47,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:associate deans",
+          "text": "Associate Deans",
+          "decision": "Rename everywhere",
+          "replacement": "Assoc Deans",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:56.166353+00:00",
+          "support_event_index": 47,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:associated deans",
+          "text": "Associated Deans",
+          "decision": "Rename everywhere",
+          "replacement": "Assoc Deans",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:56.166353+00:00",
+          "support_event_index": 47,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:diana:w",
+      "canonical_group_id": "entity:person:diana:w",
+      "canonical_values": [
+        "Will Diana"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 11,
+      "candidates": [
+        {
+          "key": "person:will",
+          "text": "Will",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_384",
+          "occurrence_count": 10,
+          "covered_occurrence_count": 10,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:27:43.462244+00:00",
+          "support_event_index": 44,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:will diana",
+          "text": "Will Diana",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_56",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:27:43.462244+00:00",
+          "support_event_index": 44,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:dr:d",
+      "canonical_group_id": "entity:person:dr:d",
+      "canonical_values": [
+        "Did Dr"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 12,
+      "candidates": [
+        {
+          "key": "person:did",
+          "text": "Did",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_413",
+          "occurrence_count": 10,
+          "covered_occurrence_count": 10,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:12:48.947139+00:00",
+          "support_event_index": 34,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:did dr",
+          "text": "Did Dr",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_125",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:12:48.947139+00:00",
+          "support_event_index": 34,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:due:g",
+      "canonical_group_id": "entity:person:due:g",
+      "canonical_values": [
+        "Grades Due"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 6,
+      "candidates": [
+        {
+          "key": "person:grades",
+          "text": "Grades",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_299",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:08.423406+00:00",
+          "support_event_index": 49,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:grades due",
+          "text": "Grades Due",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_103",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:08.423406+00:00",
+          "support_event_index": 49,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:everyone:h",
+      "canonical_group_id": "entity:person:everyone:h",
+      "canonical_values": [],
+      "candidate_count": 2,
+      "occurrence_count": 4,
+      "candidates": [
+        {
+          "key": "person:hello",
+          "text": "Hello",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_406",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:28.351037+00:00",
+          "support_event_index": 69,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:hello everyone",
+          "text": "Hello Everyone",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_50",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:57:28.351037+00:00",
+          "support_event_index": 69,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:fall:f",
+      "canonical_group_id": "entity:person:fall:f",
+      "canonical_values": [
+        "For Fall"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 24,
+      "candidates": [
+        {
+          "key": "person:for",
+          "text": "For",
+          "decision": "Keep everywhere",
+          "replacement": "PERSON_310",
+          "occurrence_count": 22,
+          "covered_occurrence_count": 22,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-25T23:15:11.778098+00:00",
+          "support_event_index": 27,
+          "support_action": "Not Quite"
+        },
+        {
+          "key": "person:for fall",
+          "text": "For Fall",
+          "decision": "Keep everywhere",
+          "replacement": "PERSON_193",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-25T23:15:11.778098+00:00",
+          "support_event_index": 27,
+          "support_action": "Not Quite"
+        }
+      ]
+    },
+    {
+      "group_id": "person:ford:j",
+      "canonical_group_id": "entity:person:ford:j",
+      "canonical_values": [
+        "Julie Ford"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 10,
+      "candidates": [
+        {
+          "key": "person:julie",
+          "text": "Julie",
+          "decision": "Rename everywhere",
+          "replacement": "Julie Ford",
+          "occurrence_count": 6,
+          "covered_occurrence_count": 6,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:47.172595+00:00",
+          "support_event_index": 46,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:julie ford",
+          "text": "Julie Ford",
+          "decision": "Rename everywhere",
+          "replacement": "Julie Ford",
+          "occurrence_count": 4,
+          "covered_occurrence_count": 4,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:12:47.172595+00:00",
+          "support_event_index": 46,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:goodloe:a",
+      "canonical_group_id": "entity:person:goodloe:a",
+      "canonical_values": [
+        "Andrew Are Goodloe"
+      ],
+      "candidate_count": 3,
+      "occurrence_count": 743,
+      "candidates": [
+        {
+          "key": "person:an goodloe",
+          "text": "Goodloe, \u00a0 An",
+          "decision": "Keep everywhere",
+          "replacement": "PERSON_215",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+          "support_event_index": 43,
+          "support_action": "Not Quite"
+        },
+        {
+          "key": "person:andrew are goodloe",
+          "text": "Goodloe, \u00a0 Andrew \u00a0Are",
+          "decision": "Redact everywhere",
+          "replacement": "PERSON_244",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+          "support_event_index": 43,
+          "support_action": "Not Quite"
+        },
+        {
+          "key": "person:andrew goodloe",
+          "text": "Goodloe, Andrew",
+          "decision": "Keep everywhere",
+          "replacement": "PERSON_7",
+          "occurrence_count": 741,
+          "covered_occurrence_count": 741,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+          "support_event_index": 43,
+          "support_action": "Not Quite"
+        }
+      ]
+    },
+    {
+      "group_id": "person:grading:w",
+      "canonical_group_id": "entity:person:grading:w",
+      "canonical_values": [
+        "Winter Grading"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 7,
+      "candidates": [
+        {
+          "key": "person:winter",
+          "text": "Winter",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_315",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:04.461140+00:00",
+          "support_event_index": 48,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:winter grading",
+          "text": "Winter Grading",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_14",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:04.461140+00:00",
+          "support_event_index": 48,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:miller:a",
+      "canonical_group_id": "entity:person:miller:a",
+      "canonical_values": [
+        "Amy Miller"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 6,
+      "candidates": [
+        {
+          "key": "person:amy",
+          "text": "Amy",
+          "decision": "Rename everywhere",
+          "replacement": "Amy Miller",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:14.005245+00:00",
+          "support_event_index": 50,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:amy miller",
+          "text": "Amy Miller",
+          "decision": "Rename everywhere",
+          "replacement": "Amy Miller",
+          "occurrence_count": 4,
+          "covered_occurrence_count": 4,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:13:14.005245+00:00",
+          "support_event_index": 50,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:monday:h",
+      "canonical_group_id": "entity:person:monday:h",
+      "canonical_values": [
+        "Happy Rainy Monday"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 6,
+      "candidates": [
+        {
+          "key": "person:happy monday",
+          "text": "Happy Monday",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_37",
+          "occurrence_count": 4,
+          "covered_occurrence_count": 4,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:55.497403+00:00",
+          "support_event_index": 63,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:happy rainy monday",
+          "text": "Happy Rainy Monday",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_39",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:55.497403+00:00",
+          "support_event_index": 63,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:online:t",
+      "canonical_group_id": "entity:person:online:t",
+      "canonical_values": [
+        "This Fully Online"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 51,
+      "candidates": [
+        {
+          "key": "person:this",
+          "text": "This",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_347",
+          "occurrence_count": 49,
+          "covered_occurrence_count": 49,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:37:00.800613+00:00",
+          "support_event_index": 53,
+          "support_action": "Not Quite"
+        },
+        {
+          "key": "person:this fully online",
+          "text": "This Fully Online",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_223",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:37:00.800613+00:00",
+          "support_event_index": 53,
+          "support_action": "Not Quite"
+        }
+      ]
+    },
+    {
+      "group_id": "person:option:m",
+      "canonical_group_id": "entity:person:option:m",
+      "canonical_values": [
+        "Math Option"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 15,
+      "candidates": [
+        {
+          "key": "person:math",
+          "text": "Math",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_428",
+          "occurrence_count": 13,
+          "covered_occurrence_count": 13,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:39.096453+00:00",
+          "support_event_index": 57,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:math option",
+          "text": "Math Option",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_76",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:39.096453+00:00",
+          "support_event_index": 57,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:perias:n",
+      "canonical_group_id": "entity:person:perias:n",
+      "canonical_values": [
+        "Nelly Perias"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 739,
+      "candidates": [
+        {
+          "key": "person:nelly",
+          "text": "Nelly",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_366",
+          "occurrence_count": 15,
+          "covered_occurrence_count": 15,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:21:46.109051+00:00",
+          "support_event_index": 52,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:nelly perias",
+          "text": "Perias, Nelly",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_13",
+          "occurrence_count": 724,
+          "covered_occurrence_count": 724,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:21:46.109051+00:00",
+          "support_event_index": 52,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:planner:s",
+      "canonical_group_id": "entity:person:planner:s",
+      "canonical_values": [
+        "Smart Planner"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 7,
+      "candidates": [
+        {
+          "key": "person:schedule planner",
+          "text": "Schedule Planner",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_27",
+          "occurrence_count": 3,
+          "covered_occurrence_count": 3,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:52.743259+00:00",
+          "support_event_index": 62,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:smart planner",
+          "text": "Smart Planner",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_92",
+          "occurrence_count": 4,
+          "covered_occurrence_count": 4,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:52.743259+00:00",
+          "support_event_index": 62,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:session:s",
+      "canonical_group_id": "entity:person:session:s",
+      "canonical_values": [
+        "Summer Session"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 20,
+      "candidates": [
+        {
+          "key": "person:summer",
+          "text": "Summer",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_372",
+          "occurrence_count": 15,
+          "covered_occurrence_count": 15,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:36.556351+00:00",
+          "support_event_index": 56,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:summer session",
+          "text": "Summer Session",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_114",
+          "occurrence_count": 5,
+          "covered_occurrence_count": 5,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:36.556351+00:00",
+          "support_event_index": 56,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:sorry:i",
+      "canonical_group_id": "entity:person:sorry:i",
+      "canonical_values": [
+        "I'm Sorry"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 59,
+      "candidates": [
+        {
+          "key": "person:i'm",
+          "text": "I'm",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_316",
+          "occurrence_count": 57,
+          "covered_occurrence_count": 57,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:27.366843+00:00",
+          "support_event_index": 54,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:i'm sorry",
+          "text": "Sorry, I'm",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_128",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:27.366843+00:00",
+          "support_event_index": 54,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:studio:c",
+      "canonical_group_id": "entity:person:studio:c",
+      "canonical_values": [
+        "Canvas Studio"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 8,
+      "candidates": [
+        {
+          "key": "person:canvas",
+          "text": "Canvas",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_344",
+          "occurrence_count": 7,
+          "covered_occurrence_count": 7,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:45.136910+00:00",
+          "support_event_index": 61,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:canvas studio",
+          "text": "Canvas Studio",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_146",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:55:45.136910+00:00",
+          "support_event_index": 61,
+          "support_action": "Ignore"
+        }
+      ]
+    },
+    {
+      "group_id": "person:team:r",
+      "canonical_group_id": "entity:person:team:r",
+      "canonical_values": [
+        "Reg Mgrs Team"
+      ],
+      "candidate_count": 3,
+      "occurrence_count": 9,
+      "candidates": [
+        {
+          "key": "person:reg",
+          "text": "Reg",
+          "decision": "Rename everywhere",
+          "replacement": "Reg Mgrs Team",
+          "occurrence_count": 6,
+          "covered_occurrence_count": 6,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:47:17.825444+00:00",
+          "support_event_index": 59,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:reg mgrs team",
+          "text": "Reg Mgrs Team",
+          "decision": "Rename everywhere",
+          "replacement": "Reg Mgrs Team",
+          "occurrence_count": 2,
+          "covered_occurrence_count": 2,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:47:17.825444+00:00",
+          "support_event_index": 59,
+          "support_action": "Flatten"
+        },
+        {
+          "key": "person:registrar team",
+          "text": "Registrar Team",
+          "decision": "Rename everywhere",
+          "replacement": "Reg Mgrs Team",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:47:17.825444+00:00",
+          "support_event_index": 59,
+          "support_action": "Flatten"
+        }
+      ]
+    },
+    {
+      "group_id": "person:thank:y",
+      "canonical_group_id": "entity:person:thank:y",
+      "canonical_values": [
+        "Yes Thank"
+      ],
+      "candidate_count": 2,
+      "occurrence_count": 41,
+      "candidates": [
+        {
+          "key": "person:yes",
+          "text": "Yes",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_360",
+          "occurrence_count": 40,
+          "covered_occurrence_count": 40,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:33.226042+00:00",
+          "support_event_index": 55,
+          "support_action": "Ignore"
+        },
+        {
+          "key": "person:yes thank",
+          "text": "Yes Thank",
+          "decision": "Not Sensitive Data",
+          "replacement": "PERSON_237",
+          "occurrence_count": 1,
+          "covered_occurrence_count": 1,
+          "uncovered_occurrence_count": 0,
+          "decision_timestamp": "2026-07-26T04:41:33.226042+00:00",
+          "support_event_index": 55,
+          "support_action": "Ignore"
+        }
+      ]
+    }
+  ],
+  "repair_review_required": [
+    {
+      "group_id": "person:indicators:s",
+      "reason": "no unique canonical_group_id",
+      "canonical_ids": [],
+      "candidate_keys": [
+        "person:service indicators",
+        "person:services indicators"
+      ]
+    }
+  ],
+  "remaining_unresolved_members": [],
+  "named_examples": {
+    "Goodloe, Andrew": [
+      {
+        "key": "person:andrew goodloe",
+        "text": "Goodloe, Andrew",
+        "occurrence_count": 741,
+        "decision": "Keep everywhere",
+        "replacement": "PERSON_7",
+        "canonical_group_id": "entity:person:goodloe:a",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:an goodloe",
+        "text": "Goodloe, \u00a0 An",
+        "occurrence_count": 1,
+        "decision": "Keep everywhere",
+        "replacement": "PERSON_215",
+        "canonical_group_id": "entity:person:goodloe:a",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:andrew are goodloe",
+        "text": "Goodloe, \u00a0 Andrew \u00a0Are",
+        "occurrence_count": 1,
+        "decision": "Redact everywhere",
+        "replacement": "PERSON_244",
+        "canonical_group_id": "entity:person:goodloe:a",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T03:16:56.636802+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:andrew",
+        "text": "Andrew",
+        "occurrence_count": 46,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 303]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      },
+      {
+        "key": "person:goodloe",
+        "text": "Goodloe",
+        "occurrence_count": 34,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 423]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      }
+    ],
+    "Perias, Nelly": [
+      {
+        "key": "person:nelly perias",
+        "text": "Perias, Nelly",
+        "occurrence_count": 724,
+        "decision": "Not Sensitive Data",
+        "replacement": "PERSON_13",
+        "canonical_group_id": "entity:person:perias:n",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T04:21:46.109051+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:nelly",
+        "text": "Nelly",
+        "occurrence_count": 15,
+        "decision": "Not Sensitive Data",
+        "replacement": "PERSON_366",
+        "canonical_group_id": "entity:person:perias:n",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T04:21:46.109051+00:00",
+        "disappears_from_candidate_quality": true
+      }
+    ],
+    "Collier, Tanesha": [
+      {
+        "key": "person:tanesha collier",
+        "text": "Collier, Tanesha",
+        "occurrence_count": 399,
+        "decision": "Rename everywhere",
+        "replacement": "Collier, Tanesha",
+        "canonical_group_id": "entity:person:collier:t",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-25T23:25:38.765753+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:tanesha can collier",
+        "text": "Collier, \u00a0 Tanesha \u00a0Can",
+        "occurrence_count": 1,
+        "decision": "Rename everywhere",
+        "replacement": "Collier, Tanesha",
+        "canonical_group_id": "entity:person:collier:t",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-25T23:25:38.765753+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:tanesha",
+        "text": "Tanesha",
+        "occurrence_count": 34,
+        "decision": "Not Sensitive Data",
+        "replacement": "PERSON_321",
+        "canonical_group_id": "entity:person:can:t",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T04:57:11.046317+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:tanesha can",
+        "text": "Tanesha \u00a0Can",
+        "occurrence_count": 1,
+        "decision": "Not Sensitive Data",
+        "replacement": "PERSON_241",
+        "canonical_group_id": "entity:person:can:t",
+        "review_status": "resolved",
+        "decision_timestamp": "2026-07-26T04:57:11.046317+00:00",
+        "disappears_from_candidate_quality": true
+      },
+      {
+        "key": "person:collier",
+        "text": "Collier",
+        "occurrence_count": 9,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 512]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      }
+    ],
+    "Yamada, Tamara": [
+      {
+        "key": "person:tamara yamada",
+        "text": "Yamada, Tamara",
+        "occurrence_count": 547,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 006]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      },
+      {
+        "key": "person:tamara",
+        "text": "Tamara",
+        "occurrence_count": 30,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 378]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      },
+      {
+        "key": "person:yamada",
+        "text": "Yamada",
+        "occurrence_count": 4,
+        "decision": "Undecided (Keep)",
+        "replacement": "[PERSON 463]",
+        "canonical_group_id": null,
+        "review_status": null,
+        "decision_timestamp": null,
+        "disappears_from_candidate_quality": false
+      }
+    ]
+  }
+}

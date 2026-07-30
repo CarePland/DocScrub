@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "email:marcus.whitfield@example.edu",
+      "text": "marcus.whitfield@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "email:marcus.whitfield@example.edu:body paragraph 4:53:1"
+      ]
+    },
+    {
+      "key": "person:marcus whitfield",
+      "text": "Marcus Whitfield",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "email_address_evidence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:marcus whitfield:body paragraph 2:14:1",
+        "person:marcus whitfield:body paragraph 4:0:2"
+      ]
+    },
+    {
+      "key": "person:synthetic field codes case",
+      "text": "Synthetic Field Codes Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 48,
+      "qualityReasons": [
+        "single_occurrence",
+        "address_suffix",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic field codes case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

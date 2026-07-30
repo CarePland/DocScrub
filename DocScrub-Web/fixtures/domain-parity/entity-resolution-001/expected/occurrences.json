@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:andrew:body paragraph 10:0:1",
+      "candidateKey": "person:andrew",
+      "text": "Andrew",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 10",
+      "start": 0,
+      "end": 6,
+      "context": "[Andrew] agreed to follow up after the call."
+    },
+    {
+      "id": "person:andrew:body paragraph 11:28:2",
+      "candidateKey": "person:andrew",
+      "text": "Andrew",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 11",
+      "start": 28,
+      "end": 34,
+      "context": "Afterward, everyone thanked [Andrew] for the clarification."
+    },
+    {
+      "id": "person:andrew goodloe:body paragraph 6:0:1",
+      "candidateKey": "person:andrew goodloe",
+      "text": "Andrew Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 6",
+      "start": 0,
+      "end": 14,
+      "context": "[Andrew Goodloe] opened the budget discussion."
+    },
+    {
+      "id": "person:andrew jackson:body paragraph 8:0:1",
+      "candidateKey": "person:andrew jackson",
+      "text": "Andrew Jackson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 8",
+      "start": 0,
+      "end": 14,
+      "context": "[Andrew Jackson] responded with an alternative proposal."
+    },
+    {
+      "id": "person:andy goodloe:body paragraph 7:0:1",
+      "candidateKey": "person:andy goodloe",
+      "text": "Andy Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 7",
+      "start": 0,
+      "end": 12,
+      "context": "[Andy Goodloe] followed up with additional context."
+    },
+    {
+      "id": "person:andy jackson:body paragraph 9:0:1",
+      "candidateKey": "person:andy jackson",
+      "text": "Andy Jackson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 9",
+      "start": 0,
+      "end": 12,
+      "context": "[Andy Jackson] provided supporting data for that proposal."
+    },
+    {
+      "id": "person:carlos mendez:body paragraph 12:0:1",
+      "candidateKey": "person:carlos mendez",
+      "text": "Carlos Mendez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 12",
+      "start": 0,
+      "end": 13,
+      "context": "[Carlos Mendez] signed off on the vendor contract."
+    },
+    {
+      "id": "person:dr susan whitmore:body paragraph 14:0:1",
+      "candidateKey": "person:dr susan whitmore",
+      "text": "Dr Susan Whitmore",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 14",
+      "start": 0,
+      "end": 17,
+      "context": "[Dr Susan Whitmore] presented the quarterly research findings."
+    },
+    {
+      "id": "person:elena mendez:body paragraph 13:0:1",
+      "candidateKey": "person:elena mendez",
+      "text": "Elena Mendez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 13",
+      "start": 0,
+      "end": 12,
+      "context": "[Elena Mendez] filed the compliance report separately."
+    },
+    {
+      "id": "person:maria:body paragraph 4:0:1",
+      "candidateKey": "person:maria",
+      "text": "Maria",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 4",
+      "start": 0,
+      "end": 5,
+      "context": "[Maria] confirmed the new deadline soon after."
+    },
+    {
+      "id": "person:maria:body paragraph 5:22:2",
+      "candidateKey": "person:maria",
+      "text": "Maria",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 5",
+      "start": 22,
+      "end": 27,
+      "context": "Later, the team asked [Maria] for the updated schedule."
+    },
+    {
+      "id": "person:maria alvarez:body paragraph 2:0:1",
+      "candidateKey": "person:maria alvarez",
+      "text": "Maria Alvarez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 0,
+      "end": 13,
+      "context": "[Maria Alvarez] opened the meeting and introduced the agenda."
+    },
+    {
+      "id": "person:maria alvarez:body paragraph 3:0:2",
+      "candidateKey": "person:maria alvarez",
+      "text": "Alvarez, Maria",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 0,
+      "end": 14,
+      "context": "[Alvarez, Maria] then reviewed last quarter's numbers."
+    },
+    {
+      "id": "person:priya natarajan:body paragraph 16:0:1",
+      "candidateKey": "person:priya natarajan",
+      "text": "Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 16",
+      "start": 0,
+      "end": 15,
+      "context": "[Priya Natarajan] will finalize the vendor selection alone."
+    },
+    {
+      "id": "person:susan whitmore:body paragraph 15:0:1",
+      "candidateKey": "person:susan whitmore",
+      "text": "Susan Whitmore",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 15",
+      "start": 0,
+      "end": 14,
+      "context": "[Susan Whitmore] later answered follow-up questions from the board."
+    },
+    {
+      "id": "person:synthetic entity resolution case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic entity resolution case",
+      "text": "Synthetic Entity Resolution Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 32,
+      "context": "[Synthetic Entity Resolution Case]"
+    }
+  ]
+}

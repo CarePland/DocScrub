@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 6,
+      "occurrenceIds": [
+        "email:priya.natarajan@example.edu:body paragraph 2:46:1",
+        "cin:445566778:body paragraph 2:88:1",
+        "person:synthetic run:body paragraph 1:0:1",
+        "person:splitting case:body paragraph 1:14:1",
+        "person:participant priya natarajan:body paragraph 2:0:1",
+        "person:priya natarajan:body paragraph 3:34:1"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "email:grace.kim@example.edu:body table 1 table r1c2 nested table 1 table r2c2 paragraph 1:0:1",
+      "candidateKey": "email:grace.kim@example.edu",
+      "text": "grace.kim@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body table 1 table r1c2 nested table 1 table r2c2 paragraph 1",
+      "start": 0,
+      "end": 21,
+      "context": "[grace.kim@example.edu]"
+    },
+    {
+      "id": "person:grace kim:body paragraph 2:0:1",
+      "candidateKey": "person:grace kim",
+      "text": "Grace Kim",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 0,
+      "end": 9,
+      "context": "[Grace Kim] also appears here in plain text, outside any table, for contrast."
+    },
+    {
+      "id": "person:grace kim:body table 1 table r1c2 nested table 1 table r2c1 paragraph 1:0:2",
+      "candidateKey": "person:grace kim",
+      "text": "Grace Kim",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body table 1 table r1c2 nested table 1 table r2c1 paragraph 1",
+      "start": 0,
+      "end": 9,
+      "context": "[Grace Kim]"
+    },
+    {
+      "id": "person:synthetic nested table case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic nested table case",
+      "text": "Synthetic Nested Table Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 27,
+      "context": "[Synthetic Nested Table Case]"
+    }
+  ]
+}

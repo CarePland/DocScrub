@@ -1,0 +1,24 @@
+# DocScrub document structure terms
+# Evidence only; membership must not by itself force filtering.
+
+exhibit
+appendix
+attachment
+enclosure
+section
+chapter
+page
+paragraph
+figure
+table
+schedule
+addendum
+article
+subsection
+clause
+line
+tab
+index
+summary
+reference
+references

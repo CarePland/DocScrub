@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:synthetic text box case",
+      "text": "Synthetic Text Box Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 44,
+      "qualityReasons": [
+        "single_occurrence",
+        "product_system_name",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic text box case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "key": "person:winona featherstone",
+      "text": "Winona Featherstone",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:winona featherstone:body paragraph 3:10:1"
+      ]
+    }
+  ]
+}

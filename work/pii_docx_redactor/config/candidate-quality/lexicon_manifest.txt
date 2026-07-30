@@ -1,0 +1,14 @@
+# DocScrub lexical resource manifest
+input_unique_entries=81584
+common_non_name_words=1966
+expanded_common_language_words=51454
+ambiguous_name_words=81
+excluded_noise_and_names=30068
+honorific_titles=24
+professional_credentials=29
+organization_suffixes=24
+document_structure_terms=21
+legal_administrative_terms=24
+source_scope=Expanded first-pass language lexicons from the supplied wiki-100k derived build plus curated professional and institutional lexicons.
+decision_note=Lexicon membership is evidence, not an automatic disposition. The expanded common-language list is neutral evidence; the curated common-non-name list remains the negative evidence source.
+engineering_note=excluded_noise_and_names is tracked as source provenance and should not be loaded as one homogeneous recognizer without further classification.

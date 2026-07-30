@@ -1,0 +1,3072 @@
+{
+  "email:scheduling@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "email:registrar2@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "email:records@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "email:graduationoffice@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "email:planner@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "email:agoodlo@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "cin:404039594": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:402733432": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:403778892": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "long_numeric_id:82601229711": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "long_numeric_id:2025202620240729": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "email:registrars@lists.calstate.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "long_numeric_id:202605061156": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:781237504": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "email:advising@calstatela.edu": {
+    "decision": "Keep everywhere",
+    "replacement": "[REDACTED EMAIL]",
+    "occurrence_decisions": {}
+  },
+  "phone:5629514723": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED PHONE]",
+    "occurrence_decisions": {}
+  },
+  "cin:402461394": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "long_numeric_id:202606121212": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:305967745": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "phone:15000000005": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED PHONE]",
+    "occurrence_decisions": {}
+  },
+  "long_numeric_id:10150000000056": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:404845633": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "phone:3233434577": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED PHONE]",
+    "occurrence_decisions": {}
+  },
+  "cin:404734496": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:306710552": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:405133258": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:405151458": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:404929301": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "cin:405223322": {
+    "decision": "Redact everywhere",
+    "replacement": "[REDACTED ID]",
+    "occurrence_decisions": {}
+  },
+  "person:registrar managers": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 001]",
+    "occurrence_decisions": {}
+  },
+  "person:message list": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 002]",
+    "occurrence_decisions": {}
+  },
+  "person:christopher cobb": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 003]",
+    "occurrence_decisions": {}
+  },
+  "person:tanesha collier": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 004]",
+    "occurrence_decisions": {}
+  },
+  "person:records team": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 005]",
+    "occurrence_decisions": {}
+  },
+  "person:tamara yamada": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 006]",
+    "occurrence_decisions": {}
+  },
+  "person:andrew goodloe": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 007]",
+    "occurrence_decisions": {}
+  },
+  "person:grade rosters": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 008]",
+    "occurrence_decisions": {}
+  },
+  "person:financial aid": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 009]",
+    "occurrence_decisions": {}
+  },
+  "person:preview day": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 010]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks andrew": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 011]",
+    "occurrence_decisions": {}
+  },
+  "person:records outbox": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 012]",
+    "occurrence_decisions": {}
+  },
+  "person:nelly perias": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 013]",
+    "occurrence_decisions": {}
+  },
+  "person:winter grading": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 014]",
+    "occurrence_decisions": {}
+  },
+  "person:fully online": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 015]",
+    "occurrence_decisions": {}
+  },
+  "person:cal state": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 016]",
+    "occurrence_decisions": {}
+  },
+  "person:communication center": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 017]",
+    "occurrence_decisions": {}
+  },
+  "person:academic records": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 018]",
+    "occurrence_decisions": {}
+  },
+  "person:graduation office": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 019]",
+    "occurrence_decisions": {}
+  },
+  "person:academic services": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 020]",
+    "occurrence_decisions": {}
+  },
+  "person:staff course": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 021]",
+    "occurrence_decisions": {}
+  },
+  "person:staff academic advisement report": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 022]",
+    "occurrence_decisions": {}
+  },
+  "person:degree planner": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 023]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment systems": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 024]",
+    "occurrence_decisions": {}
+  },
+  "person:staff ad": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 025]",
+    "occurrence_decisions": {}
+  },
+  "person:staff run query": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 026]",
+    "occurrence_decisions": {}
+  },
+  "person:schedule planner": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 027]",
+    "occurrence_decisions": {}
+  },
+  "person:andrew thanks": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 028]",
+    "occurrence_decisions": {}
+  },
+  "person:hi andrew": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 029]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks andrew records": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 030]",
+    "occurrence_decisions": {}
+  },
+  "person:jeffrey lam": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 031]",
+    "occurrence_decisions": {}
+  },
+  "person:word documents": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 032]",
+    "occurrence_decisions": {}
+  },
+  "person:regarding summer": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 033]",
+    "occurrence_decisions": {}
+  },
+  "person:fall term activation": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 034]",
+    "occurrence_decisions": {}
+  },
+  "person:southern california shredding coming": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 035]",
+    "occurrence_decisions": {}
+  },
+  "person:good morning": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 036]",
+    "occurrence_decisions": {}
+  },
+  "person:happy monday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 037]",
+    "occurrence_decisions": {}
+  },
+  "person:happy presidents": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 038]",
+    "occurrence_decisions": {}
+  },
+  "person:happy rainy monday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 039]",
+    "occurrence_decisions": {}
+  },
+  "person:hello all": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 040]",
+    "occurrence_decisions": {}
+  },
+  "person:hi nelly": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 041]",
+    "occurrence_decisions": {}
+  },
+  "person:virtual clearinghouse academ": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 042]",
+    "occurrence_decisions": {}
+  },
+  "person:virtual clearinghouse academy": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 043]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment reporting": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 044]",
+    "occurrence_decisions": {}
+  },
+  "person:march tuesday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 045]",
+    "occurrence_decisions": {}
+  },
+  "person:compliance experts": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 046]",
+    "occurrence_decisions": {}
+  },
+  "person:virtually academy": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 047]",
+    "occurrence_decisions": {}
+  },
+  "person:clearinghouse academy": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 048]",
+    "occurrence_decisions": {}
+  },
+  "person:pacific standard time": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 049]",
+    "occurrence_decisions": {}
+  },
+  "person:hello everyone": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 050]",
+    "occurrence_decisions": {}
+  },
+  "person:student group": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 051]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks nelly": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 052]",
+    "occurrence_decisions": {}
+  },
+  "person:academic service": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 053]",
+    "occurrence_decisions": {}
+  },
+  "person:mass disc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 054]",
+    "occurrence_decisions": {}
+  },
+  "person:academic senate": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 055]",
+    "occurrence_decisions": {}
+  },
+  "person:will diana": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 056]",
+    "occurrence_decisions": {}
+  },
+  "person:diana yes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 057]",
+    "occurrence_decisions": {}
+  },
+  "person:since mass disc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 058]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks tamara": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 059]",
+    "occurrence_decisions": {}
+  },
+  "person:term activation": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 060]",
+    "occurrence_decisions": {}
+  },
+  "person:level spoofing": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 061]",
+    "occurrence_decisions": {}
+  },
+  "person:service indi": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 062]",
+    "occurrence_decisions": {}
+  },
+  "person:service indicator codes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 063]",
+    "occurrence_decisions": {}
+  },
+  "person:common definitions": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 064]",
+    "occurrence_decisions": {}
+  },
+  "person:services indicators": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 065]",
+    "occurrence_decisions": {}
+  },
+  "person:service indicator": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 066]",
+    "occurrence_decisions": {}
+  },
+  "person:reason code": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 067]",
+    "occurrence_decisions": {}
+  },
+  "person:service indicators": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 068]",
+    "occurrence_decisions": {}
+  },
+  "person:if joan": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 069]",
+    "occurrence_decisions": {}
+  },
+  "person:reason codes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 070]",
+    "occurrence_decisions": {}
+  },
+  "person:clearinghouse webinar": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 071]",
+    "occurrence_decisions": {}
+  },
+  "person:tamara thanks": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 072]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment appointments assigne": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 073]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment appointments assigned": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 074]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment appointments": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 075]",
+    "occurrence_decisions": {}
+  },
+  "person:math option": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 076]",
+    "occurrence_decisions": {}
+  },
+  "person:science teach": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 077]",
+    "occurrence_decisions": {}
+  },
+  "person:science teacher initiatives": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 078]",
+    "occurrence_decisions": {}
+  },
+  "person:track teacher education program": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 079]",
+    "occurrence_decisions": {}
+  },
+  "person:science teacher initiativ": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 080]",
+    "occurrence_decisions": {}
+  },
+  "person:science teacher initiative": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 081]",
+    "occurrence_decisions": {}
+  },
+  "person:new student": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 082]",
+    "occurrence_decisions": {}
+  },
+  "person:classes monday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 083]",
+    "occurrence_decisions": {}
+  },
+  "person:display self": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 084]",
+    "occurrence_decisions": {}
+  },
+  "person:display self service": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 085]",
+    "occurrence_decisions": {}
+  },
+  "person:priority registrati": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 086]",
+    "occurrence_decisions": {}
+  },
+  "person:early level": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 087]",
+    "occurrence_decisions": {}
+  },
+  "person:priority registration service indicators": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 088]",
+    "occurrence_decisions": {}
+  },
+  "person:student groups": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 089]",
+    "occurrence_decisions": {}
+  },
+  "person:class level": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 090]",
+    "occurrence_decisions": {}
+  },
+  "person:berhanu fyi": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 091]",
+    "occurrence_decisions": {}
+  },
+  "person:smart planner": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 092]",
+    "occurrence_decisions": {}
+  },
+  "person:priority reg": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 093]",
+    "occurrence_decisions": {}
+  },
+  "person:happy birthday eve": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 094]",
+    "occurrence_decisions": {}
+  },
+  "person:fire marshall": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 095]",
+    "occurrence_decisions": {}
+  },
+  "person:incomplete grade": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 096]",
+    "occurrence_decisions": {}
+  },
+  "person:timekeeper overview": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 097]",
+    "occurrence_decisions": {}
+  },
+  "person:chriztopher johnson": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 098]",
+    "occurrence_decisions": {}
+  },
+  "person:resource manager": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 099]",
+    "occurrence_decisions": {}
+  },
+  "person:conference flyer": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 100]",
+    "occurrence_decisions": {}
+  },
+  "person:google drive": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 101]",
+    "occurrence_decisions": {}
+  },
+  "person:faculty grading": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 102]",
+    "occurrence_decisions": {}
+  },
+  "person:grades due": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 103]",
+    "occurrence_decisions": {}
+  },
+  "person:grade processing": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 104]",
+    "occurrence_decisions": {}
+  },
+  "person:residency specialist": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 105]",
+    "occurrence_decisions": {}
+  },
+  "person:geez exploding": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 106]",
+    "occurrence_decisions": {}
+  },
+  "person:high school": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 107]",
+    "occurrence_decisions": {}
+  },
+  "person:residency specialists": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 108]",
+    "occurrence_decisions": {}
+  },
+  "person:boss lady": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 109]",
+    "occurrence_decisions": {}
+  },
+  "person:may session dates": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 110]",
+    "occurrence_decisions": {}
+  },
+  "person:master schedule": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 111]",
+    "occurrence_decisions": {}
+  },
+  "person:good morning everyone": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 112]",
+    "occurrence_decisions": {}
+  },
+  "person:may session": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 113]",
+    "occurrence_decisions": {}
+  },
+  "person:summer session": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 114]",
+    "occurrence_decisions": {}
+  },
+  "person:grading security": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 115]",
+    "occurrence_decisions": {}
+  },
+  "person:comm gen": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 116]",
+    "occurrence_decisions": {}
+  },
+  "person:wednesday am": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 117]",
+    "occurrence_decisions": {}
+  },
+  "person:spring grades due": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 118]",
+    "occurrence_decisions": {}
+  },
+  "person:student final exam": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 119]",
+    "occurrence_decisions": {}
+  },
+  "person:final exams": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 120]",
+    "occurrence_decisions": {}
+  },
+  "person:happy friday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 121]",
+    "occurrence_decisions": {}
+  },
+  "person:correct begin": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 122]",
+    "occurrence_decisions": {}
+  },
+  "person:student final exa": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 123]",
+    "occurrence_decisions": {}
+  },
+  "person:the reg": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 124]",
+    "occurrence_decisions": {}
+  },
+  "person:did dr": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 125]",
+    "occurrence_decisions": {}
+  },
+  "person:grad office": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 126]",
+    "occurrence_decisions": {}
+  },
+  "person:my planner": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 127]",
+    "occurrence_decisions": {}
+  },
+  "person:i'm sorry": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 128]",
+    "occurrence_decisions": {}
+  },
+  "person:san diego": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 129]",
+    "occurrence_decisions": {}
+  },
+  "person:may sesion grade": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 130]",
+    "occurrence_decisions": {}
+  },
+  "person:grade rosters created": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 131]",
+    "occurrence_decisions": {}
+  },
+  "person:grade entry": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 132]",
+    "occurrence_decisions": {}
+  },
+  "person:grade rosters closed": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 133]",
+    "occurrence_decisions": {}
+  },
+  "person:grade rosters posted": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 134]",
+    "occurrence_decisions": {}
+  },
+  "person:east bay": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 135]",
+    "occurrence_decisions": {}
+  },
+  "person:systemwide registrars": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 136]",
+    "occurrence_decisions": {}
+  },
+  "person:withdrawal petition": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 137]",
+    "occurrence_decisions": {}
+  },
+  "person:merge forms": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 138]",
+    "occurrence_decisions": {}
+  },
+  "person:automate approvals": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 139]",
+    "occurrence_decisions": {}
+  },
+  "person:workflow shift": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 140]",
+    "occurrence_decisions": {}
+  },
+  "person:margaret chris": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 141]",
+    "occurrence_decisions": {}
+  },
+  "person:adobe sign": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 142]",
+    "occurrence_decisions": {}
+  },
+  "person:term processing": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 143]",
+    "occurrence_decisions": {}
+  },
+  "person:breach composition": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 144]",
+    "occurrence_decisions": {}
+  },
+  "person:excluded data": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 145]",
+    "occurrence_decisions": {}
+  },
+  "person:canvas studio": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 146]",
+    "occurrence_decisions": {}
+  },
+  "person:i'd canvas": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 147]",
+    "occurrence_decisions": {}
+  },
+  "person:when ruth": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 148]",
+    "occurrence_decisions": {}
+  },
+  "person:staff homepage": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 149]",
+    "occurrence_decisions": {}
+  },
+  "person:student homepage": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 150]",
+    "occurrence_decisions": {}
+  },
+  "person:faculty homepage": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 151]",
+    "occurrence_decisions": {}
+  },
+  "person:go live": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 152]",
+    "occurrence_decisions": {}
+  },
+  "person:information technology services": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 153]",
+    "occurrence_decisions": {}
+  },
+  "person:getting started": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 154]",
+    "occurrence_decisions": {}
+  },
+  "person:julie ford": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 155]",
+    "occurrence_decisions": {}
+  },
+  "person:course catalog": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 156]",
+    "occurrence_decisions": {}
+  },
+  "person:grading deadline": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 157]",
+    "occurrence_decisions": {}
+  },
+  "person:spring semester": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 158]",
+    "occurrence_decisions": {}
+  },
+  "person:withdrawal unauthorized": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 159]",
+    "occurrence_decisions": {}
+  },
+  "person:may weds": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 160]",
+    "occurrence_decisions": {}
+  },
+  "person:college scheduler": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 161]",
+    "occurrence_decisions": {}
+  },
+  "person:dafne no": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 162]",
+    "occurrence_decisions": {}
+  },
+  "person:standard support services": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 163]",
+    "occurrence_decisions": {}
+  },
+  "person:total annual cost": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 164]",
+    "occurrence_decisions": {}
+  },
+  "person:town hall meeting": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 165]",
+    "occurrence_decisions": {}
+  },
+  "person:margaret afternoon": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 166]",
+    "occurrence_decisions": {}
+  },
+  "person:good afternoon": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 167]",
+    "occurrence_decisions": {}
+  },
+  "person:welcome call": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 168]",
+    "occurrence_decisions": {}
+  },
+  "person:grade posting process": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 169]",
+    "occurrence_decisions": {}
+  },
+  "person:yep smile": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 170]",
+    "occurrence_decisions": {}
+  },
+  "person:dear all": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 171]",
+    "occurrence_decisions": {}
+  },
+  "person:happy holiday weekend": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 172]",
+    "occurrence_decisions": {}
+  },
+  "person:everyone morning": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 173]",
+    "occurrence_decisions": {}
+  },
+  "person:security audit": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 174]",
+    "occurrence_decisions": {}
+  },
+  "person:any tanesha": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 175]",
+    "occurrence_decisions": {}
+  },
+  "person:hi tanesha": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 176]",
+    "occurrence_decisions": {}
+  },
+  "person:student records services": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 177]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment management": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 178]",
+    "occurrence_decisions": {}
+  },
+  "person:create term withdrawal": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 179]",
+    "occurrence_decisions": {}
+  },
+  "person:last date": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 180]",
+    "occurrence_decisions": {}
+  },
+  "person:term withdrawals": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 181]",
+    "occurrence_decisions": {}
+  },
+  "person:strike line": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 182]",
+    "occurrence_decisions": {}
+  },
+  "person:unofficial withdrawal": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 183]",
+    "occurrence_decisions": {}
+  },
+  "person:last day": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 184]",
+    "occurrence_decisions": {}
+  },
+  "person:term withdrawls": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 185]",
+    "occurrence_decisions": {}
+  },
+  "person:query properties": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 186]",
+    "occurrence_decisions": {}
+  },
+  "person:term withdra": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 187]",
+    "occurrence_decisions": {}
+  },
+  "person:grade pro": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 188]",
+    "occurrence_decisions": {}
+  },
+  "person:query definition": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 189]",
+    "occurrence_decisions": {}
+  },
+  "person:term withdrawl": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 190]",
+    "occurrence_decisions": {}
+  },
+  "person:alternate work schedule program": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 191]",
+    "occurrence_decisions": {}
+  },
+  "person:the academic disqual": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 192]",
+    "occurrence_decisions": {}
+  },
+  "person:for fall": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 193]",
+    "occurrence_decisions": {}
+  },
+  "person:hi registrars": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 194]",
+    "occurrence_decisions": {}
+  },
+  "person:associate deans": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 195]",
+    "occurrence_decisions": {}
+  },
+  "person:post enrollment requisite checking": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 196]",
+    "occurrence_decisions": {}
+  },
+  "person:background cal state": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 197]",
+    "occurrence_decisions": {}
+  },
+  "person:dear student": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 198]",
+    "occurrence_decisions": {}
+  },
+  "person:records office": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 199]",
+    "occurrence_decisions": {}
+  },
+  "person:university registrar": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 200]",
+    "occurrence_decisions": {}
+  },
+  "person:assoc deans": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 201]",
+    "occurrence_decisions": {}
+  },
+  "person:none morning": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 202]",
+    "occurrence_decisions": {}
+  },
+  "person:same everyone": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 203]",
+    "occurrence_decisions": {}
+  },
+  "person:jun weds": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 204]",
+    "occurrence_decisions": {}
+  },
+  "person:grad app": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 205]",
+    "occurrence_decisions": {}
+  },
+  "person:kyle francis": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 206]",
+    "occurrence_decisions": {}
+  },
+  "person:joaquin evelyn": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 207]",
+    "occurrence_decisions": {}
+  },
+  "person:liud fox": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 208]",
+    "occurrence_decisions": {}
+  },
+  "person:liudmila fox": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 209]",
+    "occurrence_decisions": {}
+  },
+  "person:hi managers": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 210]",
+    "occurrence_decisions": {}
+  },
+  "person:college source": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 211]",
+    "occurrence_decisions": {}
+  },
+  "person:good morning registrar managers": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 212]",
+    "occurrence_decisions": {}
+  },
+  "person:happy we": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 213]",
+    "occurrence_decisions": {}
+  },
+  "person:happy wednesday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 214]",
+    "occurrence_decisions": {}
+  },
+  "person:an goodloe": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 215]",
+    "occurrence_decisions": {}
+  },
+  "person:may session grade rosters": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 216]",
+    "occurrence_decisions": {}
+  },
+  "person:reg mgrs team": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 217]",
+    "occurrence_decisions": {}
+  },
+  "person:associated deans": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 218]",
+    "occurrence_decisions": {}
+  },
+  "person:amy miller": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 219]",
+    "occurrence_decisions": {}
+  },
+  "person:giancarlo banuelos": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 220]",
+    "occurrence_decisions": {}
+  },
+  "person:hi tamara": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 221]",
+    "occurrence_decisions": {}
+  },
+  "person:action reason": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 222]",
+    "occurrence_decisions": {}
+  },
+  "person:this fully online": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 223]",
+    "occurrence_decisions": {}
+  },
+  "person:student records": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 224]",
+    "occurrence_decisions": {}
+  },
+  "person:drop placeholder": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 225]",
+    "occurrence_decisions": {}
+  },
+  "person:external education": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 226]",
+    "occurrence_decisions": {}
+  },
+  "person:transfer credit": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 227]",
+    "occurrence_decisions": {}
+  },
+  "person:from melissa": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 228]",
+    "occurrence_decisions": {}
+  },
+  "person:systemwide meeting": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 229]",
+    "occurrence_decisions": {}
+  },
+  "person:fully graded": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 230]",
+    "occurrence_decisions": {}
+  },
+  "person:term session appt block": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 231]",
+    "occurrence_decisions": {}
+  },
+  "person:appt nbr": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 232]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks mrs": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 233]",
+    "occurrence_decisions": {}
+  },
+  "person:acad struc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 234]",
+    "occurrence_decisions": {}
+  },
+  "person:acad structure": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 235]",
+    "occurrence_decisions": {}
+  },
+  "person:vet va": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 236]",
+    "occurrence_decisions": {}
+  },
+  "person:yes thank": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 237]",
+    "occurrence_decisions": {}
+  },
+  "person:civitas college": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 238]",
+    "occurrence_decisions": {}
+  },
+  "person:civitas college scheduler": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 239]",
+    "occurrence_decisions": {}
+  },
+  "person:tanesha can collier": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 240]",
+    "occurrence_decisions": {}
+  },
+  "person:tanesha can": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 241]",
+    "occurrence_decisions": {}
+  },
+  "person:first fight": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 242]",
+    "occurrence_decisions": {}
+  },
+  "person:san marcos": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 243]",
+    "occurrence_decisions": {}
+  },
+  "person:andrew are goodloe": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 244]",
+    "occurrence_decisions": {}
+  },
+  "person:andrew are": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 245]",
+    "occurrence_decisions": {}
+  },
+  "person:hi all": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 246]",
+    "occurrence_decisions": {}
+  },
+  "person:term activating": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 247]",
+    "occurrence_decisions": {}
+  },
+  "person:assigning enrollment": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 248]",
+    "occurrence_decisions": {}
+  },
+  "person:since may": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 249]",
+    "occurrence_decisions": {}
+  },
+  "person:security request": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 250]",
+    "occurrence_decisions": {}
+  },
+  "person:cashay jackson": {
+    "decision": "Redact everywhere",
+    "replacement": "[PERSON 251]",
+    "occurrence_decisions": {}
+  },
+  "person:good afternoon andrew": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 252]",
+    "occurrence_decisions": {}
+  },
+  "person:cashay jackson transcripts": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 253]",
+    "occurrence_decisions": {}
+  },
+  "person:sarah yes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 254]",
+    "occurrence_decisions": {}
+  },
+  "person:may andrew": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 255]",
+    "occurrence_decisions": {}
+  },
+  "person:not class rosters": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 256]",
+    "occurrence_decisions": {}
+  },
+  "person:chelsye angelina": {
+    "decision": "Redact everywhere",
+    "replacement": "[PERSON 257]",
+    "occurrence_decisions": {}
+  },
+  "person:effective monday july": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 258]",
+    "occurrence_decisions": {}
+  },
+  "person:min shi": {
+    "decision": "Redact everywhere",
+    "replacement": "[PERSON 259]",
+    "occurrence_decisions": {}
+  },
+  "person:associate dean": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 260]",
+    "occurrence_decisions": {}
+  },
+  "person:and thank you andrew": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 261]",
+    "occurrence_decisions": {}
+  },
+  "person:registrar team": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 262]",
+    "occurrence_decisions": {}
+  },
+  "person:stern mass": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 263]",
+    "occurrence_decisions": {}
+  },
+  "person:undergraduate student": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 264]",
+    "occurrence_decisions": {}
+  },
+  "person:unofficial withdrawals": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 265]",
+    "occurrence_decisions": {}
+  },
+  "person:her she": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 266]",
+    "occurrence_decisions": {}
+  },
+  "person:ecst student advisor": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 267]",
+    "occurrence_decisions": {}
+  },
+  "person:computer science engineering": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 268]",
+    "occurrence_decisions": {}
+  },
+  "person:los university": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 269]",
+    "occurrence_decisions": {}
+  },
+  "person:ca angeles": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 270]",
+    "occurrence_decisions": {}
+  },
+  "person:bobbie galaz": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 271]",
+    "occurrence_decisions": {}
+  },
+  "person:student success": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 272]",
+    "occurrence_decisions": {}
+  },
+  "person:computer science": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 273]",
+    "occurrence_decisions": {}
+  },
+  "person:state university": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 274]",
+    "occurrence_decisions": {}
+  },
+  "person:pushing boundaries": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 275]",
+    "occurrence_decisions": {}
+  },
+  "person:appt block": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 276]",
+    "occurrence_decisions": {}
+  },
+  "person:start date": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 277]",
+    "occurrence_decisions": {}
+  },
+  "person:start time": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 278]",
+    "occurrence_decisions": {}
+  },
+  "person:end date": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 279]",
+    "occurrence_decisions": {}
+  },
+  "person:end time": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 280]",
+    "occurrence_decisions": {}
+  },
+  "person:query based update": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 281]",
+    "occurrence_decisions": {}
+  },
+  "person:convert invalid": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 282]",
+    "occurrence_decisions": {}
+  },
+  "person:form": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 283]",
+    "occurrence_decisions": {}
+  },
+  "person:has": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 284]",
+    "occurrence_decisions": {}
+  },
+  "person:chat": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 285]",
+    "occurrence_decisions": {}
+  },
+  "person:unread": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 286]",
+    "occurrence_decisions": {}
+  },
+  "person:last": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 287]",
+    "occurrence_decisions": {}
+  },
+  "person:personal": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 288]",
+    "occurrence_decisions": {}
+  },
+  "person:draft": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 289]",
+    "occurrence_decisions": {}
+  },
+  "person:you": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 290]",
+    "occurrence_decisions": {}
+  },
+  "person:shared": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 291]",
+    "occurrence_decisions": {}
+  },
+  "person:channel": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 292]",
+    "occurrence_decisions": {}
+  },
+  "person:team": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 293]",
+    "occurrence_decisions": {}
+  },
+  "person:badged": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 294]",
+    "occurrence_decisions": {}
+  },
+  "person:heart": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 295]",
+    "occurrence_decisions": {}
+  },
+  "person:thank": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 296]",
+    "occurrence_decisions": {}
+  },
+  "person:chris": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 297]",
+    "occurrence_decisions": {}
+  },
+  "person:can": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 298]",
+    "occurrence_decisions": {}
+  },
+  "person:grades": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 299]",
+    "occurrence_decisions": {}
+  },
+  "person:like": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 300]",
+    "occurrence_decisions": {}
+  },
+  "person:we'll": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 301]",
+    "occurrence_decisions": {}
+  },
+  "person:morning": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 302]",
+    "occurrence_decisions": {}
+  },
+  "person:andrew": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 303]",
+    "occurrence_decisions": {}
+  },
+  "person:perc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 304]",
+    "occurrence_decisions": {}
+  },
+  "person:the": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 305]",
+    "occurrence_decisions": {}
+  },
+  "person:there": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 306]",
+    "occurrence_decisions": {}
+  },
+  "person:commgen": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 307]",
+    "occurrence_decisions": {}
+  },
+  "person:because": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 308]",
+    "occurrence_decisions": {}
+  },
+  "person:great": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 309]",
+    "occurrence_decisions": {}
+  },
+  "person:for": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 310]",
+    "occurrence_decisions": {}
+  },
+  "person:fyi": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 311]",
+    "occurrence_decisions": {}
+  },
+  "person:i\u2019m": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 312]",
+    "occurrence_decisions": {}
+  },
+  "person:hope": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 313]",
+    "occurrence_decisions": {}
+  },
+  "person:drink": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 314]",
+    "occurrence_decisions": {}
+  },
+  "person:winter": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 315]",
+    "occurrence_decisions": {}
+  },
+  "person:i'm": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 316]",
+    "occurrence_decisions": {}
+  },
+  "person:records": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 317]",
+    "occurrence_decisions": {}
+  },
+  "person:one": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 318]",
+    "occurrence_decisions": {}
+  },
+  "person:chelsey": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 319]",
+    "occurrence_decisions": {}
+  },
+  "person:let": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 320]",
+    "occurrence_decisions": {}
+  },
+  "person:tanesha": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 321]",
+    "occurrence_decisions": {}
+  },
+  "person:begin": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 322]",
+    "occurrence_decisions": {}
+  },
+  "person:correct": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 323]",
+    "occurrence_decisions": {}
+  },
+  "person:thanks": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 324]",
+    "occurrence_decisions": {}
+  },
+  "person:covid": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 325]",
+    "occurrence_decisions": {}
+  },
+  "person:i\u2019ll": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 326]",
+    "occurrence_decisions": {}
+  },
+  "person:take": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 327]",
+    "occurrence_decisions": {}
+  },
+  "person:get": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 328]",
+    "occurrence_decisions": {}
+  },
+  "person:link": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 329]",
+    "occurrence_decisions": {}
+  },
+  "person:any": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 330]",
+    "occurrence_decisions": {}
+  },
+  "person:its": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 331]",
+    "occurrence_decisions": {}
+  },
+  "person:agnes": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 332]",
+    "occurrence_decisions": {}
+  },
+  "person:smile": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 333]",
+    "occurrence_decisions": {}
+  },
+  "person:please": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 334]",
+    "occurrence_decisions": {}
+  },
+  "person:apologies": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 335]",
+    "occurrence_decisions": {}
+  },
+  "person:i'll": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 336]",
+    "occurrence_decisions": {}
+  },
+  "person:security": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 337]",
+    "occurrence_decisions": {}
+  },
+  "person:that": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 338]",
+    "occurrence_decisions": {}
+  },
+  "person:you're": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 339]",
+    "occurrence_decisions": {}
+  },
+  "person:have": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 340]",
+    "occurrence_decisions": {}
+  },
+  "person:waitlist": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 341]",
+    "occurrence_decisions": {}
+  },
+  "person:appreciate": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 342]",
+    "occurrence_decisions": {}
+  },
+  "person:csu": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 343]",
+    "occurrence_decisions": {}
+  },
+  "person:canvas": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 344]",
+    "occurrence_decisions": {}
+  },
+  "person:students": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 345]",
+    "occurrence_decisions": {}
+  },
+  "person:mycalstatela": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 346]",
+    "occurrence_decisions": {}
+  },
+  "person:this": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 347]",
+    "occurrence_decisions": {}
+  },
+  "person:spring": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 348]",
+    "occurrence_decisions": {}
+  },
+  "person:here's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 349]",
+    "occurrence_decisions": {}
+  },
+  "person:what": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 350]",
+    "occurrence_decisions": {}
+  },
+  "person:enrollment": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 351]",
+    "occurrence_decisions": {}
+  },
+  "person:faculty": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 352]",
+    "occurrence_decisions": {}
+  },
+  "person:works": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 353]",
+    "occurrence_decisions": {}
+  },
+  "person:looks": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 354]",
+    "occurrence_decisions": {}
+  },
+  "person:that's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 355]",
+    "occurrence_decisions": {}
+  },
+  "person:how": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 356]",
+    "occurrence_decisions": {}
+  },
+  "person:anything": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 357]",
+    "occurrence_decisions": {}
+  },
+  "person:and": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 358]",
+    "occurrence_decisions": {}
+  },
+  "person:registrar": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 359]",
+    "occurrence_decisions": {}
+  },
+  "person:yes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 360]",
+    "occurrence_decisions": {}
+  },
+  "person:also": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 361]",
+    "occurrence_decisions": {}
+  },
+  "person:waitlists": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 362]",
+    "occurrence_decisions": {}
+  },
+  "person:pdf": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 363]",
+    "occurrence_decisions": {}
+  },
+  "person:pdfs": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 364]",
+    "occurrence_decisions": {}
+  },
+  "person:it's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 365]",
+    "occurrence_decisions": {}
+  },
+  "person:nelly": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 366]",
+    "occurrence_decisions": {}
+  },
+  "person:servicenow": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 367]",
+    "occurrence_decisions": {}
+  },
+  "person:i've": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 368]",
+    "occurrence_decisions": {}
+  },
+  "person:here": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 369]",
+    "occurrence_decisions": {}
+  },
+  "person:are": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 370]",
+    "occurrence_decisions": {}
+  },
+  "person:fall": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 371]",
+    "occurrence_decisions": {}
+  },
+  "person:summer": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 372]",
+    "occurrence_decisions": {}
+  },
+  "person:scheduling": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 373]",
+    "occurrence_decisions": {}
+  },
+  "person:garcia": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 374]",
+    "occurrence_decisions": {}
+  },
+  "person:feb": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 375]",
+    "occurrence_decisions": {}
+  },
+  "person:managers": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 376]",
+    "occurrence_decisions": {}
+  },
+  "person:grad": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 377]",
+    "occurrence_decisions": {}
+  },
+  "person:tamara": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 378]",
+    "occurrence_decisions": {}
+  },
+  "person:aacrao": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 379]",
+    "occurrence_decisions": {}
+  },
+  "person:fri": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 380]",
+    "occurrence_decisions": {}
+  },
+  "person:staff": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 381]",
+    "occurrence_decisions": {}
+  },
+  "person:presidents": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 382]",
+    "occurrence_decisions": {}
+  },
+  "person:anyone": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 383]",
+    "occurrence_decisions": {}
+  },
+  "person:will": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 384]",
+    "occurrence_decisions": {}
+  },
+  "person:sorry": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 385]",
+    "occurrence_decisions": {}
+  },
+  "person:not": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 386]",
+    "occurrence_decisions": {}
+  },
+  "person:which": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 387]",
+    "occurrence_decisions": {}
+  },
+  "person:they": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 388]",
+    "occurrence_decisions": {}
+  },
+  "person:going": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 389]",
+    "occurrence_decisions": {}
+  },
+  "person:it\u2019s": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 390]",
+    "occurrence_decisions": {}
+  },
+  "person:nsc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 391]",
+    "occurrence_decisions": {}
+  },
+  "person:we\u2019re": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 392]",
+    "occurrence_decisions": {}
+  },
+  "person:ask": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 393]",
+    "occurrence_decisions": {}
+  },
+  "person:who": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 394]",
+    "occurrence_decisions": {}
+  },
+  "person:once": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 395]",
+    "occurrence_decisions": {}
+  },
+  "person:hands": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 396]",
+    "occurrence_decisions": {}
+  },
+  "person:does": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 397]",
+    "occurrence_decisions": {}
+  },
+  "person:joan": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 398]",
+    "occurrence_decisions": {}
+  },
+  "person:based": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 399]",
+    "occurrence_decisions": {}
+  },
+  "person:prd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 400]",
+    "occurrence_decisions": {}
+  },
+  "person:having": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 401]",
+    "occurrence_decisions": {}
+  },
+  "person:stg": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 402]",
+    "occurrence_decisions": {}
+  },
+  "person:department": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 403]",
+    "occurrence_decisions": {}
+  },
+  "person:however": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 404]",
+    "occurrence_decisions": {}
+  },
+  "person:sounds": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 405]",
+    "occurrence_decisions": {}
+  },
+  "person:hello": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 406]",
+    "occurrence_decisions": {}
+  },
+  "person:finishing": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 407]",
+    "occurrence_decisions": {}
+  },
+  "person:these": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 408]",
+    "occurrence_decisions": {}
+  },
+  "person:cynthia": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 409]",
+    "occurrence_decisions": {}
+  },
+  "person:reg": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 410]",
+    "occurrence_decisions": {}
+  },
+  "person:weds": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 411]",
+    "occurrence_decisions": {}
+  },
+  "person:i'd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 412]",
+    "occurrence_decisions": {}
+  },
+  "person:did": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 413]",
+    "occurrence_decisions": {}
+  },
+  "person:but": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 414]",
+    "occurrence_decisions": {}
+  },
+  "person:christopher": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 415]",
+    "occurrence_decisions": {}
+  },
+  "person:tarzan": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 416]",
+    "occurrence_decisions": {}
+  },
+  "person:access": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 417]",
+    "occurrence_decisions": {}
+  },
+  "person:calendar": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 418]",
+    "occurrence_decisions": {}
+  },
+  "person:amen": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 419]",
+    "occurrence_decisions": {}
+  },
+  "person:she": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 420]",
+    "occurrence_decisions": {}
+  },
+  "person:wonderful": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 421]",
+    "occurrence_decisions": {}
+  },
+  "person:regcal": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 422]",
+    "occurrence_decisions": {}
+  },
+  "person:goodloe": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 423]",
+    "occurrence_decisions": {}
+  },
+  "person:osd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 424]",
+    "occurrence_decisions": {}
+  },
+  "person:whoever": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 425]",
+    "occurrence_decisions": {}
+  },
+  "person:osd's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 426]",
+    "occurrence_decisions": {}
+  },
+  "person:asap": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 427]",
+    "occurrence_decisions": {}
+  },
+  "person:math": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 428]",
+    "occurrence_decisions": {}
+  },
+  "person:sharepoint": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 429]",
+    "occurrence_decisions": {}
+  },
+  "person:housing": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 430]",
+    "occurrence_decisions": {}
+  },
+  "person:those": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 431]",
+    "occurrence_decisions": {}
+  },
+  "person:our": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 432]",
+    "occurrence_decisions": {}
+  },
+  "person:attached": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 433]",
+    "occurrence_decisions": {}
+  },
+  "person:early": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 434]",
+    "occurrence_decisions": {}
+  },
+  "person:priority": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 435]",
+    "occurrence_decisions": {}
+  },
+  "person:uachieve": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 436]",
+    "occurrence_decisions": {}
+  },
+  "person:cms": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 437]",
+    "occurrence_decisions": {}
+  },
+  "person:berhanu's": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 438]",
+    "occurrence_decisions": {}
+  },
+  "person:cins": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 439]",
+    "occurrence_decisions": {}
+  },
+  "person:lol": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 440]",
+    "occurrence_decisions": {}
+  },
+  "person:patrick": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 441]",
+    "occurrence_decisions": {}
+  },
+  "person:thurs": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 442]",
+    "occurrence_decisions": {}
+  },
+  "person:cool": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 443]",
+    "occurrence_decisions": {}
+  },
+  "person:quick": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 444]",
+    "occurrence_decisions": {}
+  },
+  "person:just": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 445]",
+    "occurrence_decisions": {}
+  },
+  "person:chrs": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 446]",
+    "occurrence_decisions": {}
+  },
+  "person:ihe": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 447]",
+    "occurrence_decisions": {}
+  },
+  "person:divisions": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 448]",
+    "occurrence_decisions": {}
+  },
+  "person:good": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 449]",
+    "occurrence_decisions": {}
+  },
+  "person:we've": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 450]",
+    "occurrence_decisions": {}
+  },
+  "person:nice": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 451]",
+    "occurrence_decisions": {}
+  },
+  "person:margaret": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 452]",
+    "occurrence_decisions": {}
+  },
+  "person:orientation": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 453]",
+    "occurrence_decisions": {}
+  },
+  "person:div": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 454]",
+    "occurrence_decisions": {}
+  },
+  "person:strikeouts": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 455]",
+    "occurrence_decisions": {}
+  },
+  "person:should": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 456]",
+    "occurrence_decisions": {}
+  },
+  "person:responsible": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 457]",
+    "occurrence_decisions": {}
+  },
+  "person:column": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 458]",
+    "occurrence_decisions": {}
+  },
+  "person:notes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 459]",
+    "occurrence_decisions": {}
+  },
+  "person:residency": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 460]",
+    "occurrence_decisions": {}
+  },
+  "person:laugh": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 461]",
+    "occurrence_decisions": {}
+  },
+  "person:oof": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 462]",
+    "occurrence_decisions": {}
+  },
+  "person:yamada": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 463]",
+    "occurrence_decisions": {}
+  },
+  "person:maybe": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 464]",
+    "occurrence_decisions": {}
+  },
+  "person:excellent": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 465]",
+    "occurrence_decisions": {}
+  },
+  "person:deadlines": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 466]",
+    "occurrence_decisions": {}
+  },
+  "person:calendars": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 467]",
+    "occurrence_decisions": {}
+  },
+  "person:unfortunately": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 468]",
+    "occurrence_decisions": {}
+  },
+  "person:grading": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 469]",
+    "occurrence_decisions": {}
+  },
+  "person:open": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 470]",
+    "occurrence_decisions": {}
+  },
+  "person:was": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 471]",
+    "occurrence_decisions": {}
+  },
+  "person:ecd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 472]",
+    "occurrence_decisions": {}
+  },
+  "person:sem": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 473]",
+    "occurrence_decisions": {}
+  },
+  "person:she'll": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 474]",
+    "occurrence_decisions": {}
+  },
+  "person:ars": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 475]",
+    "occurrence_decisions": {}
+  },
+  "person:don't": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 476]",
+    "occurrence_decisions": {}
+  },
+  "person:sonoma": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 477]",
+    "occurrence_decisions": {}
+  },
+  "person:sonoma's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 478]",
+    "occurrence_decisions": {}
+  },
+  "person:using": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 479]",
+    "occurrence_decisions": {}
+  },
+  "person:grade": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 480]",
+    "occurrence_decisions": {}
+  },
+  "person:opened": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 481]",
+    "occurrence_decisions": {}
+  },
+  "person:memo": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 482]",
+    "occurrence_decisions": {}
+  },
+  "person:reminders": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 483]",
+    "occurrence_decisions": {}
+  },
+  "person:most": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 484]",
+    "occurrence_decisions": {}
+  },
+  "person:dars": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 485]",
+    "occurrence_decisions": {}
+  },
+  "person:i\u2019ve": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 486]",
+    "occurrence_decisions": {}
+  },
+  "person:diana": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 487]",
+    "occurrence_decisions": {}
+  },
+  "person:gustavo": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 488]",
+    "occurrence_decisions": {}
+  },
+  "person:jenelle": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 489]",
+    "occurrence_decisions": {}
+  },
+  "person:where": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 490]",
+    "occurrence_decisions": {}
+  },
+  "person:care": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 491]",
+    "occurrence_decisions": {}
+  },
+  "person:end": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 492]",
+    "occurrence_decisions": {}
+  },
+  "person:home": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 493]",
+    "occurrence_decisions": {}
+  },
+  "person:instructure": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 494]",
+    "occurrence_decisions": {}
+  },
+  "person:ahh": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 495]",
+    "occurrence_decisions": {}
+  },
+  "person:makes": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 496]",
+    "occurrence_decisions": {}
+  },
+  "person:fantastic": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 497]",
+    "occurrence_decisions": {}
+  },
+  "person:that\u2019s": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 498]",
+    "occurrence_decisions": {}
+  },
+  "person:sta": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 499]",
+    "occurrence_decisions": {}
+  },
+  "person:fonl": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 500]",
+    "occurrence_decisions": {}
+  },
+  "person:watch": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 501]",
+    "occurrence_decisions": {}
+  },
+  "person:ctrl": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 502]",
+    "occurrence_decisions": {}
+  },
+  "person:enjoy": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 503]",
+    "occurrence_decisions": {}
+  },
+  "person:provost": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 504]",
+    "occurrence_decisions": {}
+  },
+  "person:before": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 505]",
+    "occurrence_decisions": {}
+  },
+  "person:surprised": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 506]",
+    "occurrence_decisions": {}
+  },
+  "person:yeah": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 507]",
+    "occurrence_decisions": {}
+  },
+  "person:got": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 508]",
+    "occurrence_decisions": {}
+  },
+  "person:since": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 509]",
+    "occurrence_decisions": {}
+  },
+  "person:dssa": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 510]",
+    "occurrence_decisions": {}
+  },
+  "person:dssas": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 511]",
+    "occurrence_decisions": {}
+  },
+  "person:collier": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 512]",
+    "occurrence_decisions": {}
+  },
+  "person:scheduler": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 513]",
+    "occurrence_decisions": {}
+  },
+  "person:civitas": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 514]",
+    "occurrence_decisions": {}
+  },
+  "person:mea": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 515]",
+    "occurrence_decisions": {}
+  },
+  "person:lot": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 516]",
+    "occurrence_decisions": {}
+  },
+  "person:csu's": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 517]",
+    "occurrence_decisions": {}
+  },
+  "person:yesterday": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 518]",
+    "occurrence_decisions": {}
+  },
+  "person:they're": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 519]",
+    "occurrence_decisions": {}
+  },
+  "person:wfh": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 520]",
+    "occurrence_decisions": {}
+  },
+  "person:eot": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 521]",
+    "occurrence_decisions": {}
+  },
+  "person:julie": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 522]",
+    "occurrence_decisions": {}
+  },
+  "person:csufo": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 523]",
+    "occurrence_decisions": {}
+  },
+  "person:run": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 524]",
+    "occurrence_decisions": {}
+  },
+  "person:attendance": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 525]",
+    "occurrence_decisions": {}
+  },
+  "person:submit": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 526]",
+    "occurrence_decisions": {}
+  },
+  "person:term": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 527]",
+    "occurrence_decisions": {}
+  },
+  "person:when": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 528]",
+    "occurrence_decisions": {}
+  },
+  "person:lourdes": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 529]",
+    "occurrence_decisions": {}
+  },
+  "person:then": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 530]",
+    "occurrence_decisions": {}
+  },
+  "person:lda": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 531]",
+    "occurrence_decisions": {}
+  },
+  "person:note": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 532]",
+    "occurrence_decisions": {}
+  },
+  "person:dates": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 533]",
+    "occurrence_decisions": {}
+  },
+  "person:kyle": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 534]",
+    "occurrence_decisions": {}
+  },
+  "person:someone": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 535]",
+    "occurrence_decisions": {}
+  },
+  "person:ready": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 536]",
+    "occurrence_decisions": {}
+  },
+  "person:graduate": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 537]",
+    "occurrence_decisions": {}
+  },
+  "person:instead": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 538]",
+    "occurrence_decisions": {}
+  },
+  "person:feel": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 539]",
+    "occurrence_decisions": {}
+  },
+  "person:mending": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 540]",
+    "occurrence_decisions": {}
+  },
+  "person:well": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 541]",
+    "occurrence_decisions": {}
+  },
+  "person:fox": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 542]",
+    "occurrence_decisions": {}
+  },
+  "person:new": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 543]",
+    "occurrence_decisions": {}
+  },
+  "person:usually": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 544]",
+    "occurrence_decisions": {}
+  },
+  "person:right": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 545]",
+    "occurrence_decisions": {}
+  },
+  "person:tell": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 546]",
+    "occurrence_decisions": {}
+  },
+  "person:dq'd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 547]",
+    "occurrence_decisions": {}
+  },
+  "person:enr": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 548]",
+    "occurrence_decisions": {}
+  },
+  "person:update": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 549]",
+    "occurrence_decisions": {}
+  },
+  "person:amy's": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 550]",
+    "occurrence_decisions": {}
+  },
+  "person:giancarlo": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 551]",
+    "occurrence_decisions": {}
+  },
+  "person:amy": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 552]",
+    "occurrence_decisions": {}
+  },
+  "person:today": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 553]",
+    "occurrence_decisions": {}
+  },
+  "person:sure": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 554]",
+    "occurrence_decisions": {}
+  },
+  "person:placeholder": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 555]",
+    "occurrence_decisions": {}
+  },
+  "person:first": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 556]",
+    "occurrence_decisions": {}
+  },
+  "person:may": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 557]",
+    "occurrence_decisions": {}
+  },
+  "person:server": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 558]",
+    "occurrence_decisions": {}
+  },
+  "person:ugrd": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 559]",
+    "occurrence_decisions": {}
+  },
+  "person:page": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 560]",
+    "occurrence_decisions": {}
+  },
+  "person:pols": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 561]",
+    "occurrence_decisions": {}
+  },
+  "person:other": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 562]",
+    "occurrence_decisions": {}
+  },
+  "person:veteran": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 563]",
+    "occurrence_decisions": {}
+  },
+  "person:csun": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 564]",
+    "occurrence_decisions": {}
+  },
+  "person:disregard": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 565]",
+    "occurrence_decisions": {}
+  },
+  "person:vince": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 566]",
+    "occurrence_decisions": {}
+  },
+  "person:qbu": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 567]",
+    "occurrence_decisions": {}
+  },
+  "person:yay": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 568]",
+    "occurrence_decisions": {}
+  },
+  "person:heard": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 569]",
+    "occurrence_decisions": {}
+  },
+  "person:admissions": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 570]",
+    "occurrence_decisions": {}
+  },
+  "person:matt": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 571]",
+    "occurrence_decisions": {}
+  },
+  "person:vrc": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 572]",
+    "occurrence_decisions": {}
+  },
+  "person:task": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 573]",
+    "occurrence_decisions": {}
+  },
+  "person:service-now": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 574]",
+    "occurrence_decisions": {}
+  },
+  "person:tickets": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 575]",
+    "occurrence_decisions": {}
+  },
+  "person:sarah": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 576]",
+    "occurrence_decisions": {}
+  },
+  "person:cpp": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 577]",
+    "occurrence_decisions": {}
+  },
+  "person:production": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 578]",
+    "occurrence_decisions": {}
+  },
+  "person:joanne": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 579]",
+    "occurrence_decisions": {}
+  },
+  "person:prodution": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 580]",
+    "occurrence_decisions": {}
+  },
+  "person:much": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 581]",
+    "occurrence_decisions": {}
+  },
+  "person:speaking": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 582]",
+    "occurrence_decisions": {}
+  },
+  "person:manual": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 583]",
+    "occurrence_decisions": {}
+  },
+  "person:tammie": {
+    "decision": "Keep everywhere",
+    "replacement": "[PERSON 584]",
+    "occurrence_decisions": {}
+  },
+  "person:news": {
+    "decision": "Not Sensitive Data",
+    "replacement": "[PERSON 585]",
+    "occurrence_decisions": {}
+  }
+}

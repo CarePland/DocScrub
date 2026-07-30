@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:synthetic content control case",
+      "text": "Synthetic Content Control Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "common_english_word",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:synthetic content control case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

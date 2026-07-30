@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic field codes case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 3,
+      "occurrenceIds": [
+        "email:marcus.whitfield@example.edu:body paragraph 4:53:1",
+        "person:marcus whitfield:body paragraph 2:14:1",
+        "person:marcus whitfield:body paragraph 4:0:2"
+      ]
+    }
+  ]
+}

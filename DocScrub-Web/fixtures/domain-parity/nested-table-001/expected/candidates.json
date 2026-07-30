@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "email:grace.kim@example.edu",
+      "text": "grace.kim@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "email:grace.kim@example.edu:body table 1 table r1c2 nested table 1 table r2c2 paragraph 1:0:1"
+      ]
+    },
+    {
+      "key": "person:grace kim",
+      "text": "Grace Kim",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "ambiguous_lexical_token",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:grace kim:body paragraph 2:0:1",
+        "person:grace kim:body table 1 table r1c2 nested table 1 table r2c1 paragraph 1:0:2"
+      ]
+    },
+    {
+      "key": "person:synthetic nested table case",
+      "text": "Synthetic Nested Table Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 48,
+      "qualityReasons": [
+        "single_occurrence",
+        "document_structure_term",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic nested table case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

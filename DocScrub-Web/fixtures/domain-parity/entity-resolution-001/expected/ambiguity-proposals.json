@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "ambiguityProposals": [
+    {
+      "candidateKey": "person:andrew",
+      "possibleGroups": [
+        {
+          "id": "person:jackson:a",
+          "canonicalName": "Andrew Jackson",
+          "confidence": 91
+        },
+        {
+          "id": "person:goodloe:a",
+          "canonicalName": "Andrew Goodloe",
+          "confidence": 86
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "email:marcus.whitfield@example.edu:body paragraph 4:53:1",
+      "candidateKey": "email:marcus.whitfield@example.edu",
+      "text": "marcus.whitfield@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body paragraph 4",
+      "start": 53,
+      "end": 81,
+      "context": "Marcus Whitfield also appears here in plain text, at [marcus.whitfield@example.edu], for contrast with the field-code occurrence above."
+    },
+    {
+      "id": "person:marcus whitfield:body paragraph 2:14:1",
+      "candidateKey": "person:marcus whitfield",
+      "text": "Marcus Whitfield",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 14,
+      "end": 30,
+      "context": "Prepared for: [Marcus Whitfield]"
+    },
+    {
+      "id": "person:marcus whitfield:body paragraph 4:0:2",
+      "candidateKey": "person:marcus whitfield",
+      "text": "Marcus Whitfield",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 4",
+      "start": 0,
+      "end": 16,
+      "context": "[Marcus Whitfield] also appears here in plain text, at marcus.whitfield@example.edu, for..."
+    },
+    {
+      "id": "person:synthetic field codes case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic field codes case",
+      "text": "Synthetic Field Codes Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 26,
+      "context": "[Synthetic Field Codes Case]"
+    }
+  ]
+}

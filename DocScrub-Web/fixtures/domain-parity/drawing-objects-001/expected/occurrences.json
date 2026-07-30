@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "email:diane.okafor@example.edu:body paragraph 2:35:1",
+      "candidateKey": "email:diane.okafor@example.edu",
+      "text": "diane.okafor@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 35,
+      "end": 59,
+      "context": "Screenshot shared by Diane Okafor ([diane.okafor@example.edu]) is shown below:"
+    },
+    {
+      "id": "person:diane okafor:body paragraph 2:21:1",
+      "candidateKey": "person:diane okafor",
+      "text": "Diane Okafor",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 21,
+      "end": 33,
+      "context": "Screenshot shared by [Diane Okafor] (diane.okafor@example.edu) is shown below:"
+    },
+    {
+      "id": "person:diane okafor:body paragraph 4:0:2",
+      "candidateKey": "person:diane okafor",
+      "text": "Diane Okafor",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 4",
+      "start": 0,
+      "end": 12,
+      "context": "[Diane Okafor] confirmed the attachment in a follow-up message."
+    },
+    {
+      "id": "person:synthetic drawing objects case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic drawing objects case",
+      "text": "Synthetic Drawing Objects Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 30,
+      "context": "[Synthetic Drawing Objects Case]"
+    }
+  ]
+}

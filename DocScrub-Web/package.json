@@ -1,0 +1,17 @@
+{
+  "name": "docscrub-web",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Browser-local DocScrub review application (target architecture v0.2). Phase 1 foundation: domain schema, golden fixtures, and OOXML parser/rebuilder spike scaffolding.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "serve": "python3 -m http.server 8000",
+    "test": "echo \"No test runner installed yet -- see README.md, 'Environment constraints'\" && exit 1"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "notes": "devDependencies are NOT installed in this repository yet. The environment this scaffold was generated in had no npm registry access (see README.md). Run `npm install` on a machine with normal network access before running `npm run typecheck`."
+}

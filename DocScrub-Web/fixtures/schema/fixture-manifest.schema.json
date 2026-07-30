@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docscrub.internal/schema/fixture-manifest.schema.json",
+  "title": "DocScrub-Web fixture manifest",
+  "description": "Describes one golden-fixture case (architecture v0.2 §13). Each fixture case is a directory containing this manifest.json plus a source/ directory and an expected/ directory referenced by expectedFiles.",
+  "type": "object",
+  "required": ["schemaVersion", "fixtureId", "family", "capturedAt", "expectedFiles"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "fixtureId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Directory-safe unique id for this fixture case, e.g. 'synthetic-transcript-001'."
+    },
+    "family": {
+      "type": "string",
+      "enum": ["domain-parity", "interaction", "performance"],
+      "description": "Which of the three fixture families (architecture v0.2 §13.1-13.3) this case belongs to."
+    },
+    "sourceDocument": {
+      "type": "object",
+      "description": "Present for domain-parity and performance fixtures that are anchored to a source .docx. Interaction fixtures may omit this if they exercise pure UI state instead.",
+      "required": ["fileName", "sha256"],
+      "properties": {
+        "fileName": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "pythonAppBuild": {
+      "type": "string",
+      "description": "The APP_BUILD string from local_web_app.py at the time this fixture was captured, so a fixture can be traced back to the exact Python behavior it recorded."
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expectedFiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Relative paths (from this manifest's directory) to the JSON files holding expected output, e.g. 'expected/candidates.json'."
+    },
+    "performanceBudget": {
+      "type": "object",
+      "description": "Required when family == 'performance' (architecture v0.2 §13.3). Explicit budgets rather than a vague 'large document' criterion.",
+      "properties": {
+        "documentSizeBand": { "type": "string", "enum": ["small", "medium", "large"] },
+        "maxParseMs": { "type": "number" },
+        "maxDetectionMs": { "type": "number" },
+        "maxRenderMs": { "type": "number" },
+        "maxMemoryMb": { "type": "number" },
+        "maxRebuildMs": { "type": "number" },
+        "maxVerificationMs": { "type": "number" }
+      }
+    },
+    "interactionScenario": {
+      "type": "object",
+      "description": "Required when family == 'interaction' (architecture v0.2 §13.2). Names the scripted keyboard/focus scenario this fixture exercises.",
+      "properties": {
+        "scenarioId": { "type": "string" },
+        "component": {
+          "type": "string",
+          "enum": ["FocusNavigator", "ReviewEngine.NotQuite", "CommandDispatcher"]
+        },
+        "steps": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered, human-readable description of the command sequence dispatched, matching Commands.ts command names where possible."
+        }
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "description": "Intentional, approved deviations from Python behavior for this case (architecture v0.2 §13: 'Intentional deviations must be approved and recorded rather than silently accepted.'). Empty array means none.",
+      "items": {
+        "type": "object",
+        "required": ["field", "reason"],
+        "properties": {
+          "field": { "type": "string" },
+          "reason": { "type": "string" },
+          "approvedBy": { "type": "string" }
+        }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "family": { "const": "performance" } } },
+      "then": { "required": ["performanceBudget"] }
+    },
+    {
+      "if": { "properties": { "family": { "const": "interaction" } } },
+      "then": { "required": ["interactionScenario"] }
+    }
+  ]
+}

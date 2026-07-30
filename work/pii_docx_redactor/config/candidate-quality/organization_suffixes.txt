@@ -1,0 +1,27 @@
+# DocScrub company and organization suffixes
+# Evidence only; membership must not by itself force filtering.
+
+inc
+inc.
+llc
+l.l.c.
+llp
+l.l.p.
+ltd
+ltd.
+corp
+corp.
+co
+co.
+plc
+p.l.c.
+pc
+p.c.
+lp
+l.p.
+gmbh
+sa
+s.a.
+ag
+pllc
+p.l.l.c.

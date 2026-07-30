@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic diacritics case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:marcus webb:body paragraph 3:14:1"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "entityGroups": [
+    {
+      "id": "person:jackson:a",
+      "canonicalName": "Andrew Jackson",
+      "detectedType": "person",
+      "memberKeys": [
+        "person:andrew jackson",
+        "person:andy jackson"
+      ],
+      "confidence": 91,
+      "memberConfidences": {
+        "person:andrew jackson": 95,
+        "person:andy jackson": 91
+      },
+      "reasons": [
+        "deterministic_grouping",
+        "shared_name_signature"
+      ]
+    },
+    {
+      "id": "person:goodloe:a",
+      "canonicalName": "Andrew Goodloe",
+      "detectedType": "person",
+      "memberKeys": [
+        "person:andrew goodloe",
+        "person:andy goodloe"
+      ],
+      "confidence": 86,
+      "memberConfidences": {
+        "person:andrew goodloe": 95,
+        "person:andy goodloe": 86
+      },
+      "reasons": [
+        "deterministic_grouping",
+        "shared_name_signature"
+      ]
+    },
+    {
+      "id": "person:alvarez:m",
+      "canonicalName": "Maria Alvarez",
+      "detectedType": "person",
+      "memberKeys": [
+        "person:maria alvarez",
+        "person:maria"
+      ],
+      "confidence": 46,
+      "memberConfidences": {
+        "person:maria alvarez": 90,
+        "person:maria": 46
+      },
+      "reasons": [
+        "deterministic_grouping",
+        "shared_name_signature"
+      ]
+    }
+  ]
+}

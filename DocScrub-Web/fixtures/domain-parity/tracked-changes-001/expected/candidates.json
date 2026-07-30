@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:farrukh islamov",
+      "text": "Farrukh Islamov",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 74,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:farrukh islamov:body paragraph 2:27:1",
+        "person:farrukh islamov:body paragraph 4:0:2"
+      ]
+    },
+    {
+      "key": "person:synthetic tracked changes case",
+      "text": "Synthetic Tracked Changes Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic tracked changes case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

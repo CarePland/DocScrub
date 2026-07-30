@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic entity resolution case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 15,
+      "occurrenceIds": [
+        "person:maria alvarez:body paragraph 2:0:1",
+        "person:maria alvarez:body paragraph 3:0:2",
+        "person:andrew goodloe:body paragraph 6:0:1",
+        "person:andy goodloe:body paragraph 7:0:1",
+        "person:andrew jackson:body paragraph 8:0:1",
+        "person:andy jackson:body paragraph 9:0:1",
+        "person:carlos mendez:body paragraph 12:0:1",
+        "person:elena mendez:body paragraph 13:0:1",
+        "person:dr susan whitmore:body paragraph 14:0:1",
+        "person:susan whitmore:body paragraph 15:0:1",
+        "person:priya natarajan:body paragraph 16:0:1",
+        "person:maria:body paragraph 4:0:1",
+        "person:maria:body paragraph 5:22:2",
+        "person:andrew:body paragraph 10:0:1",
+        "person:andrew:body paragraph 11:28:2"
+      ]
+    }
+  ]
+}

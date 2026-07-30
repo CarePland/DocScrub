@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:robert lee:body table 1 table r2c1 paragraph 1:0:2"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 13,
+      "occurrenceIds": [
+        "email:robert.lee@example.edu:body paragraph 2:19:1",
+        "cin:123456789:body paragraph 2:52:1",
+        "phone:5551234567:body paragraph 3:32:1",
+        "long_numeric_id:998877665544:body paragraph 4:40:1",
+        "phone:5559876543:body table 1 table r2c2 paragraph 1:12:1",
+        "long_numeric_id:5559876543:body table 1 table r2c2 paragraph 1:12:1",
+        "person:synthetic teams:body paragraph 1:0:1",
+        "person:email transcript:body paragraph 1:20:1",
+        "person:jane smith:body paragraph 2:0:1",
+        "person:jane smith:body paragraph 3:0:2",
+        "person:jane smith:body paragraph 5:0:3",
+        "person:jane smith:section 1 header paragraph 1:16:4",
+        "person:robert lee:body paragraph 4:0:1"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<!--
+  index.html — Phase 10's thin UI shell. Deliberately plain: no CSS
+  framework, no build step beyond `tsc` (see README.md's Phase 10 section
+  and src/ui/app.ts's own top doc comment for why a bundler isn't needed).
+
+  To run: from DocScrub-Web/, run `tsc` (not --noEmit) to emit dist/, then
+  serve this directory over http (e.g. `python3 -m http.server 8000` or
+  `npx serve`) and open http://localhost:PORT/index.html in a browser.
+  Opening this file directly via file:// will NOT work -- native ES module
+  imports are blocked under the file:// origin by every major browser.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>DocScrub-Web -- Review Workspace</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --text: #1f2430;
+        --text-muted: #5b6472;
+        --border: #d8dee7;
+        --border-soft: #e7ebf1;
+        --surface: #ffffff;
+        --surface-muted: #f6f8fa;
+        --accent: #2557a7;
+        --accent-soft: #eaf1fb;
+        --good: #1e7a3d;
+        --good-soft: #eaf6ee;
+        --warn: #9a6300;
+        --warn-soft: #fdf3e3;
+        --caution: #a4222b;
+        --caution-soft: #fbeaec;
+        /* Group Check revision (2026-07-29): Rename and Ignore each need
+           their own hue distinct from --accent (already meaning "focused")
+           and --good/--caution (already meaning Keep/Redact), to give every
+           one of the four reviewer decisions its own color-coded identity
+           at a glance -- Andrew's own working layout used muted pink/green/
+           blue/purple per decision type. */
+        --rename: #3554b2;
+        --rename-soft: #ecf0fb;
+        --ignore-color: #6b3fa0;
+        --ignore-soft: #f2ecf9;
+      }
+      * { box-sizing: border-box; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 1.75rem 2rem 3rem; color: var(--text); background: var(--surface-muted); font-size: 14px; line-height: 1.45; }
+      h1 { font-size: 1.15rem; margin: 0 0 0.15rem; }
+      /* App header (2026-07-29): the plain-text "DocScrub-Web" <h1> was
+         replaced with the DocScrub logo (assets/docscrub.png) plus a small
+         version label -- see src/ui/version.ts and
+         docs/architecture/design-notes.md. The version label exists so
+         Andrew can tell at a glance whether the page he's looking at is
+         current, without cross-referencing anything, for the common case
+         (today vs. not-today); design-notes.md has the "what changed"
+         detail for anything less obvious. */
+      .app-header { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.15rem; }
+      .app-logo { display: block; height: 28px; width: auto; }
+      .app-version { color: var(--text-muted); font-size: 0.78rem; }
+      .app-subtitle { color: var(--text-muted); margin: 0 0 1.25rem; font-size: 0.85rem; }
+      button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.32rem 0.6rem; cursor: pointer; }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .top-bar { margin-bottom: 1.1rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+      .stage-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.9rem; }
+      .tab { border-color: var(--border); color: var(--text-muted); }
+      .tab-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+      .stage-body { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; }
+      .view-toggle { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; }
+      .chip-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+      .item-list { display: flex; flex-direction: column; gap: 0.4rem; }
+      .item-row { padding: 0.5rem 0.6rem; border: 1px solid var(--border-soft); border-radius: 6px; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; transition: background-color 0.3s ease, border-color 0.3s ease; }
+      /* .item-row.item-row-focused (compound selector, not just .item-row-
+         focused) so the focus cue reliably wins over a Group Check row's
+         decision-color class (.group-row-keep etc., added 2026-07-29) even
+         though both set border-color/background -- specificity settles it
+         rather than depending on which rule happens to come later in this
+         file. */
+      .item-row.item-row-focused { border-color: var(--accent); background: var(--accent-soft); }
+
+      /* Workspace Interaction Revision (2026-07-29): brief acknowledgement
+         after a decision or ambiguity link -- a soft highlight plus a
+         small checkmark badge, held for ~500ms before the view advances
+         (see app.ts's `acknowledgement` state). Deliberately just a color
+         shift + one badge, not an animation, per this app's "no unnecessary
+         visual polish" baseline -- it only needs to say "accepted," not
+         draw attention to itself. */
+      .item-row-acknowledged { border-color: var(--good); background: var(--good-soft); }
+      /* Andrew (2026-07-29, Group Check follow-up #3): "clicking one of the
+         'buttons' needs to result in a visual confirmation.. pulsing
+         border? some movement simulation.. a brief 0.5-1sec UI experience
+         that shows the user their choice was accepted." .row-acknowledged-
+         pulse layers a single border-pulse animation on top of the existing
+         .item-row-acknowledged color change, timed to ACKNOWLEDGEMENT_MS
+         (700ms) in app.ts so the animation finishes exactly as the
+         acknowledgement itself clears -- no lingering animated state after
+         isAcknowledged() goes false. A subtle scale nudge (not a jarring
+         bounce) supplies the "movement" half of Andrew's request without
+         shifting surrounding layout (transform doesn't reflow). */
+      .row-acknowledged-pulse { animation: row-acknowledged-pulse 0.7s ease-out; }
+      @keyframes row-acknowledged-pulse {
+        0% { box-shadow: 0 0 0 0 var(--good-soft); transform: scale(1); }
+        30% { box-shadow: 0 0 0 4px var(--good-soft); transform: scale(1.012); }
+        100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+      }
+      .ack-badge { display: inline-flex; align-items: center; color: var(--good); font-weight: 600; font-size: 0.82rem; }
+      .not-quite-panel { margin: 0.4rem 0 0.6rem 1.5rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); }
+      .verification-report { margin-top: 1rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; }
+      .warnings { margin: 0.5rem 0; padding: 0.6rem 0.7rem; border: 1px solid #e3b3b7; border-radius: 6px; background: var(--caution-soft); }
+      .audit-section { margin-top: 1rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; }
+      .audit-section > * { margin-right: 0.5rem; }
+      .import-summary { color: var(--text-muted); font-size: 0.85rem; }
+      .hint { color: var(--text-muted); font-style: italic; }
+
+      /* CandidateDetailPanel (Milestone 1, Phase 1) */
+      .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.78rem; font-weight: 600; background: var(--surface-muted); color: var(--text-muted); }
+      .badge-good { border-color: #bfe3cc; background: var(--good-soft); color: var(--good); }
+      .badge-warn { border-color: #efd9ab; background: var(--warn-soft); color: var(--warn); }
+      .badge-caution { border-color: #eec1c4; background: var(--caution-soft); color: var(--caution); }
+      .detail-panel { flex-basis: 100%; margin: 0.15rem 0 0.5rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+      .detail-badges { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+      .detail-summary { margin: 0 0 0.75rem; font-size: 0.95rem; }
+      .detail-section-title { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; margin: 0.5rem 0 0.15rem; }
+      .context-snippet { margin: 0.15rem 0; font-size: 0.85rem; color: var(--text-muted); }
+
+      /* Possible identities (Workspace Interaction Revision, 2026-07-29):
+         moved from top-level row buttons into this section of the detail
+         panel. One clickable option per row -- selecting it immediately
+         performs the link, no separate confirm control -- whether there is
+         one option ("displayed naturally") or several ("a selectable
+         list"), same markup either way (see renderPossibleIdentities()). */
+      .possible-identity-list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.2rem 0 0.5rem; }
+      .possible-identity-option { display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left; font: inherit; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
+      .possible-identity-option:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .possible-identity-option-current { border-color: var(--good); background: var(--good-soft); }
+      .possible-identity-name { font-weight: 600; }
+      .possible-identity-check { margin-left: auto; color: var(--good); font-weight: 600; font-size: 0.82rem; }
+      .occurrence-browser, .expert-view { margin-top: 0.6rem; border-top: 1px solid var(--border-soft); padding-top: 0.5rem; }
+      .occurrence-browser > summary, .expert-view > summary { cursor: pointer; font-weight: 600; color: var(--text); font-size: 0.85rem; }
+      .occurrence-group { margin: 0.35rem 0 0.35rem 0.9rem; }
+      .occurrence-group > summary { cursor: pointer; font-size: 0.82rem; color: var(--text-muted); }
+      .expert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 0.5rem; }
+      .expert-grid ul { margin: 0.1rem 0 0.4rem 1.1rem; padding: 0; font-size: 0.85rem; }
+      .expert-grid p { margin: 0 0 0.3rem; font-size: 0.85rem; }
+
+      /* Category Check aggregation view (Milestone 1, Phase 2) */
+      .category-check-panel { margin-bottom: 0.85rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-soft); }
+      .category-nav-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
+      .category-nav-row button { border-radius: 999px; font-size: 0.82rem; }
+
+      /* Review at Scale: search/filter/sort/bulk/command bar (Milestone 2)
+         -- styling gap closed in Milestone 3 (these classes existed and
+         worked, unstyled, since Milestone 2; folded in here rather than
+         left plain now that this file is already getting a CSS pass). */
+      .item-check-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; padding-bottom: 0.65rem; border-bottom: 1px solid var(--border-soft); }
+      .item-check-search-input { font: inherit; padding: 0.32rem 0.55rem; border: 1px solid var(--border); border-radius: 6px; min-width: 14rem; }
+      .filter-preset-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+      .filter-preset-row button { border-radius: 999px; font-size: 0.8rem; }
+      .sort-select { font: inherit; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; }
+      .bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent-soft); border-radius: 6px; background: var(--accent-soft); }
+      .bulk-selection-count { font-weight: 600; color: var(--accent); font-size: 0.85rem; }
+      /* DYNAMIC COMMAND BAR (2026-07-29): moved from below the stage body to
+         above it (app.ts's render()) so it's visible without scrolling,
+         matching Andrew's own screenshot reference -- margin adjusted from
+         margin-top to margin-bottom accordingly. Its legend text now
+         changes with focus context (commandBarLegend() in app.ts) instead
+         of being fixed per stage, so the embedded "(k)"/"(n)"/"(r)"/"(i)"/
+         "(q)" hints that used to sit on every individual action button
+         could be removed -- this one bar is now the single place that
+         vocabulary lives. */
+      .command-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 0.82rem; }
+      .command-bar-legend { color: var(--text-muted); }
+      .command-bar-selection { font-weight: 600; color: var(--accent); }
+
+      /* INLINE EDITOR REVISION (2026-07-29): replaces window.prompt() for
+         Rename/Redact text entry everywhere it appeared (Item Check/
+         Ambiguity Check per-candidate, Milestone 2 bulk selection, Not
+         Quite per-member) -- an inline input + Confirm/Cancel appended
+         right next to the button that opened it, never a separate dialog.
+         `.action-editing` marks whichever Rename/Redact button currently
+         has its editor open, the same "show which control this belongs to"
+         treatment `.group-action-active` already gives an active group
+         decision. */
+      .inline-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; flex-basis: 100%; margin-top: 0.3rem; }
+      .inline-editor-input { font: inherit; flex: 1 1 auto; min-width: 12rem; padding: 0.3rem 0.55rem; border: 1px solid var(--accent); border-radius: 6px; }
+      .action-editing { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+      /* Rename quick-pick chips (2026-07-29, Group Check Python-parity
+         revision; RESTYLED same day from radio inputs to plain buttons per
+         Andrew's direct follow-up: "selectable but not quite buttons. Each
+         gets highlighted with focus, encouraging enter" -- selecting one
+         submits immediately (see app.ts's renderInlineEditor), so these
+         read as lightweight commit actions, not a staged form control.
+         Pill-shaped and a size down from the base `button` style ("button
+         light") so a row of 2-4 of them plus "Something else…" reads as
+         one cohesive choice group, not a wall of full-weight buttons. The
+         :focus-visible ring is the "encouraging enter" cue Andrew asked
+         for -- Tab or the Left/Right/Up/Down roving-focus keys (app.ts)
+         move it between chips. */
+      .inline-editor-quick-picks { display: flex; flex-wrap: wrap; gap: 0.4rem; flex-basis: 100%; }
+      .inline-editor-quick-pick { border-radius: 999px; padding: 0.28rem 0.75rem; font-size: 0.82rem; }
+      .inline-editor-quick-pick:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .inline-editor-quick-pick-current { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+      /* Live confidence "was X%" note (2026-07-29, Group Check Python-parity
+         revision) -- muted and smaller than the current figure it follows,
+         same "informational, not alarming" treatment badges already use. */
+      .prior-score { margin-left: 0.35rem; color: var(--text-muted); font-weight: 400; font-size: 0.82em; }
+      /* Group Check member checkboxes (2026-07-29, Group Check Python-
+         parity revision) -- a way to see a group's member breakdown
+         independent of Not Quite. The member list's own expand/collapse
+         used to be a manual ▸/▾ toggle; the default-expand revision (same
+         day) made expansion follow keyboard focus instead, matching Item/
+         Ambiguity Check, and removed the toggle button entirely (see
+         app.ts's groupUncheckedMemberIds doc comment for the full history). */
+      .group-parent-checkbox { accent-color: var(--accent); }
+      .group-members { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.3rem 0 0.6rem 1.9rem; }
+      .member-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.55rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); }
+      .member-name { flex: 1 1 auto; }
+
+      /* Group Check revision (2026-07-29) -- compact, color-coded rows and
+         a working sort + 2-column layout, replacing the plain unstyled
+         Group Check rows that predated this pass. Muted backgrounds on the
+         row itself (calm, scannable at a glance, never louder than the
+         rest of the workspace); the one currently-active decision button
+         gets the SOLID, "emphatic but not aggressive" version of the same
+         hue -- reusing --caution's already-muted brick-red for Redact
+         rather than a harsher alarm red, per Andrew's own "emphatic, not
+         aggressive" instruction. */
+      .group-check-toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+      .group-sort-label { color: var(--text-muted); font-size: 0.85rem; }
+      .group-list-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
+      .group-list-grid .not-quite-panel { grid-column: 1 / -1; }
+      .group-row-label { font-weight: 600; }
+      .group-row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-left: auto; }
+      .group-reviewed-check { display: inline-flex; align-items: center; color: var(--good); font-weight: 700; font-size: 0.82rem; }
+
+      .group-row-keep { border-color: #bfe3cc; background: var(--good-soft); }
+      .group-row-rename { border-color: #c3cdf0; background: var(--rename-soft); }
+      .group-row-redact { border-color: #eec1c4; background: var(--caution-soft); }
+      .group-row-ignore { border-color: #d7c3ea; background: var(--ignore-soft); }
+      .group-row-attention { border-color: #efd9ab; background: var(--warn-soft); }
+
+      .group-action-active { font-weight: 700; }
+      .group-action-active.group-row-keep { background: var(--good); border-color: var(--good); color: #fff; }
+      .group-action-active.group-row-rename { background: var(--rename); border-color: var(--rename); color: #fff; }
+      .group-action-active.group-row-redact { background: var(--caution); border-color: var(--caution); color: #fff; }
+      .group-action-active.group-row-ignore { background: var(--ignore-color); border-color: var(--ignore-color); color: #fff; }
+      .jump-category-select { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; }
+
+      /* Reviewer Productivity (Milestone 3) */
+      .persistence-status { display: inline-block; margin: 0.15rem 0 0.5rem; font-size: 0.82rem; color: var(--text-muted); }
+      .persistence-status-warn { color: var(--warn); font-weight: 600; }
+      .persistence-status-error { color: var(--caution); font-weight: 600; }
+      .recent-documents { margin-top: 1rem; }
+      .recent-documents-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+      .recent-document-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.5rem 0.65rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); }
+      .recent-document-name { font-weight: 600; }
+      .recent-document-meta { color: var(--text-muted); font-size: 0.82rem; flex: 1 0 auto; }
+      .review-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin: 0.15rem 0 0.75rem; font-size: 0.85rem; color: var(--text-muted); }
+      .review-stats-item { white-space: nowrap; }
+      .review-stats-by-type summary { cursor: pointer; }
+      .redaction-rules-panel { margin-bottom: 0.9rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-soft); }
+      .redaction-rules-panel > summary { cursor: pointer; font-weight: 600; }
+      .redaction-rule-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; }
+      .redaction-rule-type { min-width: 8rem; font-weight: 600; }
+      .redaction-rules-preview { margin-top: 0.5rem; }
+
+      @media (max-width: 900px) {
+        .expert-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-header">
+      <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="28" />
+      <span class="app-version" title="See docs/architecture/design-notes.md for what changed in this version"></span>
+    </div>
+    <p class="app-subtitle">Review Workspace -- Milestone 3 (Reviewer Productivity). See docs/architecture/review-workspace-reconstruction.md.</p>
+    <div id="app"></div>
+    <script type="module" src="./dist/ui/app.js"></script>
+  </body>
+</html>

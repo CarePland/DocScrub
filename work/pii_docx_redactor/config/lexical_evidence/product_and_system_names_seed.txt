@@ -1,0 +1,24 @@
+acrobat
+adobe acrobat
+blackboard
+box
+canvas
+civitas
+commgen
+docusign
+dropbox
+google drive
+instructure
+microsoft teams
+moodle
+onedrive
+peoplesoft
+regcal
+salesforce
+service-now
+servicenow
+sharepoint
+slack
+teams
+uachieve
+workday

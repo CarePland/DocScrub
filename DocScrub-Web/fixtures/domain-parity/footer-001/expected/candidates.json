@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:marcus webb",
+      "text": "Marcus Webb",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:marcus webb:section 1 footer paragraph 1:12:1"
+      ]
+    },
+    {
+      "key": "person:synthetic footer case",
+      "text": "Synthetic Footer Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic footer case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

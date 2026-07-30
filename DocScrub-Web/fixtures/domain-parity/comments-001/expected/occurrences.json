@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:harold ibsen:body paragraph 2:12:1",
+      "candidateKey": "person:harold ibsen",
+      "text": "Harold Ibsen",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 12,
+      "end": 24,
+      "context": "Reviewed by [Harold Ibsen] before submission."
+    },
+    {
+      "id": "person:synthetic comments case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic comments case",
+      "text": "Synthetic Comments Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 23,
+      "context": "[Synthetic Comments Case]"
+    }
+  ]
+}

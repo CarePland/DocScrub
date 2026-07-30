@@ -1,0 +1,27 @@
+# DocScrub honorifics and titles
+# Evidence only; membership must not by itself force filtering.
+
+mr
+mr.
+mrs
+mrs.
+ms
+ms.
+miss
+dr
+dr.
+prof
+prof.
+professor
+hon
+hon.
+judge
+rev
+rev.
+officer
+sgt
+sgt.
+capt
+capt.
+captain
+dean

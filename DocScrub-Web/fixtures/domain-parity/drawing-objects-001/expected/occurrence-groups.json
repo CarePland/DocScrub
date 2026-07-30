@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic drawing objects case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 3,
+      "occurrenceIds": [
+        "email:diane.okafor@example.edu:body paragraph 2:35:1",
+        "person:diane okafor:body paragraph 2:21:1",
+        "person:diane okafor:body paragraph 4:0:2"
+      ]
+    }
+  ]
+}

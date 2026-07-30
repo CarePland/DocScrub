@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "cin:123456789",
+      "text": "123456789",
+      "detectedType": "cin",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "cin:123456789:body paragraph 2:52:1"
+      ]
+    },
+    {
+      "key": "email:robert.lee@example.edu",
+      "text": "robert.lee@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "email:robert.lee@example.edu:body paragraph 2:19:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:5559876543",
+      "text": "555-987-6543",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:5559876543:body table 1 table r2c2 paragraph 1:12:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:998877665544",
+      "text": "998877665544",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:998877665544:body paragraph 4:40:1"
+      ]
+    },
+    {
+      "key": "person:email transcript",
+      "text": "Email Transcript",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "common_english_word",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:email transcript:body paragraph 1:20:1"
+      ]
+    },
+    {
+      "key": "person:jane smith",
+      "text": "Jane Smith",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 87,
+      "qualityReasons": [
+        "moderate_frequency_bonus",
+        "strong_name_structure",
+        "known_personal_name_token",
+        "heading_context"
+      ],
+      "occurrenceIds": [
+        "person:jane smith:body paragraph 2:0:1",
+        "person:jane smith:body paragraph 3:0:2",
+        "person:jane smith:body paragraph 5:0:3",
+        "person:jane smith:section 1 header paragraph 1:16:4"
+      ]
+    },
+    {
+      "key": "person:robert lee",
+      "text": "Robert Lee",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "ambiguous_lexical_token",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:robert lee:body paragraph 4:0:1",
+        "person:robert lee:body table 1 table r2c1 paragraph 1:0:2"
+      ]
+    },
+    {
+      "key": "person:synthetic teams",
+      "text": "Synthetic Teams",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 44,
+      "qualityReasons": [
+        "single_occurrence",
+        "product_system_name",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic teams:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "key": "phone:5551234567",
+      "text": "(555) 123-4567",
+      "detectedType": "phone",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "phone:5551234567:body paragraph 3:32:1"
+      ]
+    },
+    {
+      "key": "phone:5559876543",
+      "text": "555-987-6543",
+      "detectedType": "phone",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "phone:5559876543:body table 1 table r2c2 paragraph 1:12:1"
+      ]
+    }
+  ]
+}

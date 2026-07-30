@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "cin:445566778:body paragraph 2:88:1",
+      "candidateKey": "cin:445566778",
+      "text": "445566778",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 88,
+      "end": 97,
+      "context": "...Natarajan can be reached at priya.natarajan@example.edu regarding CIN [445566778]."
+    },
+    {
+      "id": "email:priya.natarajan@example.edu:body paragraph 2:46:1",
+      "candidateKey": "email:priya.natarajan@example.edu",
+      "text": "priya.natarajan@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 46,
+      "end": 73,
+      "context": "Participant Priya Natarajan can be reached at [priya.natarajan@example.edu] regarding CIN 445566778."
+    },
+    {
+      "id": "person:participant priya natarajan:body paragraph 2:0:1",
+      "candidateKey": "person:participant priya natarajan",
+      "text": "Participant Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 0,
+      "end": 27,
+      "context": "[Participant Priya Natarajan] can be reached at priya.natarajan@example.edu regarding CIN 445566778..."
+    },
+    {
+      "id": "person:priya natarajan:body paragraph 3:34:1",
+      "candidateKey": "person:priya natarajan",
+      "text": "Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 34,
+      "end": 49,
+      "context": "A second, unfragmented mention of [Priya Natarajan] appears here for contrast."
+    },
+    {
+      "id": "person:splitting case:body paragraph 1:14:1",
+      "candidateKey": "person:splitting case",
+      "text": "Splitting Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 14,
+      "end": 28,
+      "context": "Synthetic Run-[Splitting Case]"
+    },
+    {
+      "id": "person:synthetic run:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic run",
+      "text": "Synthetic Run",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 13,
+      "context": "[Synthetic Run]-Splitting Case"
+    }
+  ]
+}

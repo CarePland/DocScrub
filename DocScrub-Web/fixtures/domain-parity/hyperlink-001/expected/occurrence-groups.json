@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:synthetic hyperlink case:body paragraph 1:0:1"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 3,
+      "occurrenceIds": [
+        "email:elena.vasquez@example.edu:body paragraph 3:50:1",
+        "person:elena vasquez:body paragraph 2:9:1",
+        "person:elena vasquez:body paragraph 3:0:2"
+      ]
+    }
+  ]
+}

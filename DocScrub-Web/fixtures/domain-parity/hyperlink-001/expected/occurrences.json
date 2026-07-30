@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "email:elena.vasquez@example.edu:body paragraph 3:50:1",
+      "candidateKey": "email:elena.vasquez@example.edu",
+      "text": "elena.vasquez@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body paragraph 3",
+      "start": 50,
+      "end": 75,
+      "context": "Elena Vasquez also appears here in plain text, at [elena.vasquez@example.edu], for contrast."
+    },
+    {
+      "id": "person:elena vasquez:body paragraph 2:9:1",
+      "candidateKey": "person:elena vasquez",
+      "text": "Elena Vasquez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 9,
+      "end": 22,
+      "context": "Contact: [Elena Vasquez]"
+    },
+    {
+      "id": "person:elena vasquez:body paragraph 3:0:2",
+      "candidateKey": "person:elena vasquez",
+      "text": "Elena Vasquez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 0,
+      "end": 13,
+      "context": "[Elena Vasquez] also appears here in plain text, at elena.vasquez@example.edu, for co..."
+    },
+    {
+      "id": "person:synthetic hyperlink case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic hyperlink case",
+      "text": "Synthetic Hyperlink Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 24,
+      "context": "[Synthetic Hyperlink Case]"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# DocScrub legal and administrative terms
+# Evidence only; membership must not by itself force filtering.
+
+plaintiff
+defendant
+petitioner
+respondent
+registrar
+chancellor
+president
+director
+manager
+department
+division
+office
+committee
+council
+board
+secretary
+administrator
+administration
+coordinator
+supervisor
+representative
+appeal
+grievance
+complaint

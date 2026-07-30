@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:synthetic text box case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic text box case",
+      "text": "Synthetic Text Box Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 23,
+      "context": "[Synthetic Text Box Case]"
+    },
+    {
+      "id": "person:winona featherstone:body paragraph 3:10:1",
+      "candidateKey": "person:winona featherstone",
+      "text": "Winona Featherstone",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 10,
+      "end": 29,
+      "context": "Note from [Winona Featherstone]"
+    }
+  ]
+}

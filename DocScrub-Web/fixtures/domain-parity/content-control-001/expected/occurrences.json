@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:synthetic content control case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic content control case",
+      "text": "Synthetic Content Control Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 30,
+      "context": "[Synthetic Content Control Case]"
+    }
+  ]
+}

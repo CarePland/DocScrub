@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:harold ibsen",
+      "text": "Harold Ibsen",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:harold ibsen:body paragraph 2:12:1"
+      ]
+    },
+    {
+      "key": "person:synthetic comments case",
+      "text": "Synthetic Comments Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic comments case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

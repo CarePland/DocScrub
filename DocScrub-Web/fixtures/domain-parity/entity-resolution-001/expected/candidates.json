@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:andrew",
+      "text": "Andrew",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 35,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "known_first_name",
+        "expanded_common_language_token",
+        "single_name_candidate"
+      ],
+      "occurrenceIds": [
+        "person:andrew:body paragraph 10:0:1",
+        "person:andrew:body paragraph 11:28:2"
+      ]
+    },
+    {
+      "key": "person:andrew goodloe",
+      "text": "Andrew Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 86,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure",
+        "known_personal_name_token"
+      ],
+      "occurrenceIds": [
+        "person:andrew goodloe:body paragraph 6:0:1"
+      ]
+    },
+    {
+      "key": "person:andrew jackson",
+      "text": "Andrew Jackson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "single_occurrence",
+        "ambiguous_lexical_token",
+        "strong_name_structure",
+        "known_personal_name_token"
+      ],
+      "occurrenceIds": [
+        "person:andrew jackson:body paragraph 8:0:1"
+      ]
+    },
+    {
+      "key": "person:andy goodloe",
+      "text": "Andy Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:andy goodloe:body paragraph 7:0:1"
+      ]
+    },
+    {
+      "key": "person:andy jackson",
+      "text": "Andy Jackson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 94,
+      "qualityReasons": [
+        "single_occurrence",
+        "ambiguous_lexical_token",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:andy jackson:body paragraph 9:0:1"
+      ]
+    },
+    {
+      "key": "person:carlos mendez",
+      "text": "Carlos Mendez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:carlos mendez:body paragraph 12:0:1"
+      ]
+    },
+    {
+      "key": "person:dr susan whitmore",
+      "text": "Dr Susan Whitmore",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 94,
+      "qualityReasons": [
+        "single_occurrence",
+        "nearby_title",
+        "address_suffix",
+        "honorific_title",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:dr susan whitmore:body paragraph 14:0:1"
+      ]
+    },
+    {
+      "key": "person:elena mendez",
+      "text": "Elena Mendez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:elena mendez:body paragraph 13:0:1"
+      ]
+    },
+    {
+      "key": "person:maria",
+      "text": "Maria",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 11,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "expanded_common_language_token",
+        "single_token_reviewable_without_negative_evidence"
+      ],
+      "occurrenceIds": [
+        "person:maria:body paragraph 4:0:1",
+        "person:maria:body paragraph 5:22:2"
+      ]
+    },
+    {
+      "key": "person:maria alvarez",
+      "text": "Maria Alvarez",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 74,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:maria alvarez:body paragraph 2:0:1",
+        "person:maria alvarez:body paragraph 3:0:2"
+      ]
+    },
+    {
+      "key": "person:priya natarajan",
+      "text": "Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:priya natarajan:body paragraph 16:0:1"
+      ]
+    },
+    {
+      "key": "person:susan whitmore",
+      "text": "Susan Whitmore",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:susan whitmore:body paragraph 15:0:1"
+      ]
+    },
+    {
+      "key": "person:synthetic entity resolution case",
+      "text": "Synthetic Entity Resolution Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "common_english_word",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:synthetic entity resolution case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

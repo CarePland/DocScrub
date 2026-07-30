@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "person:marcus webb",
+      "text": "Marcus Webb",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:marcus webb:body paragraph 3:14:1"
+      ]
+    },
+    {
+      "key": "person:synthetic diacritics case",
+      "text": "Synthetic Diacritics Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic diacritics case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

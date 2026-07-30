@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "cin:445566778",
+      "text": "445566778",
+      "detectedType": "cin",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "cin:445566778:body paragraph 2:88:1"
+      ]
+    },
+    {
+      "key": "email:priya.natarajan@example.edu",
+      "text": "priya.natarajan@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "email:priya.natarajan@example.edu:body paragraph 2:46:1"
+      ]
+    },
+    {
+      "key": "person:participant priya natarajan",
+      "text": "Participant Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 98,
+      "qualityReasons": [
+        "single_occurrence",
+        "email_address_evidence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:participant priya natarajan:body paragraph 2:0:1"
+      ]
+    },
+    {
+      "key": "person:priya natarajan",
+      "text": "Priya Natarajan",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:priya natarajan:body paragraph 3:34:1"
+      ]
+    },
+    {
+      "key": "person:splitting case",
+      "text": "Splitting Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:splitting case:body paragraph 1:14:1"
+      ]
+    },
+    {
+      "key": "person:synthetic run",
+      "text": "Synthetic Run",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 48,
+      "qualityReasons": [
+        "single_occurrence",
+        "address_suffix",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic run:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

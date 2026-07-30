@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "cin:123456789:body paragraph 2:52:1",
+      "candidateKey": "cin:123456789",
+      "text": "123456789",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 52,
+      "end": 61,
+      "context": "Jane Smith emailed robert.lee@example.edu about CIN [123456789]."
+    },
+    {
+      "id": "email:robert.lee@example.edu:body paragraph 2:19:1",
+      "candidateKey": "email:robert.lee@example.edu",
+      "text": "robert.lee@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 19,
+      "end": 41,
+      "context": "Jane Smith emailed [robert.lee@example.edu] about CIN 123456789."
+    },
+    {
+      "id": "long_numeric_id:5559876543:body table 1 table r2c2 paragraph 1:12:1",
+      "candidateKey": "long_numeric_id:5559876543",
+      "text": "555-987-6543",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body table 1 table r2c2 paragraph 1",
+      "start": 12,
+      "end": 24,
+      "context": "Please call [555-987-6543]."
+    },
+    {
+      "id": "long_numeric_id:998877665544:body paragraph 4:40:1",
+      "candidateKey": "long_numeric_id:998877665544",
+      "text": "998877665544",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 4",
+      "start": 40,
+      "end": 52,
+      "context": "Robert Lee mentioned account identifier [998877665544]."
+    },
+    {
+      "id": "person:email transcript:body paragraph 1:20:1",
+      "candidateKey": "person:email transcript",
+      "text": "Email Transcript",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 20,
+      "end": 36,
+      "context": "Synthetic Teams and [Email Transcript]"
+    },
+    {
+      "id": "person:jane smith:body paragraph 2:0:1",
+      "candidateKey": "person:jane smith",
+      "text": "Jane Smith",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 0,
+      "end": 10,
+      "context": "[Jane Smith] emailed robert.lee@example.edu about CIN 123456789."
+    },
+    {
+      "id": "person:jane smith:body paragraph 3:0:2",
+      "candidateKey": "person:jane smith",
+      "text": "Smith, Jane",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 0,
+      "end": 11,
+      "context": "[Smith, Jane] replied by phone at (555) 123-4567 on 01/12/2026."
+    },
+    {
+      "id": "person:jane smith:body paragraph 5:0:3",
+      "candidateKey": "person:jane smith",
+      "text": "Jane Smith",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 5",
+      "start": 0,
+      "end": 10,
+      "context": "[Jane Smith] and Jane Q Smith are different test names."
+    },
+    {
+      "id": "person:jane smith:section 1 header paragraph 1:16:4",
+      "candidateKey": "person:jane smith",
+      "text": "Jane Smith",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "section 1 header paragraph 1",
+      "start": 16,
+      "end": 26,
+      "context": "Header contact: [Jane Smith]"
+    },
+    {
+      "id": "person:robert lee:body paragraph 4:0:1",
+      "candidateKey": "person:robert lee",
+      "text": "Robert Lee",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 4",
+      "start": 0,
+      "end": 10,
+      "context": "[Robert Lee] mentioned account identifier 998877665544."
+    },
+    {
+      "id": "person:robert lee:body table 1 table r2c1 paragraph 1:0:2",
+      "candidateKey": "person:robert lee",
+      "text": "Robert Lee",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body table 1 table r2c1 paragraph 1",
+      "start": 0,
+      "end": 10,
+      "context": "[Robert Lee]"
+    },
+    {
+      "id": "person:synthetic teams:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic teams",
+      "text": "Synthetic Teams",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 15,
+      "context": "[Synthetic Teams] and Email Transcript"
+    },
+    {
+      "id": "phone:5551234567:body paragraph 3:32:1",
+      "candidateKey": "phone:5551234567",
+      "text": "(555) 123-4567",
+      "detectedType": "phone",
+      "source": "regex",
+      "location": "body paragraph 3",
+      "start": 32,
+      "end": 46,
+      "context": "Smith, Jane replied by phone at [(555) 123-4567] on 01/12/2026."
+    },
+    {
+      "id": "phone:5559876543:body table 1 table r2c2 paragraph 1:12:1",
+      "candidateKey": "phone:5559876543",
+      "text": "555-987-6543",
+      "detectedType": "phone",
+      "source": "regex",
+      "location": "body table 1 table r2c2 paragraph 1",
+      "start": 12,
+      "end": 24,
+      "context": "Please call [555-987-6543]."
+    }
+  ]
+}

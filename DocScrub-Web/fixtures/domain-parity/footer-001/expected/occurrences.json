@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:marcus webb:section 1 footer paragraph 1:12:1",
+      "candidateKey": "person:marcus webb",
+      "text": "Marcus Webb",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "section 1 footer paragraph 1",
+      "start": 12,
+      "end": 23,
+      "context": "Prepared by [Marcus Webb] -- confidential"
+    },
+    {
+      "id": "person:synthetic footer case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic footer case",
+      "text": "Synthetic Footer Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 21,
+      "context": "[Synthetic Footer Case]"
+    }
+  ]
+}

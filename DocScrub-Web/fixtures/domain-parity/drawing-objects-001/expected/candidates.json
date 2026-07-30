@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "email:diane.okafor@example.edu",
+      "text": "diane.okafor@example.edu",
+      "detectedType": "email",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "email:diane.okafor@example.edu:body paragraph 2:35:1"
+      ]
+    },
+    {
+      "key": "person:diane okafor",
+      "text": "Diane Okafor",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "email_address_evidence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:diane okafor:body paragraph 2:21:1",
+        "person:diane okafor:body paragraph 4:0:2"
+      ]
+    },
+    {
+      "key": "person:synthetic drawing objects case",
+      "text": "Synthetic Drawing Objects Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:synthetic drawing objects case:body paragraph 1:0:1"
+      ]
+    }
+  ]
+}

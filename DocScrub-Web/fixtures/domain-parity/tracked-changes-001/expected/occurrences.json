@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:farrukh islamov:body paragraph 2:27:1",
+      "candidateKey": "person:farrukh islamov",
+      "text": "Farrukh Islamov",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 2",
+      "start": 27,
+      "end": 42,
+      "context": "Newly added reviewer note: [Farrukh Islamov]"
+    },
+    {
+      "id": "person:farrukh islamov:body paragraph 4:0:2",
+      "candidateKey": "person:farrukh islamov",
+      "text": "Farrukh Islamov",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 4",
+      "start": 0,
+      "end": 15,
+      "context": "[Farrukh Islamov] also appears here in plain text, for contrast."
+    },
+    {
+      "id": "person:synthetic tracked changes case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic tracked changes case",
+      "text": "Synthetic Tracked Changes Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 30,
+      "context": "[Synthetic Tracked Changes Case]"
+    }
+  ]
+}

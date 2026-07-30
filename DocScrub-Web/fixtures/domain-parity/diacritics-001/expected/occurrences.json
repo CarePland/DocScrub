@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "person:marcus webb:body paragraph 3:14:1",
+      "candidateKey": "person:marcus webb",
+      "text": "Marcus Webb",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 3",
+      "start": 14,
+      "end": 25,
+      "context": "For contrast, [Marcus Webb] (ASCII-only) attended as well."
+    },
+    {
+      "id": "person:synthetic diacritics case:body paragraph 1:0:1",
+      "candidateKey": "person:synthetic diacritics case",
+      "text": "Synthetic Diacritics Case",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 1",
+      "start": 0,
+      "end": 25,
+      "context": "[Synthetic Diacritics Case]"
+    }
+  ]
+}

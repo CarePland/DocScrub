@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "occurrenceGroups": [
+    {
+      "id": "occurrence-group-standalone",
+      "kind": "standalone",
+      "label": "Standalone occurrences",
+      "occurrenceCount": 3,
+      "occurrenceIds": [
+        "email:grace.kim@example.edu:body table 1 table r1c2 nested table 1 table r2c2 paragraph 1:0:1",
+        "person:synthetic nested table case:body paragraph 1:0:1",
+        "person:grace kim:body table 1 table r1c2 nested table 1 table r2c1 paragraph 1:0:2"
+      ]
+    },
+    {
+      "id": "occurrence-group-contextual",
+      "kind": "contextual",
+      "label": "Occurrences in message text",
+      "occurrenceCount": 1,
+      "occurrenceIds": [
+        "person:grace kim:body paragraph 2:0:1"
+      ]
+    }
+  ]
+}
