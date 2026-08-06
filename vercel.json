@@ -1,5 +1,17 @@
 {
   "installCommand": "cd app && npm install",
   "buildCommand": "cd app && npm run build",
-  "outputDirectory": "app"
+  "outputDirectory": "app",
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.docscrub.app"
+        }
+      ],
+      "destination": "/landing.html"
+    }
+  ]
 }

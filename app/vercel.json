@@ -1,5 +1,17 @@
 {
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.docscrub.app"
+        }
+      ],
+      "destination": "/landing.html"
+    }
+  ]
 }
