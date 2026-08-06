@@ -1,5 +1,7 @@
 # Reviewer Experience Review — Python DocScrub vs. DocScrub-Web
 
+**Class: historical — the source review from which `reviewer-experience-backlog.md` was derived. This document records the Python-vs-Web comparison and its reasoning as of 2026-07-29; the backlog and the wave implementation plans/findings at the repository root track execution. Content below is unchanged — this banner (added 2026-07-30) is the only addition.**
+
 **Date:** 2026-07-29
 **Scope:** Interaction design and reviewer workflow only. No implementation.
 **Reference for reviewer interaction:** `work/pii_docx_redactor/local_web_app.py` (the embedded HTML/CSS/JS reviewer UI, lines 1181–5104).

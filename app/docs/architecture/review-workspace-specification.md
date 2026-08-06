@@ -2,7 +2,8 @@
 
 **DocScrub-Web — the mature production reviewer workspace**
 
-Status: authoritative behavioral specification, reconstructed from existing project sources. Not an implementation document, not a design proposal — a record of what this project's own accumulated evidence says the reviewer experience is, has been explicitly deferred, or has only been speculatively proposed.
+Status: canonical — authoritative behavioral specification, reconstructed from existing project sources.
+Last updated: 2026-07-30 (sources-note correction below; behavioral content unchanged). Not an implementation document, not a design proposal — a record of what this project's own accumulated evidence says the reviewer experience is, has been explicitly deferred, or has only been speculatively proposed.
 
 ---
 
@@ -25,7 +26,7 @@ Every substantive claim carries a citation to its source: a file path (with line
 - The Python oracle at `work/pii_docx_redactor/` (`local_web_app.py`, `redactor/review_queue.py`, `redactor/replacement_rules.py`, `redactor/explanations.py`) — read directly for behavior the TypeScript side's own comments describe as "ported," "not ported," or "deliberately not ported."
 - Every `verify/*.ts` suite's own doc comments, which in this codebase routinely explain *why* a behavior is tested the way it is, not just what is tested.
 
-Two sources the reconstruction document itself cites — `docs/architecture/DocScrub-Web_Target_Architecture_v0.2.docx` and `docs/architecture/phase-1-acceptance-criteria.md` — no longer exist in the repository tree (confirmed by exhaustive glob). Everything from the v0.2 architecture document that survives does so as direct quotation inside `review-workspace-reconstruction.md`, and is cited as such below.
+**Correction (2026-07-30):** an earlier revision of this paragraph claimed that two sources the reconstruction document cites — `DocScrub-Web_Target_Architecture_v0.2.docx` and `phase-1-acceptance-criteria.md` — "no longer exist in the repository tree (confirmed by exhaustive glob)." That claim was false. The glob was exhaustive only over the `app/` subtree; both files existed the whole time at the repository-level `docs/architecture/` path, one directory above. (The general lesson is now codified in `../standards/documentation-standards.md`: repository-wide absence claims require repository-wide verification.) As of the 2026-07-30 documentation-root consolidation, both files live at `app/docs/architecture/` — i.e., in this document's own directory. This specification was written without consulting the v0.2 `.docx` directly; every v0.2 statement it relies on entered via direct quotation inside `review-workspace-reconstruction.md` and is cited as such below. Those quotations can now be checked against the original.
 
 ---
 

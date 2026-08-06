@@ -1,5 +1,7 @@
 # Reviewer Experience — Wave 1 Implementation Plan
 
+**Class: working — retired (2026-07-30).** Executed in full; `reviewer-experience-wave-1-findings.md` is the record of what actually landed. Not authoritative for current behavior.
+
 **Companion to:** `reviewer-experience-backlog.md` (approved), `reviewer-experience-review.md` (design reasoning, closed).
 **Date:** 2026-07-29
 **Purpose:** Implementation sequencing only. No design changes, no new items, no re-litigation of accepted conclusions.

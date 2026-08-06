@@ -422,6 +422,15 @@ derived from `ReviewEngine`'s durable state, never duplicating it.
   Ambiguity Check likewise has no separate resolution mechanism --
   `update_ambiguous_match()` calls the same `update_decision()` any other
   candidate decision uses.
+  - **Post-migration update (Phase 2, 2026-08-02)**: a SIXTH stage, Type
+    Check, now sits between Group Check and Item Check (traversal units =
+    semantic types; resolution derives entirely from the existing
+    per-candidate pipeline -- no new durable decision kind), and the
+    VISIBLE workflow is conditional: stages with no remaining work are
+    hidden from tabs and Shift+←/→ traversal (QA/Output always retained).
+    This is a deliberate post-migration product evolution, not part of the
+    Python oracle -- see
+    `docs/detection/type-check-integration-and-workflow-navigation.md`.
 - **Deliberately not ported**: 2D grid arrow movement in the Results view
   (`candidateGridColumnCount()` is viewport-width-dependent -- FocusNavigator
   must never query rendered-element positions; `moveItem` stays

@@ -1,5 +1,7 @@
 # Review Workspace Reconstruction
 
+**Class: historical — superseded by `review-workspace-specification.md` (which extends and supersedes this document's specification and gap analysis; see its own "How to read this document" section). Retained as the reconstruction record; several individual items below already carry SUPERSEDED annotations added at milestone time. Content below is unchanged — this banner (added 2026-07-30) is the only addition.**
+
 **Status:** Specification, gap analysis, and roadmap — no implementation in this
 document. Written per Andrew's instruction: "Your task is not to invent a new
 interface. Instead, reconstruct the intended production Review Workspace from

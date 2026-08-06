@@ -1,8 +1,10 @@
 # Reviewer Experience — Wave 1 Findings
 
+**Class: working (2026-07-30).** Wave 1 record, complete and browser-validated. Durable conclusions await promotion into `app/docs/` (documentation initiative, Phase 3); until promoted, this document is not citable as canonical authority.
+
 **Companion to:** `reviewer-experience-wave-1-implementation-plan.md` (followed), `reviewer-experience-backlog.md`, `reviewer-experience-review.md`.
 **Date:** 2026-07-29
-**Status:** Implementation complete. All automated verification green. **Browser validation pending** — RX-14 and RX-01 are perceptual/DOM-only and are NOT claimed verified (see "Limits of the Node harness").
+**Status:** Complete and **browser-validated** (updated 2026-07-29, per the Wave 2 implementation plan's precondition note: the live pass came back clean — RX-14, RX-01, RX-02a, RX-02b all confirmed). The "Browser validation pending" caveats below are retained as a record of what the Node harness could and could not claim at implementation time.
 
 ## Milestones
 

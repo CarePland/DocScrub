@@ -2,7 +2,7 @@
 
 **Companion to:** `reviewer-experience-review.md` (reasoning, comparison, and classification for every item here).
 **Date:** 2026-07-29
-**Status:** Proposed. Nothing here is approved; each item is written to be approved, deferred, or rejected individually.
+**Class: working — live tracker.** (Status updated 2026-07-30; the original 2026-07-29 status read "Proposed. Nothing here is approved.") The backlog was subsequently approved (recorded in `reviewer-experience-wave-1-implementation-plan.md`) and execution began: Wave 1 is complete and browser-validated; Wave 2 is implemented with browser validation pending for Steps 3–5; Waves 3–5 remain open (see the `reviewer-experience-wave-*` documents at the repository root). This document remains the live tracker until the waves complete, then archives as historical. Per-item text below is as written 2026-07-29 and is not individually updated here.
 
 Each item is independent unless a dependency is stated. Effort is S (< half a day), M (half a day to two days), L (multi-day). Acceptance criteria are written as observable behavior another engineer can verify without interpretation.
 
