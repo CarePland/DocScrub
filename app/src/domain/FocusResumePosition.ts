@@ -48,6 +48,7 @@
  */
 
 import type { WorkflowStage } from "./FocusState.js";
+import { WORKFLOW_STAGE_ORDER } from "./FocusState.js";
 
 export const FOCUS_RESUME_SCHEMA_VERSION = 1;
 
@@ -68,7 +69,14 @@ export function serializeFocusResumePosition(position: FocusResumePosition): str
 
 export type FocusResumeRestoreResult = { ok: true; position: FocusResumePosition } | { ok: false; reason: string };
 
-const KNOWN_STAGES: readonly WorkflowStage[] = ["ambiguity-check", "group-check", "item-check", "qa", "output"];
+// PHASE 2 FIX (2026-08-02, found by the full verification battery, not by
+// inspection): this list was a hand-maintained DUPLICATE of
+// WORKFLOW_STAGE_ORDER's members, so adding "type-check" to the union made
+// every save file captured while focused on the new stage fail
+// deserialization ("invalid stage") -- the exact drift class "derive,
+// don't duplicate" exists to prevent. Now derived from the canonical
+// order; any future stage addition is covered automatically.
+const KNOWN_STAGES: readonly WorkflowStage[] = WORKFLOW_STAGE_ORDER;
 
 /**
  * Validates a deserialized blob's SHAPE only -- is this even a well-formed

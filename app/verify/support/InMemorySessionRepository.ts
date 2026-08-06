@@ -22,11 +22,14 @@
  * Rebuilder-adjacent browser-only concerns.
  */
 
-import type { LocalSessionRepository, SessionRecord, SessionSummary, QuotaStatus } from "../../src/io/LocalSessionRepository.js";
+import type { LocalSessionRepository, SessionRecord, SessionSummary, QuotaStatus, PersistedUiState } from "../../src/io/LocalSessionRepository.js";
 import { summarizeSessionRecord } from "../../src/io/LocalSessionRepository.js";
+import type { DecisionMemoryRecord } from "../../src/domain/DecisionMemory.js";
 
 export class InMemorySessionRepository implements LocalSessionRepository {
   private readonly records = new Map<string, SessionRecord>();
+  private readonly uiStates = new Map<string, PersistedUiState>();
+  private readonly decisionMemory = new Map<string, DecisionMemoryRecord>();
   private quotaStatus: QuotaStatus = "ok";
   private failNextSave: string | null = null;
 
@@ -49,6 +52,24 @@ export class InMemorySessionRepository implements LocalSessionRepository {
 
   async delete(documentId: string): Promise<void> {
     this.records.delete(documentId);
+    this.uiStates.delete(documentId); // mirrors the real store: UI state dies with its session
+    this.decisionMemory.delete(documentId); // ...and so does what it taught
+  }
+
+  async saveUiState(documentId: string, uiState: PersistedUiState): Promise<void> {
+    this.uiStates.set(documentId, uiState);
+  }
+
+  async loadUiState(documentId: string): Promise<PersistedUiState | null> {
+    return this.uiStates.get(documentId) ?? null;
+  }
+
+  async saveDecisionMemory(record: DecisionMemoryRecord): Promise<void> {
+    this.decisionMemory.set(record.documentId, record);
+  }
+
+  async listDecisionMemory(excludeDocumentId?: string): Promise<DecisionMemoryRecord[]> {
+    return [...this.decisionMemory.values()].filter((record) => record.documentId !== excludeDocumentId);
   }
 
   async listRecent(limit?: number): Promise<SessionSummary[]> {

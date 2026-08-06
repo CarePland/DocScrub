@@ -206,13 +206,40 @@ function wentThroughNotQuite(session: ReviewSession, groupId: string): boolean {
   return false;
 }
 
+/**
+ * DATA MINIMIZATION (AG, 2026-08-04). This function used to emit two
+ * fields carrying raw personal text out of the application:
+ *
+ *   canonicalName: proposal?.canonicalName ?? decision.groupId
+ *   groupId:       decision.groupId          // "person:goodloe:a"
+ *
+ * `canonicalName` is gone. `groupId` is replaced by a per-record opaque
+ * alias, because the domain constructs group ids as
+ * `person:${surname}:${firstInitial}` -- the id was itself a surname.
+ *
+ * WHY THIS WENT UNSEEN. The `??` fallback did the hiding: when a group
+ * decision had no matching proposal, `canonicalName` fell back to the id,
+ * so artifacts carried "person:goodloe:a" rather than "Andrew Goodloe" --
+ * and the verification suite searched only for whole names, which that
+ * string does not contain. Both halves had to be wrong for the leak to be
+ * invisible, and both are fixed here (the suite now searches name TOKENS).
+ *
+ * ALIASES ARE ASSIGNED AFTER THE SORT, deliberately, so the numbering
+ * follows the record's own published order and is reproducible: the same
+ * grouping and session always produce the same aliases, which is what the
+ * determinism check (two exports must be byte-identical) requires.
+ */
 function buildEntityGroups(grouping: GroupingResult, session: ReviewSession): AuditedEntityGroup[] {
   const proposalByGroupId = new Map(grouping.entityGroupProposals.map((p) => [p.groupId, p]));
-  const groups: AuditedEntityGroup[] = Object.values(session.groupDecisions).map((decision) => {
+  const decisions = Object.values(session.groupDecisions).slice();
+  // Sort on the DOMAIN id (stable and meaningful) before aliasing, so the
+  // alias sequence is a deterministic function of the input rather than of
+  // object-key iteration order.
+  decisions.sort((a, b) => (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0));
+  return decisions.map((decision, index) => {
     const proposal = proposalByGroupId.get(decision.groupId);
     return {
-      groupId: decision.groupId,
-      canonicalName: proposal?.canonicalName ?? decision.groupId,
+      groupId: `group-${index + 1}`,
       detectedType: proposal?.detectedType ?? "unknown",
       decision: decision.decision,
       decidedAt: decision.decidedAt,
@@ -220,8 +247,6 @@ function buildEntityGroups(grouping: GroupingResult, session: ReviewSession): Au
       wentThroughNotQuite: wentThroughNotQuite(session, decision.groupId),
     };
   });
-  groups.sort((a, b) => (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0));
-  return groups;
 }
 
 function buildAmbiguityResolutions(session: ReviewSession): AuditedAmbiguityResolution[] {

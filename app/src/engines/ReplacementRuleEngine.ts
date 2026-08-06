@@ -80,7 +80,12 @@ export { defaultReplacementRuleConfig } from "../domain/ReplacementRule.js";
  *  doc comment); keeping ONE canonical copy, in the engine that now owns
  *  this decision, is more correct than an import that reaches back into a
  *  module whose own placeholder logic this engine is replacing. */
-function genericPlaceholder(detectedType: string): string {
+/* Exported (additively, 2026-08-01) for the UI's Redaction Rules panel:
+ * its Python-layout rebuild shows each type's CURRENT replacement text in
+ * an always-visible input, which for an untouched "generic" rule is
+ * exactly this default -- surfacing the engine's own text rather than
+ * duplicating the mapping in the UI layer. No behavioral change. */
+export function genericPlaceholder(detectedType: string): string {
   switch (detectedType) {
     case "email":
       return "[REDACTED EMAIL]";

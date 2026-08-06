@@ -153,16 +153,35 @@
 import type { MemberAction } from "./NotQuite.js";
 import type { WorkflowStage } from "./FocusState.js";
 import type { DecisionReuseProposal } from "./DecisionReuse.js";
+import type { RelationshipKind } from "./StructuralRelationship.js";
 import type { CandidateDecisionKind } from "./ReviewSession.js";
 import type { ReplacementRuleConfig } from "./ReplacementRule.js";
 
 // ---- review.* -- routed to ReviewEngine ------------------------------
 
+/**
+ * DECISION PROVENANCE, Pass 1 of the scope architecture (AG, 2026-08-03):
+ * the four direct candidate commands and bulkApplyDecision carry an
+ * optional `scope?: string` — the serialized review scope (see
+ * src/ui/reviewScope.ts's scopeDescriptor) the reviewer was WORKING IN
+ * when the action fired. Semantics are deliberately "the scope active at
+ * dispatch," not "the set the action applied to": the command's own
+ * candidateId(s) already record the applied set exactly. session.ts
+ * copies the value into the corresponding review-event payloads (the
+ * durable, append-only history of the act) and deliberately NOT onto
+ * CandidateDecision (mutable current state) — storing provenance on state
+ * would need an invalidation path per revocation route, which is exactly
+ * why the earlier provenance investigation stayed derived (see the
+ * docscrub-decision-provenance-gap record). Additive and optional: a
+ * command without it behaves byte-identically to before, and only
+ * app.ts's dispatch choke point stamps it (Item Check only in Pass 1).
+ */
+
 export type ReviewCommand =
-  | { family: "review"; type: "keepCandidate"; candidateId: string }
-  | { family: "review"; type: "renameCandidate"; candidateId: string; replacement: string }
-  | { family: "review"; type: "redactCandidate"; candidateId: string; replacement?: string }
-  | { family: "review"; type: "ignoreCandidate"; candidateId: string }
+  | { family: "review"; type: "keepCandidate"; candidateId: string; scope?: string }
+  | { family: "review"; type: "renameCandidate"; candidateId: string; replacement: string; scope?: string }
+  | { family: "review"; type: "redactCandidate"; candidateId: string; replacement?: string; scope?: string }
+  | { family: "review"; type: "ignoreCandidate"; candidateId: string; scope?: string }
   | { family: "review"; type: "enterNotQuite"; groupId: string }
   | {
       family: "review";
@@ -223,6 +242,7 @@ export type ReviewCommand =
       candidateIds: string[];
       decision: CandidateDecisionKind;
       replacement?: string;
+      scope?: string;
     }
   /** Ambiguity Check correction (v10) -- the reviewer confirms candidateId
    *  refers to the entity identified by groupId, one of that candidate's
@@ -235,7 +255,20 @@ export type ReviewCommand =
    *  Declining a suggestion has no dedicated command -- dispatch
    *  keepCandidate/renameCandidate/redactCandidate/ignoreCandidate directly
    *  instead, exactly as Ambiguity Check already allows today. */
-  | { family: "review"; type: "linkAmbiguousCandidate"; candidateId: string; groupId: string };
+  | { family: "review"; type: "linkAmbiguousCandidate"; candidateId: string; groupId: string }
+  /** Structural Relationship Review (2026-07-30) -- the reviewer marks a
+   *  proposed structural relationship (acronym/full-name, shared
+   *  identifier pattern -- see StructuralRelationship.ts) as "Unrelated":
+   *  the proposal DISSOLVES and nothing else happens. Deliberately NOT a
+   *  decision about any candidate -- it never writes candidateDecisions,
+   *  never classifies anything as non-sensitive, and every member
+   *  continues through the normal per-candidate review pipeline. Carries
+   *  the proposal's own facts (kind, members) so the durable session/audit
+   *  record stands alone without re-running detection. Accepting a
+   *  relationship needs no command of its own: "Keep/Change/Redact
+   *  All/Selected" are ordinary bulkApplyDecision dispatches over the
+   *  proposal's members. */
+  | { family: "review"; type: "dismissRelationship"; proposalId: string; relationshipKind: RelationshipKind; candidateIds: string[] };
 
 // ---- navigation.* -- routed to FocusNavigator -------------------------
 //

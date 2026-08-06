@@ -152,5 +152,47 @@ checkAdvance(
   "e"
 );
 
+console.log("--- SEPARATION: the anchor itself LEAVES the list (AG, 2026-08-03 regression) ---");
+// "Separate these" is the one action that removes a row from view as a
+// side effect of deciding it. The choke point's own last resort -- remain
+// on the item just decided -- therefore parked focus on a group that no
+// longer rendered, which reads to the reviewer as "there is no focused
+// item at all". completeSplitReview re-anchors on the removed group's
+// PREDECESSOR against the post-hide list; these pin that composition.
+{
+  const before = ["g1", "g2", "g3"]; // g2 is the one being separated
+  const afterHide = ["g1", "g3"];
+  checkAdvance(
+    "unresolved work remains: focus continues FORWARD from the separated group's position, never onto the hidden group",
+    advanceWithinVisibleList("g1", afterHide, resolvedIn(["g1", "g2"])),
+    "g3"
+  );
+  checkAdvance(
+    "everything resolved: returns null, so the caller falls back to a VISIBLE anchor rather than the hidden one",
+    advanceWithinVisibleList("g1", afterHide, resolvedIn(["g1", "g2", "g3"])),
+    null
+  );
+  checkAdvance(
+    "the separated group is the FIRST row: a null anchor scans from the start of what is left",
+    advanceWithinVisibleList(null, ["g2", "g3"], resolvedIn(["g1"])),
+    "g2"
+  );
+  checkAdvance(
+    "an anchor that was itself hidden earlier resolves to -1 and still scans the whole remaining list",
+    advanceWithinVisibleList("gone", afterHide, resolvedIn(["g1"])),
+    "g3"
+  );
+  check(
+    "the hidden group can never be the landing, in any of these",
+    [
+      advanceWithinVisibleList("g1", afterHide, resolvedIn(["g1", "g2"])),
+      advanceWithinVisibleList("g1", afterHide, resolvedIn(["g1", "g2", "g3"])),
+      advanceWithinVisibleList("gone", afterHide, resolvedIn(["g1"])),
+    ].every((landing) => landing !== "g2"),
+    ""
+  );
+  check("the pre-hide order still knows where the separated group was", before.indexOf("g2") === 1 && before[before.indexOf("g2") - 1] === "g1", "");
+}
+
 console.log(`\n${passCount}/${passCount + failCount} checks passed`);
 process.exitCode = failCount === 0 ? 0 : 1;

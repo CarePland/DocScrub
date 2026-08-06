@@ -97,19 +97,24 @@ import { sequenceRatio } from "./sequence-ratio.js";
 // def _tokens(text: str) -> list[str]:
 // NOTE: no NFKC normalization here -- see this file's doc comment, point 2.
 const TOKEN_RE = /[A-Za-z][A-Za-z'’.-]*/g;
-function tokens(text: string): string[] {
+// SEMANTIC RELATIONSHIP KNOWLEDGE (2026-07-30): several previously-private
+// helpers below are now EXPORTED (additive keyword only -- no logic
+// changed, parity output byte-identical) so semantic-augmentation.ts can
+// reuse the port's own tokenization/anchor machinery instead of
+// re-implementing it. See that file's doc comment.
+export function tokens(text: string): string[] {
   return text.match(TOKEN_RE) ?? [];
 }
 
 // def _clean_token(token: str) -> str:
-function cleanToken(token: string): string {
+export function cleanToken(token: string): string {
   // Python's str.strip(" .,'’") strips any of these chars from both ends,
   // any number of times, in any order -- not a fixed prefix/suffix.
   return token.replace(/^[ .,'’]+|[ .,'’]+$/g, "").toLowerCase();
 }
 
 // def _display_name(text: str) -> str:
-function displayName(text: string): string {
+export function displayName(text: string): string {
   const compact = text.trim().replace(/\s+/g, " ");
   const commaIndex = compact.indexOf(",");
   if (commaIndex >= 0) {
@@ -123,7 +128,7 @@ function displayName(text: string): string {
 }
 
 // def _person_group_key(candidate: Candidate) -> str:
-function personGroupKey(candidate: Candidate): string {
+export function personGroupKey(candidate: Candidate): string {
   const display = displayName(candidate.displayValue);
   const cleanTokens = tokens(display)
     .map(cleanToken)
@@ -145,14 +150,14 @@ function groupKey(candidate: Candidate): string {
 }
 
 // def _person_tokens(candidate: Candidate) -> list[str]:
-function personTokens(candidate: Candidate): string[] {
+export function personTokens(candidate: Candidate): string[] {
   return tokens(displayName(candidate.displayValue))
     .map(cleanToken)
     .filter((t) => t.length > 0);
 }
 
 // def _is_short_person_reference(candidate: Candidate) -> bool:
-function isShortPersonReference(candidate: Candidate): boolean {
+export function isShortPersonReference(candidate: Candidate): boolean {
   return candidate.detectedType === "person" && personTokens(candidate).length === 1;
 }
 
@@ -190,7 +195,7 @@ function pythonRound(value: number): number {
 }
 
 // def _member_score(group_name: str, candidate: Candidate) -> int:
-function memberScore(groupName: string, candidate: Candidate, qualityOf: QualityLookup): number {
+export function memberScore(groupName: string, candidate: Candidate, qualityOf: QualityLookup): number {
   const ratio = sequenceRatio(groupName.toLowerCase(), displayName(candidate.displayValue).toLowerCase());
   let score = Math.trunc(70 + ratio * 25);
   if (candidate.confidence === "high") score += 5;
@@ -340,7 +345,7 @@ export function buildEntityGroups(
  * reviewer's eventual `linkAmbiguousCandidate` groupId always resolves to
  * whichever of the two is real).
  */
-function buildFullNameAnchorBuckets(candidates: Candidate[]): Map<string, Candidate[]> {
+export function buildFullNameAnchorBuckets(candidates: Candidate[]): Map<string, Candidate[]> {
   const buckets = new Map<string, Candidate[]>();
   for (const candidate of candidates) {
     if (candidate.detectedType !== "person") continue;
@@ -353,7 +358,7 @@ function buildFullNameAnchorBuckets(candidates: Candidate[]): Map<string, Candid
   return buckets;
 }
 
-interface AnchorOption {
+export interface AnchorOption {
   key: string;
   canonicalName: string;
   confidence: number;
@@ -363,7 +368,7 @@ interface AnchorOption {
  *  group (same canonical-selection tie-break, same memberScore formula, same
  *  min-of-scores confidence rule) so a solitary anchor and a multi-variant
  *  one are never scored by two different rules. */
-function scoreAnchorBucket(key: string, members: Candidate[], qualityOf: QualityLookup): AnchorOption | null {
+export function scoreAnchorBucket(key: string, members: Candidate[], qualityOf: QualityLookup): AnchorOption | null {
   if (members.length === 0) return null;
   let canonical = members[0]!;
   for (const item of members.slice(1)) {

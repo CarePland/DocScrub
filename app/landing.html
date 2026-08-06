@@ -1,0 +1,373 @@
+<!doctype html>
+<!-- DocScrub public landing page (AG, 2026-08-01). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>DocScrub — Local document privacy review</title>
+
+    <meta
+      name="description"
+      content="Fast cloud-free review and removal of sensitive data across documents."
+    />
+
+    <style>
+      :root {
+        color-scheme: light;
+
+        --text: #1f2430;
+        --text-muted: #5b6472;
+        --border: #d8dee7;
+        --border-soft: #e7ebf1;
+        --surface: #ffffff;
+        --surface-muted: #f6f8fa;
+        --accent: #2557a7;
+        --accent-hover: #1e4a91;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 2rem 1.5rem;
+
+        display: grid;
+        place-items: center;
+
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          system-ui,
+          sans-serif;
+
+        background: var(--surface-muted);
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(72rem, 100%);
+        min-height: 38rem;
+
+        display: flex;
+        flex-direction: column;
+
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(31, 36, 48, 0.07);
+        padding: 2.6rem 3rem 2rem;
+      }
+
+	  .subtagline {
+	      margin: 0.4rem 0 0.9rem;
+	      font-size: 1.45rem;
+	      font-style: italic;
+	      color: var(--text-muted);
+		  }
+      .brand-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2.4rem;
+      }
+
+      .logo {
+        display: block;
+        width: auto;
+        height: 44px;
+      }
+
+      .preview-badge {
+        padding: 0.12rem 0.65rem;
+
+        border: 1px solid var(--border);
+        border-radius: 999px;
+
+        background: var(--surface-muted);
+        color: var(--text-muted);
+
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .intro {
+        max-width: 100%;
+        margin-bottom: 2.4rem;
+      }
+
+      h1 {
+        margin: 0 0 0.7rem;
+
+        font-size: clamp(2.2rem, 4vw, 3.35rem);
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+
+      .tagline {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 1.1rem;
+      }
+
+      section {
+        min-width: 0;
+      }
+
+      h2 {
+        margin: 0 0 0.7rem;
+
+        font-size: 0.78rem;
+        font-weight: 750;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .overview {
+        width: 100%;
+        margin-bottom: 2rem;
+      }
+
+      .summary {
+        margin: 0 0 1.5rem;
+        font-size: 1.03rem;
+      }
+
+      .principles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.75rem;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+      }
+
+      .principles li {
+        margin: 0;
+      }
+
+      .principles strong {
+        display: block;
+        margin-bottom: 0.2rem;
+        font-weight: 700;
+      }
+
+      .workflow {
+        margin-top: 0.4rem;
+        padding-top: 1.8rem;
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .workflow ol {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 1.5rem;
+
+        margin: 1rem 0 0;
+        padding: 0 0 1.75rem;
+
+        list-style: none;
+        counter-reset: workflow-step;
+      }
+
+      .workflow li {
+        position: relative;
+        margin: 0;
+        padding-top: 2.4rem;
+
+        counter-increment: workflow-step;
+      }
+
+      .workflow li::before {
+        content: counter(workflow-step);
+
+        position: absolute;
+        top: 0;
+        left: 0;
+
+        width: 1.75rem;
+        height: 1.75rem;
+
+        display: grid;
+        place-items: center;
+
+        border-radius: 999px;
+        background: var(--accent);
+        color: #ffffff;
+
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+
+        margin-top: auto;
+        padding-top: 1.7rem;
+
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .enter {
+        display: inline-block;
+        flex: 0 0 auto;
+        padding: 0.65rem 1.45rem;
+
+        border: 1px solid var(--accent);
+        border-radius: 7px;
+
+        background: var(--accent);
+        color: #ffffff;
+
+        font: inherit;
+        font-size: 1rem;
+        font-weight: 650;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .enter:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+
+      footer {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      @media (max-width: 980px) {
+        h1 {
+          white-space: normal;
+        }
+
+        .principles {
+          gap: 3rem;
+          margin-top: 2rem;
+          padding-right: 1rem;
+        }
+
+        .workflow ol {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 620px) {
+        body {
+          padding: 1rem;
+        }
+
+        main {
+          min-height: auto;
+          padding: 1.8rem 1.5rem 1.5rem;
+        }
+
+        .brand-row {
+          margin-bottom: 1.8rem;
+        }
+
+        h1 {
+          font-size: 2.15rem;
+        }
+
+        .principles {
+          grid-template-columns: 1fr;
+          gap: 1rem;
+          padding-right: 0;
+        }
+
+        .workflow ol {
+          grid-template-columns: 1fr;
+          gap: 1rem;
+        }
+
+        .actions {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <div class="brand-row">
+        <img
+          class="logo"
+          src="assets/docscrub.png"
+          alt="DocScrub"
+        />
+
+        <span class="preview-badge">Private Preview</span>
+      </div>
+
+      <div class="intro">
+        <h1>It's still about you. Just less grunt work.</h1>
+		<p class="subtagline">Your data. Your computer. Your decisions.</p>
+        <p class="tagline">
+          Fast cloud-free scrubbing of sensitive data across documents.
+        </p>
+      </div>
+
+      <section class="overview">
+        <h2>What DocScrub does</h2>
+
+        <p class="summary">
+          Review detected items in bulk. Keep, replace, or remove them while
+          preserving the original formatting.
+        </p>
+
+        <ul class="principles">
+          <li>
+            <strong>Local processing</strong>
+            Your private data never leaves your computer.
+          </li>
+
+          <li>
+            <strong>Review once. Apply everywhere.</strong>
+            One decision can update related items across one or more documents.
+          </li>
+
+          <li>
+            <strong>Controlled output</strong>
+            Nothing changes until you approve the final result.
+          </li>
+        </ul>
+      </section>
+
+      <section class="workflow">
+        <h2>How it works</h2>
+
+        <ol>
+          <li>Choose one or more related files.</li>
+          <li>Resolve ambiguous names, acronyms, etc.</li>
+          <li>Review grouped items in bulk.</li>
+          <li>Review remaining individual items.</li>
+          <li>Approve and export sanitized copies.</li>
+        </ol>
+      </section>
+
+      <div class="actions">
+        <a class="enter" href="./index.html">Enter DocScrub</a>
+
+        <footer>
+          DocScrub is currently in early pre-release user testing.
+        </footer>
+      </div>
+    </main>
+  </body>
+</html>

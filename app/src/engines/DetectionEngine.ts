@@ -60,8 +60,11 @@ import {
   LONG_ID_RE,
   PERSON_STOP_PHRASES,
   PHONE_RE,
+  NAME_RUN,
   SINGLE_PERSON_RE,
   SINGLE_PERSON_STOP_WORDS,
+  UNICODE_WORD_END,
+  UPPER,
 } from "./detectors/patterns.js";
 
 export interface DetectionResult {
@@ -77,6 +80,25 @@ export interface DetectionEngine {
 // ---- Ported helpers (redactor/detectors.py) --------------------------------
 
 // def normalize_candidate(text: str, detected_type: str) -> str:
+/**
+ * EXPORTED, 2026-08-03, for the Normalization pass (engines/normalization/
+ * normalization.ts) and nothing else. Behaviour is untouched -- this is a
+ * visibility change only, and deliberately so: Normalization has to ask
+ * "which candidate would the detector have filed this text under?", and
+ * the only correct answer is the detector's own rule. A second, hand-rolled
+ * key function that agreed with this one on most inputs but disagreed on
+ * (say) the person comma-reversal would not fail loudly; it would silently
+ * never find its merge target, and the pass would appear to simply not
+ * work. One rule, one implementation.
+ *
+ * Note the returned key is "<type>:<value>" -- the same string used as
+ * Candidate.id, whereas Candidate.normalizedValue is the portion after the
+ * colon. Callers matching against candidates should compare against `id`.
+ */
+export function detectionCandidateKey(text: string, detectedType: string): string {
+  return normalizeCandidate(text, detectedType);
+}
+
 function normalizeCandidate(text: string, detectedType: string): string {
   let compact = text.trim().replace(/\s+/g, " ");
   if (detectedType === "person" && compact.includes(",")) {
@@ -120,8 +142,13 @@ function isDateOrPageNumber(text: string, blockText: string, start: number, end:
 
 // def _has_capitalized_neighbor(text, start, end) -> bool:
 // (Python's `text` parameter here is the whole block's text, not the match.)
-const PREV_CAPITALIZED_TOKEN_RE = /([A-Z][a-zA-Z'’-]{1,30})[,]?$/;
-const NEXT_CAPITALIZED_TOKEN_RE = /^[,]?\s*([A-Z][a-zA-Z'’-]{1,30})\b/;
+// DEVIATION #1 (see patterns.ts): these two were separately ASCII-only,
+// so an accented neighbour ("José" before "Martínez") failed the check and
+// BOTH fragments were emitted as independent single-name candidates. Built
+// from patterns.ts's shared token definitions so the neighbour check and
+// the person patterns cannot disagree about what a name token is.
+const PREV_CAPITALIZED_TOKEN_RE = new RegExp(`(${UPPER}${NAME_RUN}{1,30})[,]?$`, "u");
+const NEXT_CAPITALIZED_TOKEN_RE = new RegExp(`^[,]?\\s*(${UPPER}${NAME_RUN}{1,30})${UNICODE_WORD_END}`, "u");
 function hasCapitalizedNeighbor(blockText: string, start: number, end: number): boolean {
   const before = blockText.slice(0, start).replace(/\s+$/, "");
   const after = blockText.slice(end).replace(/^\s+/, "");

@@ -99,7 +99,16 @@ async function main(): Promise<void> {
     const engine = freshReviewEngine(transcript, "s-initial");
     const navA = freshNavigator(transcript, engine.getState());
     const navB = freshNavigator(transcript, engine.getState());
-    check("initial focus starts in ambiguity-check", navA.getFocus().target.stage === "ambiguity-check");
+    // CONDITIONAL WORKFLOW (Phase 2, 2026-08-02, deliberate pin update):
+    // initial focus starts on the first ACTIVE stage -- the first stage
+    // that currently contains work -- not unconditionally ambiguity-check.
+    // This fixture has zero ambiguity proposals and zero group proposals
+    // (and its bare context carries no semanticTypes), so its workflow
+    // begins at item-check; the OLD pin asserted focus parked on an EMPTY
+    // ambiguity stage, which is exactly what the conditional workflow
+    // exists to eliminate ("the reviewer should not have to enter an
+    // empty stage merely to confirm that nothing is there").
+    check("initial focus starts on the first ACTIVE stage (item-check for this fixture)", navA.getFocus().target.stage === "item-check");
     check("initial focus has no panel open", navA.getFocus().target.panel.kind === "none");
     check("initial focus has no drilled-down occurrence", navA.getFocus().target.occurrenceId === undefined);
     check("textInputActive starts false", navA.getFocus().textInputActive === false);
@@ -166,7 +175,10 @@ async function main(): Promise<void> {
 
     const atFirstStage = nav.dispatch({ family: "navigation", type: "moveStage", direction: "previous" }, engine.getState());
     check("moveStage previous at the first stage is a graceful no-op", atFirstStage.ok === true);
-    check("stage stays at ambiguity-check -- no wraparound", nav.getFocus().target.stage === "ambiguity-check");
+    // CONDITIONAL WORKFLOW (Phase 2): the first stage of THIS fixture's
+    // active workflow is item-check (see the initial-focus note above) --
+    // clamping happens at the active list's boundary, not the enum's.
+    check("stage stays at the active workflow's first stage -- no wraparound", nav.getFocus().target.stage === "item-check");
 
     for (const stage of WORKFLOW_STAGE_ORDER) {
       nav.dispatch({ family: "navigation", type: "focusStage", stage }, engine.getState());
@@ -181,7 +193,13 @@ async function main(): Promise<void> {
 
     nav.dispatch({ family: "navigation", type: "focusStage", stage: "ambiguity-check" }, engine.getState());
     nav.dispatch({ family: "navigation", type: "moveStage", direction: "next" }, engine.getState());
-    check("moveStage next steps from ambiguity-check to group-check", nav.getFocus().target.stage === "group-check");
+    // CONDITIONAL WORKFLOW (Phase 2): focusStage can still land on a
+    // hidden stage (explicit jumps are never gated -- "do not invent
+    // wizard-style progression"), but moveStage traverses only the ACTIVE
+    // workflow: from the inactive ambiguity-check, "next" finds the first
+    // active stage after it, which for this fixture (no group proposals
+    // either) is item-check, not group-check.
+    check("moveStage next from an inactive stage lands on the next ACTIVE stage (item-check)", nav.getFocus().target.stage === "item-check");
   }
 
   console.log("--- Empty-stage behavior (qa/output have no per-item traversal model) ---");

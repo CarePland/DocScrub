@@ -34,6 +34,7 @@ import type { CommandResult } from "../../domain/Commands.js";
 import type { FocusResumePosition } from "../../domain/FocusResumePosition.js";
 import type { OccurrenceClassificationResult } from "../OccurrenceClassifier.js";
 import { itemIdsForStage, isItemResolved } from "./stages.js";
+import { activeWorkflowStages, nearestActiveStage } from "./workflow.js";
 import type { DetectionGroupingContext } from "../DetectionGroupingContext.js";
 
 export interface NavigationContext extends DetectionGroupingContext {
@@ -180,7 +181,14 @@ function arrivalTarget(stage: WorkflowStage, context: NavigationContext, session
 }
 
 export function createInitialFocusState(context: NavigationContext, session: ReviewSession): FocusState {
-  return { target: arrivalTarget("ambiguity-check", context, session), textInputActive: false };
+  // CONDITIONAL WORKFLOW (Phase 2, 2026-08-02): a fresh session starts on
+  // the FIRST ACTIVE stage, not unconditionally on ambiguity-check -- a
+  // document with no ambiguity proposals opens directly onto whatever its
+  // workflow actually begins with ("a workflow assembled for the document
+  // in front of the reviewer"). nearestActiveStage from ambiguity-check ==
+  // "first active stage overall", since ambiguity-check is canonical-first.
+  const active = activeWorkflowStages(context, session);
+  return { target: arrivalTarget(nearestActiveStage("ambiguity-check", active), context, session), textInputActive: false };
 }
 
 /**
@@ -227,10 +235,29 @@ export function applyNavigationCommand(focus: FocusState, command: NavigationCom
     }
 
     case "moveStage": {
-      const currentIndex = WORKFLOW_STAGE_ORDER.indexOf(target.stage);
-      const nextIndex = command.direction === "next" ? Math.min(WORKFLOW_STAGE_ORDER.length - 1, currentIndex + 1) : Math.max(0, currentIndex - 1);
-      const nextStage = WORKFLOW_STAGE_ORDER[nextIndex]!;
-      if (nextStage === target.stage) return okOutcome(focus); // already at a boundary stage -- graceful no-op
+      // CONDITIONAL WORKFLOW (Phase 2, 2026-08-02): stage movement
+      // traverses the ACTIVE workflow -- "Shift + Left/Right should
+      // navigate through this active stage list, not a fixed stage enum or
+      // fixed tab count" (AG, verbatim). Derived fresh every dispatch, so
+      // a stage that just gained or lost work is immediately reflected.
+      // If the current stage is itself no longer active (possible only
+      // transiently, before the next reconcile()), movement is computed
+      // from its canonical position: "next" finds the first active stage
+      // after it, "previous" the nearest active one before it.
+      const active = activeWorkflowStages(context, session);
+      const activeIndex = active.indexOf(target.stage);
+      let nextStage: WorkflowStage;
+      if (activeIndex !== -1) {
+        const nextIndex = command.direction === "next" ? Math.min(active.length - 1, activeIndex + 1) : Math.max(0, activeIndex - 1);
+        nextStage = active[nextIndex]!;
+      } else {
+        const canonicalIndex = WORKFLOW_STAGE_ORDER.indexOf(target.stage);
+        nextStage =
+          command.direction === "next"
+            ? (WORKFLOW_STAGE_ORDER.slice(canonicalIndex + 1).find((s) => active.includes(s)) ?? active[active.length - 1]!)
+            : (WORKFLOW_STAGE_ORDER.slice(0, canonicalIndex).reverse().find((s) => active.includes(s)) ?? active[0]!);
+      }
+      if (nextStage === target.stage) return okOutcome(focus); // already at a boundary of the active workflow -- graceful no-op
       return okOutcome({ ...focus, target: arrivalTarget(nextStage, context, session) });
     }
 
@@ -286,11 +313,27 @@ export function applyNavigationCommand(focus: FocusState, command: NavigationCom
  * Not Quite" requirements as ONE mechanism rather than several scattered
  * ad hoc rules.
  *
- * Deliberately does NOT change `target.stage` on its own (except to
- * follow an open Not Quite panel into group-check -- see below): moving
- * between stages remains an explicit moveStage/focusStage action, never
- * an automatic side effect of reconciliation. This is the concrete
- * mechanism behind "do not invent wizard-style progression."
+ * STAGE-CHANGE POLICY, REVISED (Phase 2 conditional workflow, AG
+ * 2026-08-02 -- deliberately superseding the original "reconcile never
+ * changes target.stage" rule below): hidden stages must leave no
+ * "inaccessible focus targets" (AG, verbatim), so when the CURRENT stage
+ * drops out of the active workflow -- typically the instant its last
+ * unresolved item is decided -- reconciliation relocates focus to the
+ * nearest active stage (forward first: finishing a stage moves the
+ * reviewer ONWARD through the guided workflow, which is the design
+ * objective, not wizard-gating -- movement backward through the active
+ * list remains freely available at all times). Two deliberate
+ * exceptions: an OPEN Not Quite panel pins focus to its group (the
+ * transaction outranks stage activity -- its group is often fully
+ * decided mid-transaction, which is exactly when yanking focus would be
+ * worst), and the original rule still holds among stages that remain
+ * active.
+ *
+ * Original rule (still true within the active workflow): reconcile does
+ * NOT otherwise change `target.stage` on its own (except to follow an
+ * open Not Quite panel into group-check -- see below): moving between
+ * active stages remains an explicit moveStage/focusStage action, never an
+ * automatic side effect of reconciliation.
  */
 export function reconcile(focus: FocusState, context: NavigationContext, session: ReviewSession): FocusState {
   let target = focus.target;
@@ -309,6 +352,18 @@ export function reconcile(focus: FocusState, context: NavigationContext, session
     // drop the panel and fall through to the normal stage-reconciliation
     // logic below, which will advance off the group if it's now resolved.
     target = { ...target, panel: { kind: "none" } };
+  }
+
+  // 1.5. CONDITIONAL WORKFLOW (Phase 2): if the current stage has left
+  // the active workflow (its last unresolved item was just decided, or a
+  // bulk action/import cleared it), relocate to the nearest active stage
+  // -- see this function's STAGE-CHANGE POLICY doc comment. Skipped while
+  // a Not Quite panel is open (step 1 above just pinned focus to it).
+  if (target.panel.kind !== "not-quite") {
+    const active = activeWorkflowStages(context, session);
+    if (!active.includes(target.stage)) {
+      target = arrivalTarget(nearestActiveStage(target.stage, active), context, session);
+    }
   }
 
   // 2. Reconcile the item-level focus within the (possibly just-updated)

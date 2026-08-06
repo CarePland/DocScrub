@@ -19,6 +19,7 @@ import { parseJsonObject } from "../src/domain/JsonParsing.ts";
 import { deserializeReviewSession } from "../src/engines/review/serialization.ts";
 import { deserializeWorkspaceSaveFile } from "../src/workspace/WorkspaceSaveFile.ts";
 import { deserializeImportedDecisions } from "../src/io/DecisionImport.ts";
+import { AUDIT_RECORD_SCHEMA_VERSION } from "../src/domain/AuditRecord.ts";
 
 let passCount = 0;
 let failCount = 0;
@@ -130,7 +131,7 @@ async function main(): Promise<void> {
   console.log("--- DecisionImport requireString(): exact pre-existing per-field error wording preserved ---");
   {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: AUDIT_RECORD_SCHEMA_VERSION,
       documentId: "doc-1",
       sessionId: "session-1",
       entityGroups: [] as unknown[],
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
       JSON.stringify({
         ...base,
         candidates: [],
-        entityGroups: [{ canonicalName: "X", detectedType: "person", decision: "Confirmed", decidedAt: "t", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
+        entityGroups: [{ detectedType: "person", decision: "Confirmed", decidedAt: "t", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
       })
     );
     check(
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
       !missingGroupId.ok && missingGroupId.reason === "entityGroups[0].groupId missing or non-string"
     );
 
-    const missingCanonicalName = deserializeImportedDecisions(
+    const withoutCanonicalName = deserializeImportedDecisions(
       JSON.stringify({
         ...base,
         candidates: [],
@@ -163,15 +164,16 @@ async function main(): Promise<void> {
       })
     );
     check(
-      "entityGroup missing canonicalName -- exact original wording preserved",
-      !missingCanonicalName.ok && missingCanonicalName.reason === "entityGroups[0].canonicalName missing or non-string"
+      "entityGroup canonicalName is no longer required in decisions schema v2",
+      withoutCanonicalName.ok === true,
+      JSON.stringify(withoutCanonicalName)
     );
 
     const missingDetectedType = deserializeImportedDecisions(
       JSON.stringify({
         ...base,
         candidates: [],
-        entityGroups: [{ groupId: "g1", canonicalName: "X", decision: "Confirmed", decidedAt: "t", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
+        entityGroups: [{ groupId: "g1", decision: "Confirmed", decidedAt: "t", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
       })
     );
     check(
@@ -183,7 +185,7 @@ async function main(): Promise<void> {
       JSON.stringify({
         ...base,
         candidates: [],
-        entityGroups: [{ groupId: "g1", canonicalName: "X", detectedType: "person", decision: "Confirmed", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
+        entityGroups: [{ groupId: "g1", detectedType: "person", decision: "Confirmed", confirmedMemberCandidateIds: [], wentThroughNotQuite: false }],
       })
     );
     check(
@@ -213,7 +215,7 @@ async function main(): Promise<void> {
     // instances, not the ~8-times-repeated shape requireString targets.
     // Confirm they still read exactly as before.
     const missingDocumentId = deserializeImportedDecisions(
-      JSON.stringify({ schemaVersion: 1, sessionId: "s", candidates: [], entityGroups: [], ambiguityResolutions: [] })
+      JSON.stringify({ schemaVersion: AUDIT_RECORD_SCHEMA_VERSION, sessionId: "s", candidates: [], entityGroups: [], ambiguityResolutions: [] })
     );
     check(
       "top-level documentId check is untouched by this cleanup -- still its own distinct wording",
@@ -236,11 +238,11 @@ async function main(): Promise<void> {
   console.log("--- DecisionImport: valid payload still parses correctly through the refactored helpers ---");
   {
     const valid = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: AUDIT_RECORD_SCHEMA_VERSION,
       documentId: "doc-1",
       sessionId: "session-1",
       candidates: [{ candidateId: "c1", decision: "Keep" }, { candidateId: "c2", decision: "Redact", replacement: "[REDACTED]", decidedAt: "2026-01-01T00:00:00.000Z" }],
-      entityGroups: [{ groupId: "g1", canonicalName: "Andrew Jackson", detectedType: "person", decision: "Confirmed", decidedAt: "2026-01-01T00:00:00.000Z", confirmedMemberCandidateIds: ["c1"], wentThroughNotQuite: false }],
+      entityGroups: [{ groupId: "g1", detectedType: "person", decision: "Confirmed", decidedAt: "2026-01-01T00:00:00.000Z", confirmedMemberCandidateIds: ["c1"], wentThroughNotQuite: false }],
       ambiguityResolutions: [{ candidateId: "c3", resolvedGroupId: "g1", decidedAt: "2026-01-01T00:00:00.000Z" }],
     });
     const result = deserializeImportedDecisions(valid);

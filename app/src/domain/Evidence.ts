@@ -51,6 +51,24 @@ export interface CandidateQualityAssessment {
   reasons: string[];
   positiveReasons: string[];
   filterRules: string[];
+  /**
+   * ADDITIVE (AG, 2026-08-05). The individual contextual usages behind the
+   * single `contextual-person-evidence` chip -- e.g.
+   * ["anchor_full_name_with_role", "contextual_attribution"]. Absent unless
+   * the Contextual Person Evidence pass ran AND found something, so every
+   * assessment produced by the Python-parity path is byte-identical to what
+   * it was.
+   *
+   * These are deliberately NOT in `reasons`: `reasons` is what the evidence
+   * breakdown (and therefore the chip row) is built from, and eleven
+   * zero-weight ids there would mint eleven empty chips. The family scores
+   * once and explains itself in prose -- see the ONE CHIP, NOT ELEVEN note
+   * in engines/contextual-person-evidence/contextual-person-evidence.ts.
+   */
+  contextualRules?: string[];
+  /** The occurrence that best demonstrates the above -- what the reviewer
+   *  should be shown as proof. Andrew's "representative example". */
+  contextualRepresentativeOccurrenceId?: string;
 }
 
 export interface Evidence {

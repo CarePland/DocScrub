@@ -54,6 +54,8 @@
 import type { Candidate } from "../domain/DocumentModel.js";
 import type { QualityLabel, QualityResult } from "../domain/Evidence.js";
 import type { DetectionResult } from "./DetectionEngine.js";
+import { augmentGroupingWithSemanticKnowledge } from "./entity-resolution/semantic-augmentation.js";
+import type { SemanticRelationshipProvider } from "./knowledge/SemanticRelationshipProvider.js";
 import {
   buildAmbiguousMatches,
   buildEntityGroups,
@@ -66,6 +68,15 @@ export interface AmbiguityProposalGroupOption {
   groupId: string;
   canonicalName: string;
   confidence: number;
+  /** Additive (Deterministic Semantic Relationship Knowledge, 2026-07-30):
+   *  reviewer-facing evidence lines explaining WHY this option exists --
+   *  each one an independently checkable deterministic fact ('Same surname
+   *  ("goodloe")', 'Related-name relationship: "andy" ↔ "andrew"
+   *  (Strength 5 — Established)'). Present only when the engine was
+   *  constructed with semantic relationship providers (see
+   *  semantic-augmentation.ts); a bare engine -- every parity suite --
+   *  emits exactly the pre-feature shape. */
+  evidence?: string[];
 }
 
 export interface AmbiguityProposal {
@@ -151,12 +162,26 @@ function toProposal(group: EntityGroupResult): EntityGroupProposal {
 }
 
 export class RegexEntityResolutionEngine implements EntityResolutionEngine {
+  /** Deterministic Semantic Relationship Knowledge (2026-07-30): optional
+   *  curated-knowledge providers (RelatedNameProvider today). DEFAULT IS
+   *  NONE, deliberately: a bare engine is byte-identical to the Python
+   *  oracle, which is what every parity/verification suite constructs (and
+   *  what app.ts's display-recalculation instance uses -- recalculation
+   *  never consults providers). The Workspace wires the built-in providers
+   *  for real document loads. See semantic-augmentation.ts's doc comment
+   *  for the full architectural rationale. */
+  private readonly semanticProviders: readonly SemanticRelationshipProvider[];
+
+  constructor(semanticProviders: readonly SemanticRelationshipProvider[] = []) {
+    this.semanticProviders = semanticProviders;
+  }
+
   propose(detection: DetectionResult, quality: QualityResult): GroupingResult {
     const qualityOf = qualityLookup(quality);
     const groups = buildEntityGroups(detection.candidates, qualityOf);
     const ambiguous = buildAmbiguousMatches(detection.candidates, groups, qualityOf);
 
-    return {
+    const ported: GroupingResult = {
       schemaVersion: 1,
       entityGroupProposals: groups.map(toProposal),
       ambiguityProposals: ambiguous.map((match) => ({
@@ -169,6 +194,9 @@ export class RegexEntityResolutionEngine implements EntityResolutionEngine {
         })),
       })),
     };
+
+    if (this.semanticProviders.length === 0) return ported;
+    return augmentGroupingWithSemanticKnowledge(ported, detection, qualityOf, this.semanticProviders);
   }
 
   recalculateConfidence(

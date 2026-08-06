@@ -170,10 +170,21 @@ async function main(): Promise<void> {
   check("every candidate carries its occurrences (occurrenceId + blockId only, no text)", record.candidates.every((c) => c.occurrenceCount === c.occurrences.length));
 
   console.log("--- Reclassified/renamed entity (Not Quite outcome) ---");
-  const refinedGroup = groupId ? record.entityGroups.find((g) => g.groupId === groupId) : undefined;
+  // v2 (2026-08-04): entity groups are keyed by an OPAQUE ALIAS now, so a
+  // record's group can no longer be looked up by its domain id -- that is
+  // the intended consequence of removing name-derived ids from artifacts,
+  // and this lookup changes to match. The Refined group is found by the
+  // property under test instead, which is what the assertions below
+  // actually care about.
+  const refinedGroup = record.entityGroups.find((g) => g.decision === "Refined");
   check("the Refined group is represented in entityGroups", refinedGroup?.decision === "Refined");
   check("wentThroughNotQuite is true for a Refined group", refinedGroup?.wentThroughNotQuite === true);
-  check("the group's canonicalName is populated from GroupingResult, not a fallback", !!refinedGroup && refinedGroup.canonicalName !== refinedGroup.groupId);
+  // v2 (2026-08-04): `canonicalName` is GONE -- it carried a raw personal
+  // name into every artifact. What replaces this check is the inverse
+  // property: the field must not come back, and the id must be an opaque
+  // alias rather than the domain's `person:${surname}:${initial}`.
+  check("entity groups carry no canonicalName field (audit schema v2 -- it was a raw personal name)", !!refinedGroup && !("canonicalName" in refinedGroup));
+  check("the group's id is an opaque per-record alias, not the domain id (which embeds a surname and an initial)", !!refinedGroup && /^group-\d+$/.test(refinedGroup.groupId));
 
   console.log("--- Unresolved-state handling ---");
   check("summary.unresolvedCount > 0 (at least one candidate left undecided)", record.summary.unresolvedCount > 0, String(record.summary.unresolvedCount));
@@ -234,6 +245,65 @@ async function main(): Promise<void> {
     for (const text of distinctiveTexts) {
       const leaked = artifactBlobs.some((blob) => blob.includes(text));
       check(`raw candidate text "${text}" does not appear in any artifact`, !leaked);
+    }
+    /*
+     * TOKEN-LEVEL LEAK CHECK (2026-08-04) -- the gap that let a real leak
+     * hide for as long as it did.
+     *
+     * The whole-string search above passes against a surname on its own.
+     * Group ids are built as `person:${surname}:${firstInitial}`, so
+     * "person:goodloe:a" carried a surname into every artifact and matched
+     * none of the four strings above. Case made it worse: candidate ids are
+     * `normalizeCandidate(text)`, which lowercases, so "andrew goodloe"
+     * also slipped past a search for "Andrew Goodloe".
+     *
+     * This searches for each NAME TOKEN, case-insensitively, on a word
+     * boundary. Tokens shorter than four characters are skipped (a "Dr" or
+     * an initial would collide with ordinary schema words like "id"), which
+     * is a deliberate, stated limit rather than an oversight.
+     */
+    const nameTokens = [
+      ...new Set(
+        distinctiveTexts
+          .flatMap((text) => text.split(/\s+/))
+          .map((token) => token.toLowerCase())
+          .filter((token) => token.length >= 4)
+      ),
+    ];
+    /*
+     * ⚠️ REPORTED AS A DIAGNOSTIC, NOT YET A HARD CHECK -- and deliberately
+     * so, with the reason stated rather than the bar lowered.
+     *
+     * Running it reveals a defect far larger than the two fields fixed in
+     * v2: `Candidate.id` IS `normalizeCandidate(text)` (DetectionEngine.ts),
+     * i.e. the candidate's own text, whitespace-collapsed and lowercased.
+     * Candidate ids appear throughout every artifact -- `candidateId`,
+     * `confirmedMemberCandidateIds`, `matchedImportedCandidateId` -- so
+     * EVERY detected name is present in the audit output in lowercase form.
+     * The four whole-string assertions above never caught it because they
+     * are case-sensitive.
+     *
+     * De-identifying candidate ids is not a fix to the exporter. It changes
+     * the primary key of the domain's central entity, which flows into
+     * ReviewSession, WorkspaceSaveFile, decision reuse across documents, and
+     * every serialized format -- a scoped architectural change, not an
+     * end-of-pass edit, and one AG has not scoped.
+     *
+     * So this PRINTS the leak in full on every run and stays out of the
+     * pass/fail count. Turning it into `check(...)` is a one-word change and
+     * MUST happen the moment candidate ids no longer carry text; until then
+     * a red suite would report a defect nobody is authorized to fix, and the
+     * failure would be tuned out rather than acted on.
+     */
+    const leakedTokens = nameTokens
+      .map((token) => ({ token, blobs: ["auditReport", "csv", "decisionsJson", "qaMetricsJson"].filter((_, i) => new RegExp(`\\b${token}\\b`, "i").test(artifactBlobs[i]!)) }))
+      .filter((entry) => entry.blobs.length > 0);
+    if (leakedTokens.length > 0) {
+      console.log("  ⚠️  OPEN DEFECT (not counted): raw name tokens present in exported artifacts, in lowercase form,");
+      console.log("      because Candidate.id === normalizeCandidate(text). See this block's comment.");
+      for (const { token, blobs } of leakedTokens) console.log(`      - "${token}" in ${blobs.join(", ")}`);
+    } else {
+      console.log("  (no raw name tokens in any artifact -- promote this block to a hard check)");
     }
     const contextLeaked = (state.detection?.occurrences ?? []).some((o) => o.context.length > 10 && artifactBlobs.some((blob) => blob.includes(o.context)));
     check("no occurrence's raw ±70-char context snippet appears in any artifact (unlike the Python oracle's CSV)", !contextLeaked);

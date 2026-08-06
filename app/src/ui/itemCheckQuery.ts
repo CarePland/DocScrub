@@ -28,6 +28,7 @@
 
 import type { Candidate } from "../domain/DocumentModel.js";
 import type { CandidateDecision } from "../domain/ReviewSession.js";
+import { decisionDisplayLabel } from "./decisionLabels.js";
 
 export type FilterPreset =
   | "unreviewed"
@@ -46,7 +47,11 @@ export const FILTER_PRESETS: readonly { key: FilterPreset; label: string }[] = [
   { key: "people", label: "People" },
   { key: "organizations", label: "Organizations" },
   { key: "ignored", label: "Ignored" },
-  { key: "renamed", label: "Renamed" },
+  // RX-22 (2026-07-29): "Changed", matching the display vocabulary
+  // everywhere else (the buttons have said "Change" since the Group Check
+  // keyboard revision). The KEY stays "renamed" -- it is never shown, and
+  // preset keys are ephemeral UI state, not worth churning.
+  { key: "renamed", label: "Changed" },
   { key: "redacted", label: "Redacted" },
 ];
 
@@ -135,7 +140,11 @@ export interface CandidateQueryFacts {
 export function matchesSearch(facts: CandidateQueryFacts, searchText: string): boolean {
   const query = searchText.trim().toLowerCase();
   if (!query) return true;
-  const reviewStateLabel = facts.decision ? facts.decision.decision : "unreviewed";
+  // RX-22 (2026-07-29): the haystack carries BOTH the durable kind
+  // ("Rename" -- still matches for anyone typing the audit vocabulary) and
+  // the display label ("Change" -- what the reviewer actually sees on every
+  // button and row). Additive: nothing that matched before stops matching.
+  const reviewStateLabel = facts.decision ? `${facts.decision.decision} ${decisionDisplayLabel(facts.decision.decision)}` : "unreviewed";
   const haystack = [
     facts.candidate.displayValue,
     facts.decision?.replacement ?? "",
@@ -227,6 +236,47 @@ export function compareCandidates(a: CandidateQueryFacts, b: CandidateQueryFacts
       return exhaustive;
     }
   }
+}
+
+/**
+ * DECISION-STATE PRESETS -- the presets that only ever match an ALREADY
+ * DECIDED candidate. Named once here because two things need the same
+ * list and must not drift: matchesPreset above, and the escape hatch
+ * below.
+ */
+const DECIDED_ONLY_PRESETS: readonly FilterPreset[] = ["ignored", "renamed", "redacted"];
+
+/**
+ * THE ESCAPE HATCH (AG, 2026-08-02, "Item Check shows remaining work").
+ * Item Check's pool is now the WORK QUEUE -- unresolved candidates only
+ * (see stages.ts's reviewableItemIdsForStage) -- so a decided candidate is
+ * off the list the moment it is decided. This predicate says when the
+ * reviewer has explicitly asked to see decided work anyway, and app.ts
+ * widens the pool back to the full candidate inventory for exactly those
+ * cases.
+ *
+ * Two triggers, both an unambiguous request rather than a guess:
+ *   - SEARCH TEXT. Andrew's instruction is explicit that "the entity, its
+ *     review history, audit information, and searchability should all
+ *     remain intact." Typing a name and being told it does not exist --
+ *     because it was decided ten minutes ago -- would break that promise
+ *     and, worse, would read as data loss rather than as a filtered view.
+ *     Search therefore always searches everything.
+ *   - A DECISION-STATE PRESET. "Ignored" / "Changed" / "Redacted" can only
+ *     ever match decided candidates. Left against the work queue alone
+ *     they would match nothing, forever -- three controls that look
+ *     functional and silently are not. This file already refused to ship
+ *     one of those once (see ORGANIZATION_EVIDENCE_CATEGORIES' note on
+ *     dead filters); it should not ship three more by accident.
+ *
+ * "Unreviewed only" deliberately stays in the preset list even though it
+ * is now the default state of the pool: it is the way back to remaining
+ * work WITHOUT clearing an active search, which is precisely the moment a
+ * reviewer wants it.
+ */
+export function queryRequestsDecidedItems(query: ItemCheckQueryState): boolean {
+  if (query.searchText.trim().length > 0) return true;
+  return DECIDED_ONLY_PRESETS.some((preset) => query.activePresets.has(preset));
 }
 
 /** Filters by search text AND every active preset, then sorts -- the one

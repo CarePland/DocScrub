@@ -11,7 +11,68 @@
  * boundaries (`\b`), and case-insensitive matching (`i` flag) all behave
  * the same way for the ASCII-range patterns used below. No pattern needed
  * to be restructured to work in JS.
+ *
+ * DOCUMENTED DEVIATION #1 -- the three person patterns are deliberately
+ * NO LONGER byte-equal to detectors.py (2026-08-05, AG). Every other
+ * constant in this file remains a faithful port; see PERSON_TOKEN /
+ * UNICODE_WORD_* below for the full reasoning and the exact respects in
+ * which the ported behavior was wrong for real documents rather than
+ * merely different.
  */
+
+/**
+ * Unicode-aware word boundaries, replacing `\b`.
+ *
+ * `\b` is defined in terms of `\w`, which in JavaScript is ASCII-only
+ * (`[A-Za-z0-9_]`) and STAYS ASCII-only under the `u` flag -- unlike
+ * Python's `re`, where `\b` is Unicode-aware for `str` patterns. That
+ * single difference is the root cause of the truncated-detection defect
+ * in 20260803-detection-classification-handoff.md §1: in "Guzmán", `á`
+ * is not an ASCII word character, so it both terminates the token AND
+ * supplies a legal `\b`, making the truncated match "Guzm" well-formed
+ * by the pattern's own rules. Redacting the truncated span leaves "án"
+ * in the released document -- a SILENT PARTIAL REDACTION, which is why
+ * this is a correctness fix and not a recall improvement.
+ *
+ * Note that restoring literal parity with Python would NOT be correct
+ * either: Python's Unicode-aware `\b` finds no boundary between "m" and
+ * "á", so FALLBACK_PERSON_RE backtracks and matches "Yazmine Guzmán"
+ * NOT AT ALL. Python silently drops the name; the JS port silently
+ * truncates it. Both are wrong; neither is the behavior to preserve.
+ *
+ * `\p{M}` (combining marks) is included alongside letters and digits so
+ * that DECOMPOSED input behaves like precomposed input -- "é" may arrive
+ * as U+00E9 or as "e" + U+0301, and Word documents authored on macOS
+ * routinely carry the latter. Nothing upstream normalizes block text
+ * before detection, so the patterns must tolerate both forms.
+ */
+const UNICODE_WORD_CHAR = String.raw`[\p{L}\p{N}\p{M}_]`;
+/** Start-of-word `\b`. The patterns below all begin with `\p{Lu}` (always
+ *  a word character), so asserting "no word character behind" is exactly
+ *  equivalent to `\b` at that position. */
+const UNICODE_WORD_START = String.raw`(?<!${UNICODE_WORD_CHAR})`;
+/** End-of-word `\b`. BOTH halves are required: a bare negative lookahead
+ *  would let SINGLE_PERSON_RE / LAST_FIRST_PERSON_RE match a trailing
+ *  `'` or `-` ("Smith-" instead of "Smith"), because those characters are
+ *  inside the token class but are not word characters. `\b` backtracks
+ *  off them; the lookbehind is what reproduces that. */
+const UNICODE_WORD_END = String.raw`(?<=${UNICODE_WORD_CHAR})(?!${UNICODE_WORD_CHAR})`;
+
+/** `[A-Z]` -> any uppercase letter. */
+export const UPPER = String.raw`\p{Lu}`;
+/** `[a-z]` -> any lowercase letter or combining mark. */
+const LOWER_RUN = String.raw`[\p{Ll}\p{M}]`;
+/** `[a-zA-Z'’-]` -> any letter or combining mark, plus the same two
+ *  apostrophe forms and hyphen the ported class carried. */
+export const NAME_RUN = String.raw`[\p{L}\p{M}'’-]`;
+/** Exported so DetectionEngine's capitalized-neighbor patterns -- which
+ *  gate whether a single-name match is suppressed as part of an already
+ *  detected multi-word name -- can be built from the SAME definition the
+ *  person patterns use. They were separately ASCII-only, which meant an
+ *  accented name defeated the neighbor check as well as the match: both
+ *  fragments of "José Martínez" were emitted as independent candidates.
+ *  One definition, so the two cannot disagree about what a name token is. */
+export { UNICODE_WORD_END };
 
 // EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 export const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -30,15 +91,28 @@ export const LONG_ID_RE = /(?<!\d)(?:\d[\s-]?){10,18}\d?(?!\d)/g;
 // FALLBACK_PERSON_RE = re.compile(
 //     r"\b(?:[A-Z][a-z]{1,30})(?:\s+(?:[A-Z][a-z]{1,30})){1,3}\b"
 // )
-export const FALLBACK_PERSON_RE = /\b(?:[A-Z][a-z]{1,30})(?:\s+(?:[A-Z][a-z]{1,30})){1,3}\b/g;
+// DEVIATION #1: `\b` -> UNICODE_WORD_*, `[A-Z]` -> \p{Lu}, `[a-z]` -> \p{Ll}|\p{M}.
+export const FALLBACK_PERSON_RE = new RegExp(
+  `${UNICODE_WORD_START}(?:${UPPER}${LOWER_RUN}{1,30})(?:\\s+(?:${UPPER}${LOWER_RUN}{1,30})){1,3}${UNICODE_WORD_END}`,
+  "gu"
+);
 
 // LAST_FIRST_PERSON_RE = re.compile(
 //     r"\b[A-Z][a-zA-Z'’-]{1,30},\s+[A-Z][a-zA-Z'’-]{1,30}(?:\s+[A-Z][a-zA-Z'’-]{1,30})?\b"
 // )
-export const LAST_FIRST_PERSON_RE = /\b[A-Z][a-zA-Z'’-]{1,30},\s+[A-Z][a-zA-Z'’-]{1,30}(?:\s+[A-Z][a-zA-Z'’-]{1,30})?\b/g;
+// DEVIATION #1: `\b` -> UNICODE_WORD_*, `[A-Z]` -> \p{Lu}, `[a-zA-Z'’-]` -> NAME_RUN.
+export const LAST_FIRST_PERSON_RE = new RegExp(
+  `${UNICODE_WORD_START}${UPPER}${NAME_RUN}{1,30},\\s+${UPPER}${NAME_RUN}{1,30}` +
+    `(?:\\s+${UPPER}${NAME_RUN}{1,30})?${UNICODE_WORD_END}`,
+  "gu"
+);
 
 // SINGLE_PERSON_RE = re.compile(r"\b[A-Z][a-zA-Z'’-]{2,30}\b")
-export const SINGLE_PERSON_RE = /\b[A-Z][a-zA-Z'’-]{2,30}\b/g;
+// DEVIATION #1: `\b` -> UNICODE_WORD_*, `[A-Z]` -> \p{Lu}, `[a-zA-Z'’-]` -> NAME_RUN.
+export const SINGLE_PERSON_RE = new RegExp(
+  `${UNICODE_WORD_START}${UPPER}${NAME_RUN}{2,30}${UNICODE_WORD_END}`,
+  "gu"
+);
 
 // DATE_LIKE_RE = re.compile(
 //     r"(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})(?!\d)"

@@ -71,8 +71,11 @@ function parseEntityGroup(raw: unknown, index: number): { ok: true; value: Impor
   const context = `entityGroups[${index}]`;
   const groupId = requireString(record, "groupId", context);
   if (!groupId.ok) return groupId;
-  const canonicalName = requireString(record, "canonicalName", context);
-  if (!canonicalName.ok) return canonicalName;
+  // v2 (2026-08-04): `canonicalName` is no longer written (it carried a raw
+  // personal name out of the app -- see AuditRecord's version note), so it
+  // is no longer required on read. Not merely optional-ified: a v1 file is
+  // rejected wholesale by the schemaVersion check above, so nothing reaching
+  // here can legitimately carry the field.
   const detectedType = requireString(record, "detectedType", context);
   if (!detectedType.ok) return detectedType;
   const decision = record["decision"];
@@ -91,7 +94,6 @@ function parseEntityGroup(raw: unknown, index: number): { ok: true; value: Impor
     ok: true,
     value: {
       groupId: groupId.value,
-      canonicalName: canonicalName.value,
       detectedType: detectedType.value,
       decision: decision as ImportedEntityGroup["decision"],
       decidedAt: decidedAt.value,

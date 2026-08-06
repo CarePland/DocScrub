@@ -26,4 +26,4 @@
  * ...) for every subsequent same-day change; reset to `.01` on the first
  * change of a new date.
  */
-export const APP_VERSION = "v2026-07-29.04";
+export const APP_VERSION = "v2026-08-03.11";

@@ -432,11 +432,16 @@ function validateReplacementText(replacement: string): { ok: true; value: string
 }
 
 export function applyReviewCommand(session: ReviewSession, command: ReviewCommand, context: DetectionGroupingContext, now: string): ReviewDispatchOutcome {
+  // DECISION PROVENANCE (Pass 1, 2026-08-03): the optional scope stamp
+  // (Commands.ts doc comment) rides on the EVENT payloads only — durable
+  // history of the act — never on CandidateDecision itself. Spread-if-
+  // present so a stampless command's payload is byte-identical to before.
+  const scopeStamp = (c: { scope?: string }): Record<string, string> => (c.scope !== undefined ? { scope: c.scope } : {});
   switch (command.type) {
     case "keepCandidate": {
       if (!findCandidate(context.detection, command.candidateId)) return fail(session, `no such candidate: ${command.candidateId}`);
       let next = decideCandidate(session, command.candidateId, "Keep", undefined, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Keep" }) };
+      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Keep", ...scopeStamp(command) }) };
       return ok(next);
     }
 
@@ -445,7 +450,7 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       const validated = validateReplacementText(command.replacement);
       if (!validated.ok) return fail(session, validated.reason);
       let next = decideCandidate(session, command.candidateId, "Rename", validated.value, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Rename", replacement: validated.value }) };
+      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Rename", replacement: validated.value, ...scopeStamp(command) }) };
       return ok(next);
     }
 
@@ -460,7 +465,12 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       let next = decideCandidate(session, command.candidateId, "Redact", replacement, now);
       next = {
         ...next,
-        events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Redact", ...(replacement !== undefined ? { replacement } : {}) }),
+        events: appendEvent(next, "candidate-decided", now, {
+          candidateId: command.candidateId,
+          decision: "Redact",
+          ...(replacement !== undefined ? { replacement } : {}),
+          ...scopeStamp(command),
+        }),
       };
       return ok(next);
     }
@@ -468,7 +478,7 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
     case "ignoreCandidate": {
       if (!findCandidate(context.detection, command.candidateId)) return fail(session, `no such candidate: ${command.candidateId}`);
       let next = decideCandidate(session, command.candidateId, "Ignore", undefined, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Ignore" }) };
+      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Ignore", ...scopeStamp(command) }) };
       return ok(next);
     }
 
@@ -791,7 +801,11 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
         now,
         {
           overwrite: true,
-          eventPayloadExtra: (item) => ({ viaBulkApply: true, ...(item.replacement !== undefined ? { replacement: item.replacement } : {}) }),
+          // DECISION PROVENANCE (Pass 1): the scope stamp joins each
+          // per-candidate event too, so a bulk-applied decision's history
+          // is distinguishable from an individually-made one even when the
+          // summary event is not at hand.
+          eventPayloadExtra: (item) => ({ viaBulkApply: true, ...(item.replacement !== undefined ? { replacement: item.replacement } : {}), ...scopeStamp(command) }),
         }
       );
 
@@ -806,6 +820,7 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
           requestedCount: command.candidateIds.length,
           appliedCount: batch.appliedCount,
           skippedCount: batch.skippedCount,
+          ...scopeStamp(command),
         }),
       };
       return ok(next);
@@ -840,6 +855,41 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
         updatedAt: now,
       };
       next = { ...next, events: appendEvent(next, "ambiguity-resolved", now, { candidateId: command.candidateId, resolvedGroupId: command.groupId, canonicalName: option.canonicalName }) };
+      return ok(next);
+    }
+
+    case "dismissRelationship": {
+      // Structural Relationship Review (2026-07-30): "Unrelated" dissolves
+      // the PROPOSED RELATIONSHIP and nothing else. Deliberately touches no
+      // candidateDecisions, no groupDecisions, no entityRegistry -- it is a
+      // judgment about the proposal, not about any candidate, and every
+      // member continues through the normal review pipeline unchanged (the
+      // proposal's own hard requirement: "Unrelated" must not classify the
+      // candidates as non-sensitive or remove them from later review).
+      // Validated only for shape (a non-empty member list) -- the proposal
+      // itself is DERIVED state recomputed per load, so there is nothing
+      // durable to validate against; carrying its facts into the dismissal
+      // and the event log is what makes the session self-describing.
+      if (command.candidateIds.length === 0) return fail(session, "a relationship proposal has no members -- nothing to dismiss");
+      const next: ReviewSession = {
+        ...session,
+        relationshipDismissals: {
+          ...(session.relationshipDismissals ?? {}),
+          [command.proposalId]: {
+            proposalId: command.proposalId,
+            kind: command.relationshipKind,
+            candidateIds: command.candidateIds,
+            dismissedAt: now,
+          },
+        },
+        updatedAt: now,
+        events: appendEvent(session, "relationship-dismissed", now, {
+          proposalId: command.proposalId,
+          relationshipKind: command.relationshipKind,
+          memberCount: command.candidateIds.length,
+          candidateIds: command.candidateIds.join(", "),
+        }),
+      };
       return ok(next);
     }
 

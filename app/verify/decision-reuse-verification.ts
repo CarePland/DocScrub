@@ -48,7 +48,7 @@ import { ReviewWorkspace } from "../src/workspace/Workspace.ts";
 import { InMemorySessionRepository } from "./support/InMemorySessionRepository.ts";
 import { WorkspaceCommandDispatcher } from "../src/workspace/CommandDispatcher.ts";
 import { deserializeWorkspaceSaveFile } from "../src/workspace/WorkspaceSaveFile.ts";
-import type { AuditRecord } from "../src/domain/AuditRecord.ts";
+import { AUDIT_RECORD_SCHEMA_VERSION, type AuditRecord } from "../src/domain/AuditRecord.ts";
 import { loadSourceFile } from "./fixture-io.ts";
 
 let passCount = 0;
@@ -91,7 +91,7 @@ async function loadFixture(caseId: string): Promise<Fixture> {
 
 function emptyImported(overrides: Partial<ImportedDecisions> = {}): ImportedDecisions {
   return {
-    schemaVersion: 1,
+    schemaVersion: AUDIT_RECORD_SCHEMA_VERSION,
     documentId: "prior-document",
     sessionId: "prior-session",
     candidates: [],

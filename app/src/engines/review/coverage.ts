@@ -16,6 +16,7 @@
 import type { Candidate } from "../../domain/DocumentModel.js";
 import type { QualityResult } from "../../domain/Evidence.js";
 import { resolvedStatusOf, type CandidateDecisionKind, type OccurrenceCoverage, type ReviewSession } from "../../domain/ReviewSession.js";
+import { decisionSummary, type DecisionSummary } from "../../domain/DecisionPrecedence.js";
 import type { DetectionResult } from "../DetectionEngine.js";
 import type { EntityGroupProposal, EntityResolutionEngine } from "../EntityResolutionEngine.js";
 
@@ -42,6 +43,49 @@ export function candidateResolvedStatus(session: ReviewSession, detection: Detec
   const coveredByResolvedGroups = coveredOccurrenceIdsByResolvedGroups(session, detection);
   const hasDirectDecision = candidateId in session.candidateDecisions;
   return resolvedStatusOf(occurrenceIds, coveredByResolvedGroups, hasDirectDecision);
+}
+
+/**
+ * DECISION TRACKER (AG, 2026-08-03): every candidate split into the ones
+ * the reviewer has finished with and the ones still owed a decision, by
+ * the SAME rule `candidateResolvedStatus` applies to one candidate --
+ * including the part that is easy to get wrong on your own, that a
+ * candidate covered by a resolved group counts as resolved without a
+ * direct decision of its own.
+ *
+ * WHY THIS EXISTS RATHER THAN CALLERS FILTERING. Two callers needed
+ * "which candidates are done" as a SET rather than one at a time: the
+ * Decision Tracker's running scope (ui/app.ts) and the Workspace Metrics
+ * Consolidation report (metrics/workspaceMetrics.ts). Each had written
+ * its own filter -- one through `isItemResolved`, one through
+ * `resolvedStatusOf` directly. Both were correct, and both were the same
+ * rule expressed twice, which is exactly the divergence this file's own
+ * header was written to prevent. One function now answers it for both.
+ *
+ * Also the reason this is a partition and not a predicate: the covered-
+ * occurrence set is built ONCE here, where `candidateResolvedStatus`
+ * rebuilds it per call. Filtering a few hundred candidates through the
+ * single-candidate function is quadratic, and the tracker recomputes on
+ * every render.
+ *
+ * `partiallyResolved` candidates count as REMAINING -- they still owe the
+ * reviewer a decision, and the tracker must never call work finished that
+ * the workflow still lists as outstanding.
+ */
+export interface ResolutionPartition {
+  resolved: Candidate[];
+  remaining: Candidate[];
+}
+
+export function partitionCandidatesByResolution(session: ReviewSession, detection: DetectionResult): ResolutionPartition {
+  const coveredByResolvedGroups = coveredOccurrenceIdsByResolvedGroups(session, detection);
+  const resolved: Candidate[] = [];
+  const remaining: Candidate[] = [];
+  for (const candidate of detection.candidates) {
+    const status = resolvedStatusOf(candidate.occurrenceIds, coveredByResolvedGroups, candidate.id in session.candidateDecisions);
+    (status.status === "resolved" ? resolved : remaining).push(candidate);
+  }
+  return { resolved, remaining };
 }
 
 /**
@@ -89,16 +133,45 @@ export function candidateResolvedStatus(session: ReviewSession, detection: Detec
  * flagged rather than collapsed to a guess, per Andrew's confirmed rule.
  */
 export type GroupDisplayDecision =
-  | { kind: "undecided" }
-  | { kind: "uniform"; decision: CandidateDecisionKind }
-  | { kind: "needsAttention" };
+  | { kind: "undecided"; summary: DecisionSummary }
+  | { kind: "uniform"; decision: CandidateDecisionKind; summary: DecisionSummary }
+  | { kind: "needsAttention"; summary: DecisionSummary };
 
+/**
+ * UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03): `summary` carries the
+ * same member decisions resolved through `DecisionPrecedence.ts` -- the
+ * dominant decision that speaks for the card's tint, plus every additional
+ * decision present, for the pills.
+ *
+ * ADDITIVE ON PURPOSE. `kind` keeps its exact prior meaning and every
+ * existing consumer keeps working unchanged, because "is this group
+ * uniform / mixed / untouched" turned out to be a genuinely different
+ * question from "what color is this card," and both are still asked:
+ *   - `kind === "uniform"` still gates the collapsed checkmark that
+ *     replaces a confidence score (there is no uncertainty left to express
+ *     as a percentage only when EVERY member agrees -- a card that is
+ *     dominantly Redact with one Keep still has a real score).
+ *   - `kind === "needsAttention"` still drives the gray Fix this emphasis
+ *     and the per-member "needs attention" notes -- "this group wants
+ *     member-by-member work," which remains true regardless of how the
+ *     card is tinted.
+ * What CHANGED is only that the card no longer paints AMBER for
+ * `needsAttention`: mixed decisions are now expressed by the dominant tint
+ * plus pills, per Andrew's 2026-08-03 direction, so amber is freed to mean
+ * exactly one thing (an open Fix this session). Nothing here weakened --
+ * one consumer of this value stopped reading it for color.
+ *
+ * Both halves are derived in the SAME pass over the same member decisions,
+ * so `kind` and `summary` cannot disagree with each other or with the
+ * decisions they describe.
+ */
 export function groupDisplayDecision(group: EntityGroupProposal, session: ReviewSession): GroupDisplayDecision {
   const decisions = group.candidateIds.map((id) => session.candidateDecisions[id]?.decision ?? null);
-  if (decisions.length === 0 || decisions.every((d) => d === null)) return { kind: "undecided" };
+  const summary = decisionSummary(decisions);
+  if (decisions.length === 0 || decisions.every((d) => d === null)) return { kind: "undecided", summary };
   const first = decisions[0]!;
   const allSame = first !== null && decisions.every((d) => d === first);
-  return allSame ? { kind: "uniform", decision: first } : { kind: "needsAttention" };
+  return allSame ? { kind: "uniform", decision: first, summary } : { kind: "needsAttention", summary };
 }
 
 /**

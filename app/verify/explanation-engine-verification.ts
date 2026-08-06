@@ -55,12 +55,12 @@ check("entityPhrase(long_numeric_id)", entityPhrase("long_numeric_id"), "an iden
 check("entityPhrase(other_identifier)", entityPhrase("other_identifier"), "an identifier");
 check("entityPhrase(unknown_type) falls back to 'a {type}'", entityPhrase("street_address"), "a street address");
 
-check("confidenceOpener >=95", confidenceOpener(95, "person"), "We believe this is a person's name");
-check("confidenceOpener >=80 <95", confidenceOpener(84, "person"), "This is likely a person's name");
-check("confidenceOpener >=50 <80", confidenceOpener(50, "email"), "This may be an email address");
-check("confidenceOpener <50", confidenceOpener(12, "phone"), "This is unlikely to be a phone number");
-check("confidenceOpener boundary 95 exact", confidenceOpener(95, "person"), "We believe this is a person's name");
-check("confidenceOpener boundary 94", confidenceOpener(94, "person"), "This is likely a person's name");
+check("confidenceOpener >=95", confidenceOpener(95, "person"), "Almost certainly a person's name");
+check("confidenceOpener >=80 <95", confidenceOpener(84, "person"), "Likely a person's name");
+check("confidenceOpener >=50 <80", confidenceOpener(50, "email"), "Possibly an email address");
+check("confidenceOpener <50", confidenceOpener(12, "phone"), "Unlikely to be a phone number");
+check("confidenceOpener boundary 95 exact", confidenceOpener(95, "person"), "Almost certainly a person's name");
+check("confidenceOpener boundary 94", confidenceOpener(94, "person"), "Likely a person's name");
 
 // --- joinPhrases: Oxford-comma joining for 0/1/2/3+ items (Python's _join_phrases) ---
 check("joinPhrases([])", joinPhrases([]), "");
@@ -72,9 +72,15 @@ check("joinPhrases filters empty strings", joinPhrases(["", "a", ""]), "a");
 
 // --- normalizeEvidenceText: dictionary lookup + fallback ---
 const knownFirstName = normalizeEvidenceText(evidence("c1:known-first-name", "known-first-name", 20));
-check("normalizeEvidenceText known category short", knownFirstName.short, "Known first name");
-check("normalizeEvidenceText known category standard", knownFirstName.standard, "it matches a known first name");
-check("normalizeEvidenceText known category expert", knownFirstName.expert, "Known first name");
+// DECLARED DEVIATION (AG, 2026-08-04): `short` is reviewer copy now, not a
+// verbatim port -- see explanation-dictionary.data.ts's header for why the
+// oracle has no equivalent surface to diverge from. The two registers that
+// ARE reviewer-invisible and DO feed the audit narrative stay pinned to
+// Python's exact strings on the next two lines; that is the parity that
+// matters and it is deliberately still asserted.
+check("normalizeEvidenceText known category short (reviewer copy, deviation declared)", knownFirstName.short, "Common first name");
+check("normalizeEvidenceText known category standard (VERBATIM from Python)", knownFirstName.standard, "it matches a known first name");
+check("normalizeEvidenceText known category expert (VERBATIM from Python)", knownFirstName.expert, "Known first name");
 check("normalizeEvidenceText preserves polarity/weight/id", [knownFirstName.polarity, knownFirstName.weight, knownFirstName.id], [
   "positive",
   20,
@@ -101,7 +107,7 @@ const positiveOnly = buildStandardSummary(
 check(
   "buildStandardSummary: positive-only branch",
   positiveOnly,
-  "We believe this is a person's name because it matches a known first name and it matches a known surname."
+  "Almost certainly a person's name because it matches a known first name and it matches a known surname."
 );
 
 const negativeOnly = buildStandardSummary(
@@ -118,7 +124,7 @@ const negativeOnly = buildStandardSummary(
 check(
   "buildStandardSummary: negative-only branch",
   negativeOnly,
-  "This is unlikely to be a person's name because it is also a common English word."
+  "Unlikely to be a person's name because it is also a common English word."
 );
 
 const positiveAndNegative = buildStandardSummary(
@@ -135,7 +141,7 @@ const positiveAndNegative = buildStandardSummary(
 check(
   "buildStandardSummary: positive-but-negative branch",
   positiveAndNegative,
-  "This may be a person's name because it matches a known first name, but it is also a common English word."
+  "Possibly a person's name because it matches a known first name, but it is also a common English word."
 );
 
 const neutralOnly = buildStandardSummary(
@@ -152,7 +158,7 @@ const neutralOnly = buildStandardSummary(
 check(
   "buildStandardSummary: neutral-only branch",
   neutralOnly,
-  "This may be an email address based on deterministic evidence: it appears only once in the document."
+  "Possibly an email address based on deterministic evidence: it appears only once in the document."
 );
 
 const noEvidence = buildStandardSummary(
@@ -166,7 +172,7 @@ const noEvidence = buildStandardSummary(
     assessment: undefined,
   })
 );
-check("buildStandardSummary: no-evidence branch", noEvidence, "This is unlikely to be a phone number. No explanatory evidence was recorded.");
+check("buildStandardSummary: no-evidence branch", noEvidence, "Unlikely to be a phone number. No explanatory evidence was recorded.");
 
 const truncatedToThree = buildStandardSummary(
   buildExplanationContext({

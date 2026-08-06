@@ -21,12 +21,26 @@
  * verification plan rather than treated as optional polish.
  */
 
-import type { LocalSessionRepository, SessionRecord, SessionSummary, QuotaStatus } from "./LocalSessionRepository.js";
+import type { LocalSessionRepository, SessionRecord, SessionSummary, QuotaStatus, PersistedUiState } from "./LocalSessionRepository.js";
 import { summarizeSessionRecord, isValidSessionRecord } from "./LocalSessionRepository.js";
+import { isValidDecisionMemoryRecord, type DecisionMemoryRecord } from "../domain/DecisionMemory.js";
 
 const DB_NAME = "docscrub-sessions";
-const DB_VERSION = 1;
+// v2 (2026-08-02): adds the "ui-state" store -- document-tied UI snapshots
+// (see LocalSessionRepository.ts's PersistedUiState). Existing v1 databases
+// upgrade in place; onupgradeneeded's contains() checks make the migration
+// idempotent.
+// v3 (2026-08-03): adds the "decision-memory" store -- one small
+// per-document projection of what was decided, so a later document can
+// reuse it without an export/import round trip (see
+// domain/DecisionMemory.ts). Separate from "sessions" on purpose: a
+// SessionRecord carries the original document bytes, and this store is read
+// on EVERY load. Existing v1/v2 databases upgrade in place; the contains()
+// checks below keep the migration idempotent.
+const DB_VERSION = 3;
 const STORE_NAME = "sessions";
+const UI_STATE_STORE = "ui-state";
+const DECISION_MEMORY_STORE = "decision-memory";
 
 /** Storage-eviction cap, distinct from listRecent()'s display `limit` (see
  *  LocalSessionRepository.ts) -- this bounds how many session records this
@@ -45,8 +59,30 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: "documentId" });
       }
+      if (!db.objectStoreNames.contains(UI_STATE_STORE)) {
+        db.createObjectStore(UI_STATE_STORE, { keyPath: "documentId" });
+      }
+      if (!db.objectStoreNames.contains(DECISION_MEMORY_STORE)) {
+        db.createObjectStore(DECISION_MEMORY_STORE, { keyPath: "documentId" });
+      }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // MULTI-TAB UPGRADE SAFETY (2026-08-02, learned from the v1->v2
+      // bump deadlocking behind other open tabs): when a FUTURE version
+      // wants to upgrade, every live connection gets versionchange --
+      // close ours so the upgrade can proceed; the next repository call
+      // reopens at the new version. Without this, one stale tab blocks
+      // every other tab's upgrade forever.
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    request.onblocked = () => {
+      // An older tab still holds a previous-version connection. The open
+      // resolves automatically once that tab closes/reloads; surface the
+      // wait instead of hanging silently.
+      console.warn("DocScrub: waiting for another tab to release the session database (close or reload other DocScrub tabs).");
+    };
     request.onerror = () => reject(request.error ?? new Error("failed to open IndexedDB database"));
   });
 }
@@ -97,11 +133,61 @@ export class IndexedDbSessionRepository implements LocalSessionRepository {
   async delete(documentId: string): Promise<void> {
     const db = await this.db();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
+      // One transaction, all three stores: the UI snapshot and the decision
+      // memory both have no meaning without their session (see
+      // LocalSessionRepository.saveUiState/saveDecisionMemory).
+      const tx = db.transaction([STORE_NAME, UI_STATE_STORE, DECISION_MEMORY_STORE], "readwrite");
       tx.objectStore(STORE_NAME).delete(documentId);
+      tx.objectStore(UI_STATE_STORE).delete(documentId);
+      // Removing a document forgets what it taught, too -- otherwise
+      // "remove from list" would leave decisions silently influencing
+      // future documents with no visible source to point at.
+      tx.objectStore(DECISION_MEMORY_STORE).delete(documentId);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("failed to delete session record"));
     });
+  }
+
+  async saveUiState(documentId: string, uiState: PersistedUiState): Promise<void> {
+    const db = await this.db();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(UI_STATE_STORE, "readwrite");
+      tx.objectStore(UI_STATE_STORE).put({ documentId, uiState });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("failed to save ui state"));
+    });
+  }
+
+  async loadUiState(documentId: string): Promise<PersistedUiState | null> {
+    const db = await this.db();
+    const row = await requestToPromise(
+      db.transaction(UI_STATE_STORE, "readonly").objectStore(UI_STATE_STORE).get(documentId) as IDBRequest<unknown>
+    );
+    if (!row || typeof row !== "object") return null;
+    const uiState = (row as { uiState?: unknown }).uiState;
+    return uiState && typeof uiState === "object" ? (uiState as PersistedUiState) : null;
+  }
+
+  async saveDecisionMemory(record: DecisionMemoryRecord): Promise<void> {
+    const db = await this.db();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DECISION_MEMORY_STORE, "readwrite");
+      tx.objectStore(DECISION_MEMORY_STORE).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("failed to save decision memory"));
+    });
+  }
+
+  async listDecisionMemory(excludeDocumentId?: string): Promise<DecisionMemoryRecord[]> {
+    const db = await this.db();
+    const rows = await requestToPromise(
+      db.transaction(DECISION_MEMORY_STORE, "readonly").objectStore(DECISION_MEMORY_STORE).getAll() as IDBRequest<unknown[]>
+    );
+    // Structurally validated on the way out, same defensive posture
+    // isValidSessionRecord gives the sessions store: a record written by an
+    // older/newer shape degrades this feature to "no memory" rather than
+    // throwing on a load path the reviewer cannot route around.
+    return (rows ?? []).filter(isValidDecisionMemoryRecord).filter((record) => record.documentId !== excludeDocumentId);
   }
 
   async listRecent(limit = RECENT_DOCUMENTS_STORAGE_CAP): Promise<SessionSummary[]> {

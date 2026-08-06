@@ -57,6 +57,7 @@
 
 import type { ReviewSession } from "../domain/ReviewSession.js";
 import type { WorkspaceSaveFile } from "../workspace/WorkspaceSaveFile.js";
+import type { DecisionMemoryRecord } from "../domain/DecisionMemory.js";
 
 export const SESSION_RECORD_SCHEMA_VERSION = 1 as const;
 
@@ -153,6 +154,17 @@ export function isValidSessionRecord(value: unknown): value is SessionRecord {
   return true;
 }
 
+/** UI-STATE PERSISTENCE (AG, 2026-08-02, "tie it to the document, not the
+ *  user"): an opaque, JSON-safe snapshot of presentation state (active
+ *  stage, focused item, view mode, filters, open editor, scroll), stored
+ *  ALONGSIDE the document's session so it travels with the document --
+ *  when user accounts arrive, per-user copies of this record are the
+ *  extension point, not a migration out of browser-global storage. The
+ *  persistence layer treats it as opaque: its SHAPE is owned and
+ *  validated entirely by the UI layer (see app.ts's UiSnapshot), so UI
+ *  evolution never needs a storage migration. */
+export type PersistedUiState = Record<string, unknown>;
+
 export interface LocalSessionRepository {
   save(record: SessionRecord): Promise<void>;
   /** Also updates the stored record's `lastOpenedAt` to `openedAt` -- see
@@ -160,6 +172,29 @@ export interface LocalSessionRepository {
    *  separate method. Returns null if no record exists for `documentId`. */
   load(documentId: string, openedAt: string): Promise<SessionRecord | null>;
   delete(documentId: string): Promise<void>;
+  /** Document-tied UI snapshot (see PersistedUiState above). Small and
+   *  written frequently (debounced tab/scroll/focus changes), which is why
+   *  it is NOT a field on SessionRecord: rewriting a record that carries
+   *  the full document bytes on every scroll would be absurd. Deleted
+   *  together with the session by delete(). */
+  saveUiState(documentId: string, uiState: PersistedUiState): Promise<void>;
+  loadUiState(documentId: string): Promise<PersistedUiState | null>;
+  /** DECISION MEMORY (AG, 2026-08-03) -- one small projection per document
+   *  of what the reviewer decided, so a later document can reuse it without
+   *  an export/import round trip. In its OWN store rather than on
+   *  SessionRecord for the same reason PersistedUiState is: a SessionRecord
+   *  carries the original document bytes, and answering "what have I
+   *  decided before" must not mean deserializing every prior document's
+   *  full contents on every load. See domain/DecisionMemory.ts, including
+   *  its trust-boundary note before making this cross-machine. Deleted
+   *  together with the session by delete(). */
+  saveDecisionMemory(record: DecisionMemoryRecord): Promise<void>;
+  /** Every stored memory EXCEPT `excludeDocumentId` (the document being
+   *  loaded -- reusing a document's own decisions into itself is a no-op at
+   *  best and confusing at worst). Ordering is not significant;
+   *  mergeDecisionMemory() resolves conflicts deterministically by
+   *  timestamp rather than by iteration order. */
+  listDecisionMemory(excludeDocumentId?: string): Promise<DecisionMemoryRecord[]>;
   /** Ordered most-recently-opened first. `limit` bounds how many summaries
    *  are returned (Recent Documents caps its landing-page list; see
    *  RECENT_DOCUMENTS_DISPLAY_LIMIT in app.ts) -- it does NOT evict storage;

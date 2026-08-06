@@ -83,6 +83,11 @@
 
 import type { Candidate, ContentBlock, Occurrence } from "../../domain/DocumentModel.js";
 import type { QualityLabel, Recommendation } from "../../domain/Evidence.js";
+import type {
+  CandidateContextualEvidence,
+  ContextualEvidenceRuleId,
+} from "../contextual-person-evidence/contextual-person-evidence.js";
+import { CONTEXTUAL_EVIDENCE_RULE } from "../contextual-person-evidence/contextual-person-evidence.js";
 import { EMAIL_RE } from "../detectors/patterns.js";
 import {
   AMBIGUOUS_NAME_SOFT_NEGATIVES,
@@ -148,7 +153,25 @@ const KNOWN_SURNAMES_SET = new Set(KNOWN_SURNAMES);
  *  a default ScoringProfileSnapshot from it (see this file's doc comment,
  *  point 4). Not read directly by scoreCandidateQuality() below -- that
  *  function takes weights as a parameter, defaulting to this. */
-export const DEFAULT_EVIDENCE_WEIGHTS: Readonly<Record<string, number>> = EVIDENCE_WEIGHTS;
+export const DEFAULT_EVIDENCE_WEIGHTS: Readonly<Record<string, number>> = {
+  ...EVIDENCE_WEIGHTS,
+  /**
+   * ADDITIVE, TS-ONLY (AG, 2026-08-05). Not a ported Python weight -- the
+   * generated parity data file is untouched, as it must be. This entry is
+   * the CAP on the Contextual Person Evidence family's combined
+   * contribution, not a fixed per-rule weight; scoreCandidateQuality()
+   * substitutes the per-candidate figure at call time.
+   *
+   * INERT WITHOUT THE PASS. `contextual_person_evidence` can only appear in
+   * a candidate's reasons when a caller supplies contextual evidence, so
+   * adding this key changes no existing score -- including every score
+   * verify/quality-parity.ts checks against Python.
+   *
+   * Setting it to 0 (or omitting it from a custom ScoringProfileSnapshot)
+   * disables the whole family for that session.
+   */
+  [CONTEXTUAL_EVIDENCE_RULE]: 55,
+};
 
 /** Python's `REVIEW = "To Review"` status constant, used as the key into
  *  STATUS_THRESHOLDS. Exposed for CandidateQualityEngine.ts's default
@@ -354,9 +377,104 @@ function isLikelyAcronym(text: string): boolean {
   return ACRONYM_RE.test(compact);
 }
 
+/**
+ * DEVIATION #2 from the Python oracle (2026-08-05, AG) -- a category the
+ * ported vocabulary cannot express, added rather than approximated. The
+ * first deviation is in engines/detectors/patterns.ts; both are deliberate
+ * and named so a behavioral difference from Python is never accidental.
+ *
+ * WHY. Acronym detection is pure shape: ACRONYM_RE's first alternative is
+ * `[A-Z]{2,10}`, any 2-10 consecutive capitals, consulting no lexicon. So
+ * CALENDAR, OPEN, NOTE, TODAY, NEWS and VETERAN all classify as
+ * `likely_acronym` on the strength of their capitalization alone.
+ *
+ * WHAT THIS IS NOT. It is NOT a dictionary EXCLUSION -- Andrew's
+ * instruction is explicit, and correct: real acronyms often are real words
+ * (NOTE, NEWS, CARE), so removing them would lose true positives to fix a
+ * presentation problem. `likely_acronym` is still emitted, always, and this
+ * category rides ALONGSIDE it rather than replacing it.
+ *
+ * It is also NOT a score. There is no acronym-confidence band in this
+ * engine to lower: EVIDENCE_WEIGHTS scores PERSONHOOD, and
+ * `likely_acronym: -8` means "acronym-shaped is mild evidence against being
+ * a person" -- nothing to do with how confident we are that it IS an
+ * acronym. Deliberately absent from EVIDENCE_WEIGHTS, so `weights[rule] ?? 0`
+ * gives it a zero contribution: it appears in the evidence breakdown as an
+ * EXPLANATION and moves no number. Deliberately absent from
+ * NEGATIVE_FILTER_RULES for the same reason.
+ *
+ * NAMING. Per Andrew, explicitly not "common word" or any label implying
+ * that dictionary membership DISPROVES acronym status. The claim is
+ * strictly weaker than that, and is exactly:
+ *
+ *     Acronym-shaped, but lexically ambiguous.
+ *
+ * The reviewer decides which reading applies; this category exists so the
+ * UI can ask rather than assert.
+ */
+export const ACRONYM_LEXICALLY_AMBIGUOUS = "acronym_lexically_ambiguous";
+
+/**
+ * The LEXICAL dictionaries -- the ones that answer "is this an ordinary
+ * word of English", which is the only question this category asks.
+ *
+ * DO NOT substitute ALL_COMMON_DICTIONARY_WORDS here. It looks like the
+ * right set and is precisely wrong for this purpose, in both directions,
+ * which a first implementation of this function proved empirically:
+ *
+ *   - It EXCLUDES `expanded_common_language_token` (via
+ *     COMMON_DICTIONARY_EXCLUSIONS), which is the 51k-entry lexicon where
+ *     NOTE, NEWS, OPEN, TODAY and CALENDAR actually live -- i.e. it misses
+ *     every example Andrew raised.
+ *   - It INCLUDES `institution_acronym`, `institution_term`,
+ *     `department_organization`, `product_system_name` and friends, so it
+ *     fires on CSULA and FERPA -- genuine, unambiguous acronyms, exactly
+ *     the items that must NOT be qualified.
+ *
+ * That set is a union built for the `all_common_dictionary_words` rule, a
+ * different question with a different answer. Kept separate deliberately.
+ *
+ * `sentence_fragment_word` is deliberately absent: the assembly in
+ * qualityEvidence() already strips that rule whenever acronym rules fire,
+ * so including it here would quietly reintroduce what that line suppresses.
+ * `calendar_term` is also absent -- MAY/MARCH already carry their own
+ * strong signal and their own reviewer vocabulary; widening this category
+ * to cover them would be a second claim, not this one.
+ */
+const LEXICAL_WORD_RULES = [
+  "common_english_word",
+  "expanded_common_language_token",
+  "common_verb",
+  "pronoun_or_determiner",
+  "greeting_or_courtesy",
+  "interjection_casual",
+];
+const LEXICAL_WORDS = new Set<string>();
+for (const rule of LEXICAL_WORD_RULES) {
+  for (const term of QUALITY_SINGLE_TERMS.get(rule) ?? []) LEXICAL_WORDS.add(term);
+}
+
+/**
+ * True when the candidate is acronym-shaped AND its whole compacted form is
+ * also an ordinary word.
+ *
+ * Tests the COMPACTED FORM, not any constituent token: ACRONYM_RE is
+ * anchored `^...$`, so the acronym is always the entire candidate, and a
+ * per-token test would fire on multi-word candidates that merely contain a
+ * common word.
+ */
+function isLexicallyAmbiguousAcronym(text: string): boolean {
+  const compact = normalizeLexiconEntry(text.normalize("NFKC").trim().replace(/\s+/g, ""));
+  return compact.length > 0 && LEXICAL_WORDS.has(compact);
+}
+
 // def _acronym_classifications(text: str) -> list[str]:
+// DEVIATION #2: the second entry has no Python counterpart. See above.
 function acronymClassifications(text: string): string[] {
-  return isLikelyAcronym(text) ? ["likely_acronym"] : [];
+  if (!isLikelyAcronym(text)) return [];
+  const classifications = ["likely_acronym"];
+  if (isLexicallyAmbiguousAcronym(text)) classifications.push(ACRONYM_LEXICALLY_AMBIGUOUS);
+  return classifications;
 }
 
 // def _shape_rules(text, tokens, token_set) -> list[str]:
@@ -482,9 +600,28 @@ export interface ScoredQuality {
   evidenceBreakdown: EvidenceContribution[];
   positiveReasons: string[];
   filterRules: string[];
+  /**
+   * ADDITIVE (AG, 2026-08-05). The individual contextual usages behind the
+   * single `contextual_person_evidence` contribution, and the occurrence id
+   * that best demonstrates them. Empty on every candidate scored without
+   * contextual evidence -- which is every candidate in the Python-parity
+   * harness, by construction.
+   *
+   * Carried on the RESULT rather than folded into `reasons` on purpose:
+   * `reasons` is what evidenceBreakdown is built from, and putting eleven
+   * zero-weight rule ids there would mint eleven empty chips. These travel
+   * to the explanation and Expert View instead. See the ONE CHIP, NOT ELEVEN
+   * note in contextual-person-evidence.ts.
+   */
+  contextualRules: ContextualEvidenceRuleId[];
+  contextualRepresentativeOccurrenceId?: string | undefined;
 }
 
 const EXPLICIT_EVIDENCE_LABELS: Record<string, string> = {
+  // DEVIATION #2 -- explicit so the breakdown never shows the titleCase
+  // fallback ("Acronym Lexically Ambiguous"), and so the wording stays
+  // two-sided rather than reading as a verdict against acronym status.
+  [ACRONYM_LEXICALLY_AMBIGUOUS]: "Could be an acronym or an ordinary word",
   deterministic_non_person_type: "Deterministic non-person type",
   email_address_evidence: "Email address evidence",
   nearby_title: "Nearby honorific or title",
@@ -548,6 +685,11 @@ interface ScoredResultArgs {
   suggestedType?: string | undefined;
   positiveReasons?: string[];
   filterRules?: string[];
+  /** See ScoredQuality.contextualRules. Absent on every path that was not
+   *  given contextual evidence, which keeps the Python-parity output shape
+   *  unchanged apart from two empty additive fields. */
+  contextualRules?: ContextualEvidenceRuleId[];
+  contextualRepresentativeOccurrenceId?: string | undefined;
 }
 
 // def _scored_result(*, reasons, explanation, suggested_type=None, positive_reasons=None, filter_rules=None) -> QualityResult:
@@ -564,6 +706,8 @@ function scoredResult(args: ScoredResultArgs, weights: Record<string, number>, r
     evidenceBreakdown: breakdown,
     positiveReasons: dedupe(args.positiveReasons ?? []),
     filterRules: dedupe(args.filterRules ?? []),
+    contextualRules: args.contextualRules ?? [],
+    contextualRepresentativeOccurrenceId: args.contextualRepresentativeOccurrenceId,
   };
 }
 
@@ -611,13 +755,78 @@ function filterResult(
  *   scoring (shape difference #4 / ADR-015).
  * @param reviewThreshold defaults to the ported Python
  *   STATUS_THRESHOLDS[REVIEW]; pass ScoringProfileSnapshot.thresholds[...] .
+ * @param contextual OPTIONAL, ADDITIVE (AG, 2026-08-05) -- this candidate's
+ *   Contextual Person Evidence, if the caller ran that pass. OMITTED BY THE
+ *   PYTHON-PARITY HARNESS ON PURPOSE: with no contextual evidence this
+ *   function behaves exactly as the port always did, which is what lets
+ *   verify/quality-parity.ts keep diffing exact scores and exact `reasons`
+ *   arrays against Python with no fixture deviations. See
+ *   engines/contextual-person-evidence/contextual-person-evidence.ts for
+ *   why the family lives outside this file.
+ *
+ *   The profile governs it twice over: the family is inert unless
+ *   `weights[CONTEXTUAL_EVIDENCE_RULE]` is present, and that weight acts as
+ *   the CAP on the contribution -- so a ScoringProfileSnapshot genuinely
+ *   pins what a session was scored with (ADR-015) even though the
+ *   contribution itself is computed per candidate.
  */
 export function scoreCandidateQuality(
   candidate: Candidate,
   occurrences: Occurrence[],
   blocksById: ReadonlyMap<string, ContentBlock>,
   weights: Record<string, number> = DEFAULT_EVIDENCE_WEIGHTS,
-  reviewThreshold: number = DEFAULT_REVIEW_THRESHOLD
+  reviewThreshold: number = DEFAULT_REVIEW_THRESHOLD,
+  contextual?: CandidateContextualEvidence | undefined
+): ScoredQuality {
+  const cap = weights[CONTEXTUAL_EVIDENCE_RULE] ?? 0;
+  const contribution = contextual && cap > 0 ? Math.min(contextual.contribution, cap) : 0;
+
+  if (contribution <= 0) {
+    return scoreCandidateQualityCore(candidate, occurrences, blocksById, weights, reviewThreshold, []);
+  }
+
+  const scored = scoreCandidateQualityCore(
+    candidate,
+    occurrences,
+    blocksById,
+    // The per-candidate contribution replaces the profile's cap entry for
+    // this one call, so evidenceBreakdown's weight is the number that
+    // actually moved the score -- the invariant the evidence panel relies on.
+    { ...weights, [CONTEXTUAL_EVIDENCE_RULE]: contribution },
+    reviewThreshold,
+    [CONTEXTUAL_EVIDENCE_RULE]
+  );
+  return {
+    ...scored,
+    contextualRules: contextual?.rules ?? [],
+    contextualRepresentativeOccurrenceId: contextual?.representative?.occurrenceId,
+  };
+}
+
+/**
+ * The unmodified port. `contextualReasons` is either empty (every historical
+ * caller, and the parity harness) or the single
+ * `contextual_person_evidence` id, injected into positiveReasons so that it
+ * both scores AND clears the negative-evidence gate below.
+ *
+ * CLEARING THE GATE IS THE POINT, more than the weight is. The early return
+ * at "filterRules.length > 0 && positiveReasons.length === 0" discards
+ * structure entirely and lands a candidate at the floor. "May" in
+ * "Thanks, May" carries calendar_term and common_english_word and no lexical
+ * positives, so today it scores 1 and is never seen. Entering as a positive
+ * reason routes it to the single-token branch instead: 35 -4 +40 +8 -50 =
+ * 29, To Review. The lexical negatives SURVIVE in that sum -- contextual
+ * evidence overcomes the ambiguity without erasing it, which is the
+ * behaviour Andrew specified, produced by the arithmetic rather than by a
+ * special case.
+ */
+function scoreCandidateQualityCore(
+  candidate: Candidate,
+  occurrences: Occurrence[],
+  blocksById: ReadonlyMap<string, ContentBlock>,
+  weights: Record<string, number>,
+  reviewThreshold: number,
+  contextualReasons: string[]
 ): ScoredQuality {
   if (candidate.detectedType !== "person") {
     return scoredResult(
@@ -645,7 +854,7 @@ export function scoreCandidateQuality(
   else reasons.push("frequency_saturated");
 
   const evidence = qualityEvidence(candidate, occurrences, text, tokenList, tokenSet);
-  const positiveReasons = evidence.positive;
+  const positiveReasons = dedupe([...evidence.positive, ...contextualReasons]);
   const classifications = evidence.classifications;
   const filterRules = evidence.negative;
 

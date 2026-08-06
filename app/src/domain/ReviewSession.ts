@@ -47,6 +47,7 @@ import type { ProcessingRevision } from "./ScoringProfileSnapshot.js";
 import type { NotQuiteState } from "./NotQuite.js";
 import type { DecisionReuseEvidence } from "./DecisionReuse.js";
 import type { EntityRegistry } from "./EntityRegistry.js";
+import type { RelationshipDismissal } from "./StructuralRelationship.js";
 
 export const REVIEW_SESSION_SCHEMA_VERSION = 2 as const;
 
@@ -105,6 +106,11 @@ export type ReviewEventKind =
   | "not-quite-exited"
   | "undo"
   | "redo"
+  /** Structural Relationship Review (2026-07-30): the reviewer marked a
+   *  proposed structural relationship "Unrelated" -- see
+   *  StructuralRelationship.ts. Records the proposal's own facts in the
+   *  payload so the audit trail stands alone. */
+  | "relationship-dismissed"
   /** Feature 002: fired once per applyDecisionReuse batch (in addition to
    *  one ordinary "candidate-decided" event per candidate actually decided
    *  by the batch) -- a single anchor point in the log recording that an
@@ -150,6 +156,17 @@ export interface ReviewSession {
    *  session.ts's decideCandidate(), the same single choke point every
    *  command in this reducer already funnels through. */
   entityRegistry: EntityRegistry;
+
+  /** Structural Relationship Review (2026-07-30): proposals the reviewer
+   *  marked "Unrelated", keyed by the content-derived proposalId. ADDITIVE
+   *  and OPTIONAL, deliberately no schema bump (unlike entityRegistry's v2
+   *  break): a session saved before this feature existed simply has no
+   *  dismissals, which is exactly true -- treating absence as {} fabricates
+   *  nothing. Accepted relationships are NOT stored here or anywhere:
+   *  acceptance is expressed as ordinary per-candidate decisions
+   *  (bulkApplyDecision), and "addressed" is derived from those --
+   *  derive, don't duplicate. */
+  relationshipDismissals?: Record<string /* proposalId */, RelationshipDismissal>;
 
   /** At most one open Not Quite sub-state at a time (§6.8). */
   activeNotQuite: NotQuiteState | null;

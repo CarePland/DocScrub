@@ -159,7 +159,16 @@ export class DeterministicDecisionReuseEngine implements DecisionReuseEngine {
         tier: "grouped-alias",
         matchedImportedCandidateId: first.candidateId,
         confidence: 90,
-        description: `Grouped by this document's own entity resolution with "${matchedSiblingIds[0]}" (proposed entity "${group.canonicalName}"), which exactly matched a previously decided candidate.`,
+        // DATA MINIMIZATION (2026-08-04). This read `(proposed entity
+        // "${group.canonicalName}")` -- a full personal name, interpolated
+        // into a `description` that `DecisionReuseEvidence` carries into
+        // the audit record as `importEvidence`. A THIRD route by which raw
+        // names reached exported artifacts, alongside the two in
+        // AuditExporter.buildEntityGroups. The sentence says the same thing
+        // without naming the entity: which mechanism matched, and that a
+        // sibling in the same group carried a prior decision. `viaGroupId`
+        // below already identifies the group for anyone reading in-app.
+        description: `Grouped by this document's own entity resolution with a sibling reference, which exactly matched a previously decided candidate.`,
         viaGroupId: group.groupId,
       });
       if (proposal) {

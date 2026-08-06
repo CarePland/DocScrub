@@ -46,15 +46,36 @@
  * resolution.
  */
 
-export type WorkflowStage = "ambiguity-check" | "group-check" | "item-check" | "qa" | "output";
+/**
+ * PHASE 2, TYPE CHECK (AG, 2026-08-02): "type-check" joins the union as a
+ * FIRST-CLASS stage between group-check and item-check -- "Import →
+ * Ambiguity Check → Group Check → Type Check → Item Check → QA → Output".
+ * Its traversal units are SEMANTIC TYPE ids (domain/semanticTypes.ts's
+ * SemanticTypeId values), not candidateIds -- see
+ * navigation/stages.ts's "type-check" cases. A type is resolved when
+ * every member candidate is resolved through the EXISTING candidate
+ * decision pipeline (the same candidateResolvedStatus rule item-check
+ * uses) -- no type-level durable decision exists, deliberately: type
+ * review is a batched way of applying ordinary candidate decisions, so
+ * audit and session schemas are untouched. Additive for saved
+ * FocusResumePosition values: old saves name only the old five stages
+ * and restore unchanged; a save naming "type-check" simply resumes there.
+ */
+export type WorkflowStage = "ambiguity-check" | "group-check" | "type-check" | "item-check" | "qa" | "output";
 
 /** Canonical stage order -- matches the real product's top-to-bottom
  *  document order (Ambiguity Check, Group Check, then the folded
  *  Category-Check-plus-Results "Item Check"), with QA/Output appended as
- *  the post-generation stages Andrew's instruction asks to represent. Not
- *  a wizard: `moveStage`/`focusStage` can move to ANY stage in either
- *  direction regardless of completion -- see FocusNavigator.ts. */
-export const WORKFLOW_STAGE_ORDER: readonly WorkflowStage[] = ["ambiguity-check", "group-check", "item-check", "qa", "output"];
+ *  the post-generation stages Andrew's instruction asks to represent, and
+ *  (Phase 2, 2026-08-02) Type Check inserted between Group Check and Item
+ *  Check per Andrew's explicit workflow. Not a wizard: `moveStage`/
+ *  `focusStage` can move to ANY stage in either direction regardless of
+ *  completion -- see FocusNavigator.ts. NOTE (conditional workflow, same
+ *  authorization): this is the CANONICAL order, not the VISIBLE workflow --
+ *  the active workflow a reviewer sees and traverses is derived from this
+ *  order by navigation/workflow.ts's activeWorkflowStages(), which drops
+ *  stages that currently contain no reviewable work. */
+export const WORKFLOW_STAGE_ORDER: readonly WorkflowStage[] = ["ambiguity-check", "group-check", "type-check", "item-check", "qa", "output"];
 
 export type FocusPanel =
   | { kind: "none" }
@@ -72,8 +93,10 @@ export type FocusPanel =
  * IDs rather than array positions -- Andrew's explicit "prefer stable
  * domain IDs over positional identity" requirement. `itemId` is a
  * candidateId for ambiguity-check/item-check, a groupId for group-check,
- * and always null for qa/output (no item-level model exists for either
- * today -- see this file's top doc comment).
+ * a SemanticTypeId for type-check (Phase 2 -- the stage's traversal units
+ * are types, not candidates), and always null for qa/output (no
+ * item-level model exists for either today -- see this file's top doc
+ * comment).
  */
 export interface FocusTarget {
   stage: WorkflowStage;
@@ -125,9 +148,41 @@ export interface StageStatus {
    *  `Decision.REVIEW` state -- see phase-8-findings.md -- so this checks
    *  ordinary unresolved-candidate completion instead). Informational
    *  only: `moveStage`/`focusStage` never refuse to navigate to an
-   *  unavailable stage, per "do not invent wizard-style progression." */
+   *  unavailable stage, per "do not invent wizard-style progression."
+   *
+   *  REVISED (AG, 2026-08-02): QA/Output now become available once NO
+   *  work stage has outstanding work of ANY kind -- items or review
+   *  artifacts -- rather than keying on Item Check's candidates alone.
+   *  The old rule was a second, narrower definition of "review is done"
+   *  sitting beside the workflow's own; a document could reach Output
+   *  with an unaddressed structural proposal because that rule could not
+   *  see one. One definition now answers availability, membership, and
+   *  completion. In practice this changes nothing for candidate-only
+   *  documents (the other work stages resolve as their members do). */
   available: boolean;
   completion: StageCompletionStatus;
   itemCount: number;
   unresolvedCount: number;
+  /**
+   * REVIEW ARTIFACTS (AG, 2026-08-02): outstanding reviewer work that is
+   * NOT a traversable item. Today: the structural relationship proposals
+   * the Ambiguity Check stage presents alongside its candidate rows.
+   *
+   * Deliberately counted SEPARATELY from `itemCount`/`unresolvedCount`
+   * rather than folded into them. Those two mean "traversable items" to
+   * every existing consumer -- the navigator walks exactly `itemCount`
+   * things, and Workspace derives `reviewedCandidateCount` as
+   * `totalCandidateCount - unresolvedCount`. Widening them in place would
+   * have silently corrupted that arithmetic. Separate fields let the
+   * workflow ask "is there ANY work here" (the single membership rule in
+   * navigation/workflow.ts) without changing what an item is.
+   *
+   * A future artifact kind joins by extending the two switches in
+   * navigation/stages.ts (`reviewArtifactIdsForStage` /
+   * `isArtifactResolved`) -- the same shape, and the same one place, as
+   * `itemIdsForStage`/`isItemResolved`. Nothing downstream needs to know
+   * the kind.
+   */
+  artifactCount: number;
+  unresolvedArtifactCount: number;
 }

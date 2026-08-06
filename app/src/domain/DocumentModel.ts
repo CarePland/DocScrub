@@ -292,4 +292,70 @@ export interface Occurrence {
    *  regex", "fallback-single-name-regex"). Unlike Candidate.source, this
    *  is always accurate per-occurrence, not just the first one found. */
   source: string;
+  /** NORMALIZATION (AG, 2026-08-03): the sub-range of this occurrence that
+   *  actually carries the entity, once the Normalization pass has stripped
+   *  deterministic conversational/formatting noise around it ("Thanks,
+   *  Andrew" -> "Andrew").
+   *
+   *  DELIBERATELY ADDITIVE AND OPTIONAL, and deliberately NOT a rewrite of
+   *  startOffset/endOffset/text: Andrew's specification requires the
+   *  original detector span to remain stored unchanged and to keep driving
+   *  occurrence highlighting, evidence display, QA, and audit output. This
+   *  field is the ONE thing that must diverge from it -- the span the
+   *  rebuilt document is edited at -- because redacting the original span
+   *  of "Thanks, Andrew" would delete the reviewer's own prose along with
+   *  the name (Andrew's explicit call, 2026-08-03: the output must read
+   *  "Thanks, [REDACTED PERSON]").
+   *
+   *  NEVER set by DocumentParser or DetectionEngine -- which is why
+   *  DOCUMENT_MODEL_SCHEMA_VERSION is deliberately NOT bumped for it: the
+   *  parser's output shape is unchanged, and no persisted artifact carries
+   *  occurrences (they are recomputed from the document bytes on every
+   *  load), so there is nothing to migrate. Only
+   *  engines/normalization/normalization.ts writes it.
+   *
+   *  Read it through redactionSpanOf() below, never directly -- see that
+   *  helper's comment for why. */
+  effectiveSpan?: EffectiveSpan;
+}
+
+/**
+ * A narrowed, still-contiguous sub-range of an Occurrence. Offsets are
+ * absolute within the same ContentBlock as the occurrence that carries it,
+ * on the same [start, end) convention -- so a consumer can use an
+ * EffectiveSpan anywhere it would have used the occurrence's own offsets,
+ * with no coordinate translation.
+ */
+export interface EffectiveSpan {
+  startOffset: number;
+  endOffset: number;
+  /** The literal text at [startOffset, endOffset) -- what a text-search
+   *  based consumer (DocumentRebuilder) must search for. */
+  text: string;
+  /** The tokens Normalization removed, in document order, purely so the
+   *  reviewer-facing explanation can name them. Never load-bearing. */
+  removed: readonly string[];
+}
+
+/**
+ * THE single place any consumer asks "what range of this occurrence should
+ * an output edit actually touch?".
+ *
+ * Exists because the failure mode of getting this wrong is silent and
+ * asymmetric: a consumer that forgets `effectiveSpan` does not crash or
+ * fail a type check -- it quietly deletes ordinary prose from the
+ * reviewer's document ("Thanks, Andrew" -> "[REDACTED PERSON]"). That is
+ * the same class of silent-missed-wiring bug as the InlineEditorTarget
+ * render sites, so it gets the same treatment: one named helper, and every
+ * consumer routes through it rather than reading the field.
+ *
+ * Falls back to the original span when no normalization applies, which is
+ * also the fail-safe direction: redacting too much is a fidelity problem,
+ * redacting too little is a privacy problem, and this never returns less
+ * than Normalization could prove.
+ */
+export function redactionSpanOf(occurrence: Occurrence): { startOffset: number; endOffset: number; text: string } {
+  const span = occurrence.effectiveSpan;
+  if (!span) return { startOffset: occurrence.startOffset, endOffset: occurrence.endOffset, text: occurrence.text };
+  return { startOffset: span.startOffset, endOffset: span.endOffset, text: span.text };
 }

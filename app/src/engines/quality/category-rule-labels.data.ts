@@ -11,6 +11,12 @@
  * "KEY CONVENTION" note.
  */
 export const CATEGORY_RULE_LABELS: Readonly<Record<string, string>> = {
+  // DEVIATION #2 (2026-08-05, AG) -- no Python counterpart; the ported
+  // vocabulary cannot express "acronym-shaped, but lexically ambiguous".
+  // See scoring.ts's ACRONYM_LEXICALLY_AMBIGUOUS for the full reasoning,
+  // including why this must NOT be worded as though being a dictionary
+  // word disproves acronym status.
+  "acronym-lexically-ambiguous": "Could be an acronym or an ordinary word",
   "all-common-dictionary-words": "All common dictionary words",
   "address-suffix": "Address suffix",
   "administrative-phrase": "Administrative phrase",
@@ -32,6 +38,17 @@ export const CATEGORY_RULE_LABELS: Readonly<Record<string, string>> = {
   "institution-acronym": "Institution acronym",
   "institution-term": "Institution term",
   "known-first-name": "Known first name",
+  // 2026-07-30 feature spec: the title-cased fallbacks for these two rule
+  // ids ("Known Personal Name Token", "Small Frequency Bonus") were called
+  // out as "terrible for us" -- scoring-internals vocabulary leaking into a
+  // reviewer-facing filter chip. Explicit human labels instead; the rule
+  // ids themselves (scoring.ts, EVIDENCE_WEIGHTS, audit artifacts) are
+  // untouched. Meanings verified against scoring.ts: known_personal_name_token
+  // = the candidate contains a token from the known given-name list;
+  // small_frequency_bonus = the candidate appears exactly twice in the
+  // document (count === 2 -- see deriveFrequencyReasons).
+  "known-personal-name-token": "Contains a known name",
+  "small-frequency-bonus": "Mentioned only twice",
   "known-surname": "Known surname",
   "legal-administrative-term": "Legal / administrative term",
   "likely-acronym": "Likely acronym",

@@ -117,7 +117,9 @@ async function main(): Promise<void> {
   let state = dispatcher.getState();
   check("workspace reports documentLoaded: true after load", state.documentLoaded === true);
   check("workspace reports a documentId", typeof state.documentId === "string" && state.documentId.length > 0);
-  check("workspace reports 5 stage statuses", state.stageStatuses.length === 5);
+  // PHASE 2 (2026-08-02, deliberate pin update): Type Check joined the
+  // canonical stage union between group-check and item-check -- six now.
+  check("workspace reports 6 stage statuses (Type Check joined in Phase 2)", state.stageStatuses.length === 6);
   check("initial focus starts in ambiguity-check", state.focus?.target.stage === "ambiguity-check");
   check("a fresh session has zero candidate decisions", Object.keys(state.reviewSession?.candidateDecisions ?? {}).length === 0);
 
@@ -326,9 +328,20 @@ async function main(): Promise<void> {
           "reloaded groupDecisions exactly match the saved session's",
           JSON.stringify(reloadedState.reviewSession?.groupDecisions) === JSON.stringify(deserialized.saveFile.reviewSession.groupDecisions)
         );
+        // PHASE 2, CONDITIONAL WORKFLOW (2026-08-02, deliberate pin
+        // update): by this point in the suite every entity group is
+        // decided, so the group-check stage focused at save time contains
+        // NO remaining work -- it is hidden from the active workflow, and
+        // a resume position naming a hidden stage relocates to the
+        // nearest ACTIVE stage ("hidden stages do not leave ...
+        // inaccessible focus targets", AG verbatim). The old pin asserted
+        // focus returned to a stage the reviewer could no longer see.
+        // A save made on a stage that still HAS work continues to resume
+        // in place -- covered by workflow-navigation-verification.ts.
+        const reloadedActive = reloadedState.stageStatuses.filter((s) => s.stage === "qa" || s.stage === "output" || s.unresolvedCount > 0).map((s) => s.stage);
         check(
-          "resumed focus lands back on the stage that was active at save time",
-          reloadedState.focus?.target.stage === savePosition?.target.stage
+          "resumed focus lands on an ACTIVE stage (the saved stage has no work left and is hidden)",
+          reloadedState.focus?.target.stage !== undefined && reloadedActive.includes(reloadedState.focus.target.stage) && reloadedState.focus.target.stage !== savePosition?.target.stage
         );
 
         console.log("--- Wrong-document session-restore rejection ---");

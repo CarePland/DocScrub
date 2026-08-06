@@ -126,7 +126,9 @@ export interface ImportedCandidateDecision {
 
 export interface ImportedEntityGroup {
   groupId: string;
-  canonicalName: string;
+  /** `canonicalName` was removed in audit schema v2 (2026-08-04): it carried
+   *  a raw personal name into every exported artifact. Nothing consumed it
+   *  except the round-trip itself. */
   detectedType: string;
   decision: "Confirmed" | "Rejected" | "Refined";
   decidedAt: string;

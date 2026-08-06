@@ -92,6 +92,30 @@ export interface KeyEvent {
   shift?: boolean;
 }
 
+/**
+ * PHASE 2, WORKFLOW NAVIGATION (AG, 2026-08-02): Shift+Arrow keys no
+ * longer resolve to moveItem anywhere in this file -- Shift+Left/Right
+ * now mean previous/next ACTIVE WORKFLOW STAGE, application-wide, and
+ * that binding lives in the UI layer (app.ts's handleStageArrowKey),
+ * NOT here, for a concrete structural reason: several UI-local grammars
+ * (the detail panel's roving arrows, the category-view narrowing column,
+ * the split-review cursor) intercept arrow keys BEFORE this resolver
+ * runs, so a keymap-level Shift+Arrow binding would be silently shadowed
+ * in exactly the contexts it must outrank. The UI pipeline's earliest
+ * gate is the only place the binding can be truly global. This helper is
+ * the guard this file's own arrow bindings now share so a shifted arrow
+ * falls through as null (unhandled) instead of moving the item cursor --
+ * previously Shift+Arrow reached moveItem as an accident of no modifier
+ * check, never a documented behavior. Shift+Tab is unaffected
+ * (tabDirection's own contract -- "previous item" -- predates this and
+ * stays).
+ */
+function unshiftedArrow(event: KeyEvent): string | null {
+  if (!event.key.startsWith("Arrow")) return null;
+  if (event.meta || event.ctrl || event.alt || event.shift) return null;
+  return event.key;
+}
+
 /** Port of redactor/review_queue.py's should_ignore_keyboard_event(). */
 export function shouldIgnoreKeyboardEvent(targetTag: string, editable = false): boolean {
   if (editable) return true;
@@ -172,10 +196,23 @@ export function resolveKeyboardCommand(focus: FocusState, event: KeyEvent): AnyC
   // key event alone can't supply, so those fall through to a future
   // Workspace UI's own draft editor, exactly like renameCandidate's own
   // text entry above; Escape exits.
+  //
+  // INTERACTION LANGUAGE (2026-07-30, keyboard UX refinement): Enter now
+  // resolves to completeNotQuite ("Done fixing"). Grammar: Enter commits /
+  // goes deeper, Escape backs out one level -- so Enter = commit the fix,
+  // Escape = leave without completing, mirroring the panel's own two
+  // buttons exactly. completeNotQuite's own validation (ReviewEngine)
+  // still decides whether the completion is accepted; this binding only
+  // expresses the intent, same as the button. Enter was previously
+  // unbound in this context (verified before binding), so nothing is
+  // shadowed.
   if (target.panel.kind === "not-quite") {
     if (event.key === "Escape") return { family: "review", type: "exitNotQuite", groupId: target.panel.groupId };
-    if (event.key === "ArrowDown") return { family: "navigation", type: "moveNotQuiteMember", direction: "next" };
-    if (event.key === "ArrowUp") return { family: "navigation", type: "moveNotQuiteMember", direction: "previous" };
+    if (event.key === "Enter" && !event.meta && !event.ctrl && !event.alt && !event.shift) {
+      return { family: "review", type: "completeNotQuite", groupId: target.panel.groupId };
+    }
+    if (unshiftedArrow(event) === "ArrowDown") return { family: "navigation", type: "moveNotQuiteMember", direction: "next" };
+    if (unshiftedArrow(event) === "ArrowUp") return { family: "navigation", type: "moveNotQuiteMember", direction: "previous" };
     if (target.panel.activeMemberId) {
       const action = notQuiteMemberShortcut(event.key, event);
       if (action === "Keep") return { family: "review", type: "applyNotQuiteMember", groupId: target.panel.groupId, candidateId: target.panel.activeMemberId, action: "Keep" };
@@ -197,14 +234,36 @@ export function resolveKeyboardCommand(focus: FocusState, event: KeyEvent): AnyC
     // consistent with how local_web_app.py's own client code opens an
     // inline rename/redact editor rather than resolving straight to an
     // API call for those two actions.
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") return { family: "navigation", type: "moveItem", direction: "next" };
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") return { family: "navigation", type: "moveItem", direction: "previous" };
+    const arrow = unshiftedArrow(event);
+    if (arrow === "ArrowDown" || arrow === "ArrowRight") return { family: "navigation", type: "moveItem", direction: "next" };
+    if (arrow === "ArrowUp" || arrow === "ArrowLeft") return { family: "navigation", type: "moveItem", direction: "previous" };
     const tab = tabDirection(event);
     if (tab) return { family: "navigation", type: "moveItem", direction: tab };
     if (event.key === "Home") return { family: "navigation", type: "moveItem", direction: "first" };
     if (event.key === "End") return { family: "navigation", type: "moveItem", direction: "last" };
     if (event.key === "Enter") return { family: "navigation", type: "enterItem" };
     if (event.key === "Escape") return { family: "navigation", type: "closeItem" };
+    return null;
+  }
+
+  // Type Check (PHASE 2, 2026-08-02): traversal units are SEMANTIC TYPES
+  // (see stages.ts) -- arrows/Tab/Home/End move between type cards through
+  // the same moveItem vocabulary every other stage uses. The decision
+  // letters deliberately resolve to NOTHING here: a type-level K/C/R/I is
+  // a BULK action over the type's unresolved members (bulkApplyDecision),
+  // and building a candidateId list requires pipeline context this pure
+  // (focus, key) -> command resolver deliberately does not have -- the UI
+  // layer owns those (same division as C/R's inline editors everywhere
+  // else, and the same reason Enter/Down's enter-the-card behavior is
+  // UI-owned: the member cursor is presentation state).
+  if (target.stage === "type-check" && target.itemId) {
+    const arrow = unshiftedArrow(event);
+    if (arrow === "ArrowDown" || arrow === "ArrowRight") return { family: "navigation", type: "moveItem", direction: "next" };
+    if (arrow === "ArrowUp" || arrow === "ArrowLeft") return { family: "navigation", type: "moveItem", direction: "previous" };
+    const tab = tabDirection(event);
+    if (tab) return { family: "navigation", type: "moveItem", direction: tab };
+    if (event.key === "Home") return { family: "navigation", type: "moveItem", direction: "first" };
+    if (event.key === "End") return { family: "navigation", type: "moveItem", direction: "last" };
     return null;
   }
 
@@ -217,8 +276,9 @@ export function resolveKeyboardCommand(focus: FocusState, event: KeyEvent): AnyC
   // buttons do, instead of the old direct flattenGroup/redactGroup dispatch
   // that bypassed it.
   if (target.stage === "group-check" && target.itemId) {
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") return { family: "navigation", type: "moveItem", direction: "next" };
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") return { family: "navigation", type: "moveItem", direction: "previous" };
+    const arrow = unshiftedArrow(event);
+    if (arrow === "ArrowDown" || arrow === "ArrowRight") return { family: "navigation", type: "moveItem", direction: "next" };
+    if (arrow === "ArrowUp" || arrow === "ArrowLeft") return { family: "navigation", type: "moveItem", direction: "previous" };
     const tab = tabDirection(event);
     if (tab) return { family: "navigation", type: "moveItem", direction: tab };
     if (event.key === "Home") return { family: "navigation", type: "moveItem", direction: "first" };

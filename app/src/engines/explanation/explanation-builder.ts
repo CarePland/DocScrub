@@ -67,14 +67,47 @@ export function entityPhrase(entityType: string): string {
   return labels[entityType] ?? `a ${entityType.replace(/_/g, " ")}`;
 }
 
-/** Direct port of Python's `_confidence_opener()`: the same four likelihood
- *  bands (>=95/>=80/>=50/else), same four opener phrasings. */
+/**
+ * Python's `_confidence_opener()`: the same four likelihood bands
+ * (>=95/>=80/>=50/else).
+ *
+ * ═══ DECLARED DEVIATION: PROFESSIONAL TOOL VOICE (AG, 2026-08-04) ══════
+ *
+ * The PHRASINGS are no longer verbatim. Python's are written as a speaker
+ * addressing a reader -- "We believe this is a person's name" -- which
+ * attributes a belief to software that holds none. The standing principle
+ * (see app/CLAUDE.md): DocScrub is an analysis tool, not an assistant; it
+ * presents evidence and assessments and never claims to think, believe,
+ * find or decide. The reviewer is the decision-maker.
+ *
+ * Bands, thresholds, entity phrases and every caller are untouched; only
+ * the four strings changed. What they now state is the ASSESSMENT rather
+ * than an actor producing it:
+ *
+ *   Python                              →  DocScrub
+ *   "We believe this is a person's name"   "Almost certainly a person's name"
+ *   "This is likely a person's name"       "Likely a person's name"
+ *   "This may be a person's name"          "Possibly a person's name"
+ *   "This is unlikely to be a person's..." "Unlikely to be a person's name"
+ *
+ * `buildStandardSummary` composes these into "<opener> because <evidence>",
+ * which still reads correctly: "Likely a person's name because it matches
+ * a known first name." The subject of the sentence is now the item, not a
+ * narrator -- which is also why "We believe" had to go first: it was the
+ * only opener whose grammar required a speaker.
+ *
+ * NOTE this changes AUDIT NARRATIVE text as well as panel text, since both
+ * come from here. That is intended -- an audit record written in the first
+ * person is exactly the artifact this principle exists to prevent -- but it
+ * is a change to an exported record's wording and is called out for that
+ * reason rather than buried.
+ */
 export function confidenceOpener(likelihood: number, entityType: string): string {
   const entity = entityPhrase(entityType);
-  if (likelihood >= 95) return `We believe this is ${entity}`;
-  if (likelihood >= 80) return `This is likely ${entity}`;
-  if (likelihood >= 50) return `This may be ${entity}`;
-  return `This is unlikely to be ${entity}`;
+  if (likelihood >= 95) return `Almost certainly ${entity}`;
+  if (likelihood >= 80) return `Likely ${entity}`;
+  if (likelihood >= 50) return `Possibly ${entity}`;
+  return `Unlikely to be ${entity}`;
 }
 
 /** Direct port of Python's `_join_phrases()` -- correct Oxford-comma joining

@@ -68,7 +68,7 @@ import type { WorkspaceState } from "./Workspace.js";
 import { ReviewWorkspace } from "./Workspace.js";
 import { createWorkspaceSaveFile, serializeWorkspaceSaveFile, type WorkspaceSaveFile } from "./WorkspaceSaveFile.js";
 import type { AuditArtifacts } from "../io/AuditExporter.js";
-import type { SessionSummary } from "../io/LocalSessionRepository.js";
+import type { SessionSummary, PersistedUiState } from "../io/LocalSessionRepository.js";
 import type { ReplacementRuleConfig } from "../domain/ReplacementRule.js";
 
 export interface CommandDispatcher {
@@ -249,6 +249,34 @@ export class WorkspaceCommandDispatcher implements CommandDispatcher {
   /** Passthrough for a Recent Documents "remove" affordance. */
   deleteStoredSession(documentId: string): Promise<void> {
     return this.workspace.deleteStoredSession(documentId);
+  }
+
+  /** Passthrough for the reopen prompt's "do you already know this file?"
+   *  check. Non-mutating by design -- see Workspace.findStoredSession(). */
+  findStoredSession(documentId: string): Promise<SessionSummary | null> {
+    return this.workspace.findStoredSession(documentId);
+  }
+
+  /** Passthrough so a caller that must READ BACK a just-written session
+   *  (notably: refreshing Recent Documents right after a load) can wait for
+   *  the load's own fire-and-forget autosave to land first. See
+   *  Workspace.autosaveSettled() for why this is not a way to make autosave
+   *  blocking. Same "reads don't need a command" precedent as
+   *  listRecentSessions(). */
+  autosaveSettled(): Promise<void> {
+    return this.workspace.autosaveSettled();
+  }
+
+  /** UI-STATE PERSISTENCE (AG, 2026-08-02) passthroughs -- document-tied
+   *  UI snapshots (see LocalSessionRepository.PersistedUiState); pure
+   *  storage access, same "don't route through a command" precedent as
+   *  listRecentSessions(). */
+  saveUiState(documentId: string, uiState: PersistedUiState): Promise<void> {
+    return this.workspace.saveUiState(documentId, uiState);
+  }
+
+  loadUiState(documentId: string): Promise<PersistedUiState | null> {
+    return this.workspace.loadUiState(documentId);
   }
 
   /** Passthrough reads for the Redaction Rules panel (Milestone 3, Phase

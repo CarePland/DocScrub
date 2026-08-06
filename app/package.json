@@ -7,11 +7,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "serve": "python3 -m http.server 8000",
+    "serve": "python3 serve.py 8000",
     "test": "echo \"No test runner installed yet -- see README.md, 'Environment constraints'\" && exit 1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.1"
   },
   "devDependencies": {
     "typescript": "^5.5.0"
   },
-  "notes": "devDependencies are NOT installed in this repository yet. The environment this scaffold was generated in had no npm registry access (see README.md). Run `npm install` on a machine with normal network access before running `npm run typecheck`."
+  "notes": "devDependencies are NOT installed in this repository yet. The environment this scaffold was generated in had no npm registry access (see README.md). Run `npm install` on a machine with normal network access before running `npm run typecheck`. @supabase/supabase-js is installed for its TypeScript types ONLY -- nothing from node_modules ships. There is still no bundler: index.html's import map resolves the same bare specifier to a pinned esm.sh build for the browser at runtime (see index.html and src/lib/supabase.ts)."
 }

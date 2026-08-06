@@ -68,11 +68,71 @@ function runMappingsFor(paragraph: ParagraphText, blockTextStart: number): RunMa
   });
 }
 
+/**
+ * The `documentId` a set of bytes WOULD receive -- the single definition of
+ * document identity, extracted (AG, 2026-08-03) so it can be asked WITHOUT
+ * parsing.
+ *
+ * The reopen prompt ("you're opening a document you've already worked on")
+ * has to know whether a picked file is already known BEFORE deciding
+ * whether to extract it -- otherwise the reviewer waits through a full
+ * extraction that may be thrown away seconds later. Since identity is a
+ * plain content hash, that question is answerable from the raw bytes alone.
+ *
+ * `parse()` below calls this rather than hashing inline, so the "what makes
+ * two files the same document" rule exists once. A second, independent copy
+ * in the UI layer would be the classic silent-divergence risk: change the
+ * derivation here and the prompt would quietly stop recognising documents,
+ * with nothing failing loudly.
+ */
+export async function documentIdForBytes(bytes: Uint8Array): Promise<string> {
+  return sha256Hex(bytes);
+}
+
+/** Convenience wrapper for callers holding a File rather than bytes. Reads
+ *  the file once; cheap relative to a parse, which is the whole point. */
+export async function documentIdForFile(file: File): Promise<string> {
+  return documentIdForBytes(new Uint8Array(await file.arrayBuffer()));
+}
+
+/**
+ * An invisible Unicode FORMAT character (category Cf -- soft hyphen U+00AD,
+ * zero-width space U+200B, ZWNJ/ZWJ U+200C/U+200D) sitting BETWEEN two
+ * letters, i.e. inside a word.
+ *
+ * Word inserts these routinely (optional hyphenation points, layout hints),
+ * they survive into <w:t> text, and NOTHING between here and the detectors
+ * removes them. Because they are not letters, they split a word for every
+ * pattern in the detector suite: "Acade<U+00AD>my" detects as "Acade". The
+ * reviewer is then shown a truncated span, redacts exactly what they were
+ * shown, and the output looks handled while "my" remains in the released
+ * document -- a SILENT PARTIAL REDACTION, the same failure mode the
+ * Unicode-aware person patterns fixed for accented letters (see
+ * engines/detectors/patterns.ts, DEVIATION #1).
+ *
+ * The Unicode-aware patterns do NOT fix this class: a soft hyphen still is
+ * not a letter, so the word still splits. The real fix is an offset-
+ * preserving sanitization view between the parser and the detectors, which
+ * has to carry an index map back to raw text because runMappings and every
+ * candidate offset are positions DocumentRebuilder splices against
+ * (ooxml/rebuild.ts). That is a deliberate, separate piece of work.
+ *
+ * Until it exists, this flag exists so the gap is DECLARED rather than
+ * silent -- the same DocumentFeatureFlags.unsupported mechanism used for
+ * tracked-change deletions below, feeding the reviewer-facing document
+ * score (ui/documentScores.ts's "unsupported-content" signal). A known,
+ * visible limitation is a different thing from an undetected one.
+ *
+ * Non-global deliberately: `.test()` on a /g/ RegExp mutates lastIndex and
+ * would silently skip every other block.
+ */
+const INTRA_WORD_FORMAT_CHAR_RE = /(?<=\p{L})\p{Cf}(?=\p{L})/u;
+
 export class OoxmlDocumentParser implements DocumentParser {
   async parse(file: File): Promise<DocumentModel> {
     const buffer = await file.arrayBuffer();
     const parts = await readZip(buffer);
-    const documentId = await sha256Hex(new Uint8Array(buffer));
+    const documentId = await documentIdForBytes(new Uint8Array(buffer));
     const decoder = new TextDecoder("utf-8");
 
     const blocks: ContentBlock[] = [];
@@ -173,6 +233,21 @@ export class OoxmlDocumentParser implements DocumentParser {
       unsupported.push("tracked-change-deletion-rebuild");
       processingWarnings.push(
         "This document contains tracked-change deletions. Deleted text cannot yet be safely redacted by DocumentRebuilder -- see OutputVerifier's fidelity findings before treating this document as fully redacted."
+      );
+    }
+
+    // --- invisible intra-word format characters (detection-truncation risk) --
+    // See INTRA_WORD_FORMAT_CHAR_RE. Reported, not repaired: repairing it
+    // means moving every detection offset, which is DocumentRebuilder's
+    // contract, not something to do as a side effect of parsing.
+    const contaminatedBlocks = blocks.filter((block) => INTRA_WORD_FORMAT_CHAR_RE.test(block.text));
+    if (contaminatedBlocks.length > 0) {
+      unsupported.push("intra-word-format-characters");
+      processingWarnings.push(
+        `${contaminatedBlocks.length} text block(s) contain invisible formatting characters inside words ` +
+          `(e.g. Word's optional hyphens or zero-width spaces). Detection splits a word at these characters, ` +
+          `so a name or term containing one may be detected only in part -- redacting what is shown can leave ` +
+          `the remainder in the output. Check these blocks manually before treating this document as fully redacted.`
       );
     }
 

@@ -98,7 +98,33 @@ import type { ScoringProfileSnapshot } from "./ScoringProfileSnapshot.js";
 import type { CandidateDecisionSource, ResolvedStatus } from "./ReviewSession.js";
 import type { DecisionReuseEvidence } from "./DecisionReuse.js";
 
-export const AUDIT_RECORD_SCHEMA_VERSION = 1 as const;
+/**
+ * v2 (AG, 2026-08-04): DATA-MINIMIZATION REPAIR. Two fields carried raw
+ * personal text out of the application in `auditReport` and
+ * `decisionsJson`:
+ *
+ *   - `AuditedEntityGroup.canonicalName` -- the group's full resolved name
+ *     ("Andrew Goodloe"). REMOVED outright; see that interface.
+ *   - `AuditedEntityGroup.groupId` -- constructed by resolution.ts as
+ *     `person:${surname}:${firstInitial}`, so the id ITSELF was a surname
+ *     plus an initial ("person:goodloe:a"). Now a per-record opaque alias;
+ *     see AuditExporter's `aliasForGroupId`.
+ *
+ * This is a BREAKING change to a durable serialized format, which is
+ * exactly why the version moves rather than the shape changing silently:
+ * `DecisionImport` compares against this constant and refuses a file it
+ * does not recognise, so a v1 decisions file is now cleanly REJECTED with
+ * a version message instead of being half-parsed against a schema that no
+ * longer has the fields it names.
+ *
+ * Note the minimization claim in this file's header comment was already
+ * the stated intent -- these two fields contradicted it in practice. The
+ * leak had gone unnoticed because the exporter's
+ * `proposal?.canonicalName ?? decision.groupId` fallback meant most
+ * fixtures wrote the id (which merely CONTAINS a surname) rather than the
+ * full name, and the verification suite only searched for whole names.
+ */
+export const AUDIT_RECORD_SCHEMA_VERSION = 2 as const;
 
 /** Mirrors ReviewSession's CandidateDecisionKind plus a synthetic
  *  "Undecided" value for candidates with no `CandidateDecision` entry at
@@ -147,8 +173,22 @@ export interface AuditedCandidate {
 }
 
 export interface AuditedEntityGroup {
+  /**
+   * OPAQUE ALIAS, not the domain's group id (v2, 2026-08-04). The domain
+   * builds group ids as `person:${surname}:${firstInitial}`, so emitting
+   * one put a surname and an initial into an exported artifact. This is a
+   * per-record alias ("group-1", "group-2", ...) assigned in the record's
+   * own sorted order -- stable for a given input, carrying no name
+   * material, and still serving as the join key WITHIN a record, which is
+   * the only correlation the audit format ever promised (see this file's
+   * header: artifacts join `entityGroups` by `groupId`).
+   *
+   * A hash of the real id was considered and rejected: an unsalted hash of
+   * a surname is a dictionary attack, and a salted one either breaks
+   * reproducibility or ships the salt in the same file. A counter carries
+   * no name material at all, which is a property rather than an obstacle.
+   */
   groupId: string;
-  canonicalName: string;
   detectedType: string;
   decision: "Confirmed" | "Rejected" | "Refined";
   decidedAt: string;

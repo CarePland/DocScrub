@@ -60,7 +60,7 @@
  * silent.
  */
 
-import type { DocumentModel, Occurrence } from "../domain/DocumentModel.js";
+import { redactionSpanOf, type DocumentModel, type Occurrence } from "../domain/DocumentModel.js";
 import type { DetectionResult } from "../engines/DetectionEngine.js";
 import type { ReviewSession } from "../domain/ReviewSession.js";
 import type { FidelityFinding, VerificationReport } from "../domain/VerificationReport.js";
@@ -97,9 +97,19 @@ export class OoxmlOutputVerifier implements OutputVerifier {
       const decision = session.candidateDecisions[occ.candidateId];
       return decision !== undefined && (decision.decision === "Redact" || decision.decision === "Rename");
     });
-    const forbiddenTexts = [...new Set(shouldBeRedacted.map((o) => o.text))].filter((t) => t.length > 0);
+    // NORMALIZATION (2026-08-03): the forbidden text is the REDACTION
+    // span, not the raw detector span -- the same rule DocumentRebuilder
+    // edits by, recomputed independently here per ADR-016 rather than
+    // trusted from it. This is both correct and STRICTER: after
+    // "Thanks, Andrew" is folded into "Andrew", the string that must not
+    // survive is "Andrew", and checking for the longer "Thanks, Andrew"
+    // would pass trivially while real residual PII sat in the output.
+    const forbiddenTexts = [...new Set(shouldBeRedacted.map((o) => redactionSpanOf(o).text))].filter((t) => t.length > 0);
     const occurrenceByText = new Map<string, Occurrence>();
-    for (const occ of shouldBeRedacted) if (!occurrenceByText.has(occ.text)) occurrenceByText.set(occ.text, occ);
+    for (const occ of shouldBeRedacted) {
+      const text = redactionSpanOf(occ).text;
+      if (!occurrenceByText.has(text)) occurrenceByText.set(text, occ);
+    }
 
     const rescanMatches: Array<{ candidateId: string; blockId: string }> = [];
     const fidelityFindings: FidelityFinding[] = [];

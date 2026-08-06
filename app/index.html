@@ -23,6 +23,13 @@
         --border-soft: #e7ebf1;
         --surface: #ffffff;
         --surface-muted: #f6f8fa;
+        /* PROPOSAL SEPARATION (AG, 2026-07-30): the review workspace
+           canvas is a very light gray so the white proposal panels and
+           rows separate through contrast alone -- no borders, shadows,
+           or dividers added. TRIAL (AG, same day): #f5f5f3, a slightly
+           warmer greige, in place of the original cool #f7f8fa -- revert
+           by swapping this one value. */
+        --surface-canvas: #f5f5f3;
         --accent: #2557a7;
         --accent-soft: #eaf1fb;
         --good: #1e7a3d;
@@ -41,6 +48,39 @@
         --rename-soft: #ecf0fb;
         --ignore-color: #6b3fa0;
         --ignore-soft: #f2ecf9;
+        /* 2026-07-30 feature spec: "Not Quite: same but gray" -- the fifth
+           decision hue (Fix this / member-level fixes), plus the filter
+           hue for Category Check's FILTER chip row ("Review State and
+           Filters in distinct colors" -- review state keeps the blue
+           accent; filters get their own purple-leaning hue, matching the
+           Python reference's pink/purple filter chips). */
+        --notquite: #555c66;
+        --notquite-soft: #eef0f2;
+        --filter-hue: #8a3fb8;
+        --filter-soft: #f6eefb;
+        /* Amber highlight for the actual reference inside a Source snippet
+           (Python reference: the matched text carries a yellow mark). */
+        --source-mark: #ffe9a8;
+        /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the category
+           cells' light background -- one step darker than the canvas so
+           the tint is visible on both the white panels and the gray
+           canvas (var(--surface-muted) would vanish against
+           --surface-canvas). Kept in the same warm-greige family as
+           .23's canvas trial so the two don't clash. */
+        --pill-bg: #ebebe7;
+        /* RX-04 (Reviewer Experience Wave 2, 2026-07-29): the ACTUAL
+           rendered height of the sticky .workspace-chrome, kept current by
+           app.ts (syncWorkspaceChromeHeight) -- measured from the element
+           after every render and on any resize, NOT assumed constant: the
+           chrome's contents wrap and change height with warnings, the
+           import/failure banners, the "By type" details toggle, stage
+           state, and viewport width. Consumed by the rows'
+           scroll-margin-top below so scrollIntoView({block:"nearest"})
+           (RX-01) accounts for the real obstruction; 0px until a document
+           is loaded (no chrome exists on the landing view). RX-20 changes
+           chrome contents freely without touching this -- the measurement
+           follows. */
+        --workspace-chrome-height: 0px;
       }
       * { box-sizing: border-box; }
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 1.75rem 2rem 3rem; color: var(--text); background: var(--surface-muted); font-size: 14px; line-height: 1.45; }
@@ -53,29 +93,468 @@
          current, without cross-referencing anything, for the common case
          (today vs. not-today); design-notes.md has the "what changed"
          detail for anything less obvious. */
-      .app-header { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.15rem; }
+      /* APPLICATION FRAME REFINEMENT (AG, 2026-08-01): the header is the
+         sticky application frame -- identity left, DOCUMENT center (the
+         primary identity of the workspace), save state + settings right.
+         Sticky above the workspace chrome, which offsets itself by the
+         measured --app-header-height (same measured-obstruction contract
+         as RX-04; never a hard-coded constant). */
+      .app-header { position: sticky; top: 0; z-index: 40; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.75rem; margin: -1.75rem -2rem 0.5rem; padding: 0.5rem 2rem; background: var(--surface-muted); border-bottom: 1px solid var(--border-soft); }
+      .app-header-left { display: flex; align-items: baseline; gap: 0.5rem; }
       .app-logo { display: block; height: 28px; width: auto; }
       .app-version { color: var(--text-muted); font-size: 0.78rem; }
-      .app-subtitle { color: var(--text-muted); margin: 0 0 1.25rem; font-size: 0.85rem; }
-      button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.32rem 0.6rem; cursor: pointer; }
+      /* The document is the center of the application: largest text in
+         the header, active document bold, siblings quiet one-click
+         switches, "+N ▾" expanding the inline panel. */
+      .app-document { position: relative; text-align: center; min-width: 0; }
+      .app-document-title { display: inline-flex; align-items: center; gap: 0.45rem; max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.05rem; }
+      .app-document-current { font-weight: 700; }
+      .app-document-none { color: var(--text-muted); font-weight: 400; }
+      .app-document-sep { color: var(--text-muted); font-weight: 400; }
+      .app-document-sibling { border: none; background: none; padding: 0 0.1rem; color: var(--text-muted); font-weight: 500; font-size: 0.95rem; cursor: pointer; }
+      .app-document-sibling:hover { color: var(--accent); border-color: transparent; }
+      .app-document-expand { border: none; background: none; padding: 0 0.15rem; color: var(--text-muted); font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+      .app-document-expand:hover { color: var(--accent); border-color: transparent; }
+      .app-document-panel { position: absolute; top: calc(100% + 0.35rem); left: 50%; transform: translateX(-50%); z-index: 45; min-width: 28rem; max-width: 44rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 20px rgba(31, 36, 48, 0.12); text-align: left; }
+      .app-header-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.7rem; position: relative; }
+      /* Persistent save status: the reviewer should never think about
+         saving -- one quiet, always-present answer to "is my work safe." */
+      .app-save-status { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; }
+      .app-save-status.save-status-ok { color: var(--good); }
+      .app-save-status.save-status-warn { color: var(--warn); font-weight: 600; }
+      .app-save-status.save-status-error { color: var(--caution); font-weight: 600; }
+      .app-settings-button { border: none; background: none; padding: 0.1rem 0.3rem; font-size: 1.15rem; line-height: 1; color: var(--text-muted); cursor: pointer; }
+      .app-settings-button:hover { color: var(--text); border-color: transparent; }
+      .app-settings-menu { position: absolute; top: calc(100% + 0.35rem); right: 0; z-index: 45; min-width: 12rem; padding: 0.3rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 20px rgba(31, 36, 48, 0.12); }
+      .app-settings-item { padding: 0.35rem 0.6rem; border-radius: 5px; font-size: 0.88rem; }
+      .app-settings-item-disabled { color: var(--text-muted); cursor: default; }
+      .app-settings-about { border-top: 1px solid var(--border-soft); margin-top: 0.25rem; padding-top: 0.45rem; color: var(--text-muted); font-size: 0.8rem; }
+      .app-settings-exit-preview { display: block; width: 100%; text-align: left; border: none; background: none; font-weight: 400; color: var(--text); cursor: pointer; }
+      .app-settings-exit-preview:hover { background: var(--surface-muted); border-color: transparent; }
+      /* WORKSPACE METRICS (2026-08-02): same quiet menu-item treatment as
+         Exit Preview -- a plain interactive row, not a button chip. */
+      .app-settings-metrics { display: block; width: 100%; text-align: left; border: none; background: none; font-weight: 400; color: var(--text); cursor: pointer; }
+      .app-settings-metrics:hover { background: var(--surface-muted); border-color: transparent; }
+
+      /* PREVIEW GATE (AG, 2026-08-01): temporary shared-password access
+         screen -- the visual foundation of a future login, in the app's
+         own language (muted page, one elevated white card, keycap-free,
+         no padlock imagery). While the gate is up, the app frame hides
+         (body.preview-locked) and #app is empty (the app module hasn't
+         been imported). */
+      body.preview-locked .app-header { display: none; }
+      .preview-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--surface-muted); }
+      /* THE BUG (2026-08-02, found via on-gate diagnostics): the rule
+         above sets `display: grid`, and ANY author display rule beats the
+         `hidden` attribute's UA `display: none` -- so gate.hidden = true
+         never visually closed the gate. The app was loading and running
+         BEHIND it the entire time, and flag-present boots skip showGate,
+         leaving the stuck gate a dead form whose Enter fell through to a
+         native submit. Every earlier "verification" read the attribute,
+         not actual visibility. One line: */
+      .preview-gate[hidden] { display: none; }
+      .preview-gate-card { width: min(24rem, calc(100vw - 2rem)); padding: 1.6rem 1.8rem 1.8rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.08); }
+      .preview-gate-brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.1rem; }
+      .preview-badge { border: 1px solid var(--border); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); background: var(--surface-muted); }
+      .preview-gate-heading { margin: 0 0 0.35rem; font-size: 1.25rem; }
+      .preview-gate-supporting { margin: 0 0 1.1rem; color: var(--text-muted); font-size: 0.88rem; }
+      .preview-gate-form { display: flex; flex-direction: column; gap: 0.8rem; }
+      .preview-field { display: flex; flex-direction: column; gap: 0.25rem; }
+      .preview-field-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+      .preview-field input { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+      .preview-field input:disabled { background: var(--surface-muted); color: var(--text-muted); }
+      .preview-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .preview-password-invalid, .preview-field .preview-password-invalid:focus { border-color: var(--caution); box-shadow: 0 0 0 3px var(--caution-soft); }
+      .preview-gate-error { margin: -0.3rem 0 0; color: var(--caution); font-size: 0.85rem; font-weight: 600; }
+      .preview-submit { padding: 0.5rem 0.7rem; font-size: 0.95rem; }
+      .preview-gate-shake { animation: preview-gate-shake 0.3s ease-in-out; }
+      @keyframes preview-gate-shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-5px); }
+        50% { transform: translateX(5px); }
+        75% { transform: translateX(-3px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .preview-gate-shake { animation: none; }
+      }
+      /* 2026-07-30 feature spec, visual weight pass: "buttons larger, bold
+         text that fills most of the smaller button size" -- heavier weight
+         across every button, matching the Python reference's scannability.
+         VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): padding pulled back
+         down -- "the Keep/Change buttons are more impactful in the Python
+         version simply because the size is smaller ... much less padding."
+         Same font size, tighter box: buttons stop competing with the
+         now-larger primary item text for visual weight. */
+      button { font: inherit; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.24rem 0.55rem; cursor: pointer; }
       button:hover:not(:disabled) { border-color: var(--accent); }
       button:disabled { opacity: 0.5; cursor: default; }
-      .top-bar { margin-bottom: 1.1rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-      .stage-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.9rem; }
-      .tab { border-color: var(--border); color: var(--text-muted); }
-      .tab-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-      .stage-body { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; }
+      /* Visual weight pass: expand/collapse affordances get larger,
+         BORDERLESS arrows ("I'd go for larger, borderless arrows") --
+         replaces the browser's default disclosure marker on every
+         <details> in the app. */
+      details > summary { list-style: none; }
+      details > summary::-webkit-details-marker { display: none; }
+      details > summary::before { content: "▸"; display: inline-block; margin-right: 0.45rem; font-size: 1.15em; color: var(--text-muted); border: none; transition: none; }
+      details[open] > summary::before { content: "▾"; }
+      /* APPLICATION FRAME REFINEMENT (AG, 2026-08-01): the toolbar is a
+         quiet left-aligned action row (desktop convention), no longer a
+         boxed strip of raw file inputs. */
+      .top-bar { margin-bottom: 0.9rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+      .doc-select { font: inherit; padding: 0.28rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; max-width: 22rem; color: var(--text); background: var(--surface); }
+      .session-tools { margin-top: 1rem; color: var(--text-muted); }
+      .session-tools > summary { cursor: pointer; font-weight: 600; color: var(--text-muted); }
+      .session-tools-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin: 0.45rem 0; }
+      /* REVIEW STATUS (AG, 2026-08-01): Extraction / Review / Overall as
+         prominent application status -- "visual importance comparable to
+         the stage navigation." Labels small-caps, values large, value
+         color communicating status quietly (the existing muted
+         good/warn/caution hues -- subtle and professional, not
+         dashboard-saturated). */
+      .review-status { display: flex; align-items: flex-end; gap: 2.2rem; margin: 0.2rem 0 0.65rem; }
+      .review-status-item { display: flex; flex-direction: column; gap: 0.05rem; }
+      .review-status-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+      .review-status-value { font-size: 1.45rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+      /* 2026-08-03: document scores are a MEASUREMENT, same as confidence
+         -- so they speak in depth of ink rather than borrowing the
+         decision hues. A red "score-low" figure in the status region was
+         the same word as Redact spoken in a place where no decision was
+         being described. Bands unchanged; only the channel moved. */
+      .review-status-value.score-low { color: var(--text-muted); text-decoration: underline dotted currentColor; text-underline-offset: 0.18em; }
+      .review-status-value.score-mid { color: var(--text-muted); }
+      .review-status-value.score-high { color: var(--text); }
+      /* DECISION TRACKER (AG, 2026-08-03): the panel that answers "how much
+         have I completed, and how much repetitive work did DocScrub
+         eliminate." It sits in the same strip as Extraction/Review/Overall
+         but is a DIFFERENT KIND of number -- those measure progress, these
+         measure effort -- so it is titled and set apart rather than being
+         three more bare figures in the row.
+
+         COMPACT BY CONSTRUCTION, per "without increasing header height":
+         the title line is 0.62rem and the value row reuses the strip's own
+         value size, so the panel's two stacked lines occupy the same
+         vertical space the label+value pairs beside it already do. The
+         hairline seam (border-left) does the separating; no card, no fill,
+         no border box, nothing that would read as a widget.
+
+         Values take no status band -- see renderDecisionTracker's note on
+         why a completion color would misdescribe these numbers. Tabular
+         figures so the row doesn't jitter as digits change under the
+         reviewer's eye, which matters here more than anywhere else in the
+         app: this panel is meant to be watched. */
+      .decision-tracker { display: flex; flex-direction: column; gap: 0.1rem; padding-left: 1.6rem; border-left: 1px solid var(--border); align-self: stretch; justify-content: flex-end; }
+      .decision-tracker-title { color: var(--text-muted); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .decision-tracker-row { display: flex; align-items: flex-end; gap: 1.35rem; }
+      .decision-tracker-cell { display: flex; flex-direction: column; align-items: center; gap: 0.02rem; }
+      .decision-tracker-value { font-size: 1.3rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text); }
+      .decision-tracker-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+      /* TIME SAVED: number at the same size as the other three, with its
+         phrase beside it rather than beneath, vertically centred and free
+         to wrap to two lines. The different SHAPE is the signal -- this is
+         the one modeled figure among three exact counts, and it should not
+         read as a fourth measurement of the same kind. The phrase is
+         width-capped so it wraps predictably instead of stretching the
+         strip. */
+      .decision-tracker-time { flex-direction: row; align-items: center; gap: 0.4rem; }
+      .decision-tracker-time-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; line-height: 1.2; max-width: 6.2rem; white-space: normal; }
+      .decision-tracker-info { background: none; border: 0; padding: 0; margin: 0; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; line-height: 0; opacity: 0.75; }
+      .decision-tracker-info:hover, .decision-tracker-info:focus-visible { color: var(--text); opacity: 1; }
+      /* The explanation opens beneath the panel, in the flow -- not a
+         floating layer. Constrained so it reads as a paragraph rather than
+         spanning the whole window. */
+      .decision-tracker-note { margin-top: 0.45rem; max-width: 34rem; color: var(--text-muted); font-size: 0.72rem; line-height: 1.45; }
+      .decision-tracker-note p { margin: 0 0 0.4rem; }
+      .decision-tracker-note p:last-child { margin-bottom: 0; }
+      .review-status-diagnostic { flex: 1; min-width: 0; align-self: center; white-space: pre-line; text-align: right; font-size: 0.72rem; line-height: 1.35; color: var(--text-muted); }
+      /* The LOCAL Decision Reduction equation -- "23 / 418 = 395 decisions
+         avoided" -- on section headings, tier headings, type cards, the
+         Group Check toolbar and the Item Check bulk bar. Quiet by design:
+         it is context for the decision in front of the reviewer, never a
+         thing competing with it for attention, and it appears on a great
+         many rows at once. Tabular figures so the equations line up
+         vertically down a column of sections, which is what lets the eye
+         compare them without reading each one. No color of its own: this
+         is a measurement, and the decision hues are spoken for. */
+      .reduction-figure { color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .type-card .reduction-figure { display: block; margin-top: 0.1rem; }
+      /* Stage tabs: equal visual weight across the full row ("QA and
+         Output should no longer appear substantially smaller"), each with
+         its ⇧n keycap embedded as permanent visual language.
+         STAGE ENCAPSULATION (AG, 2026-08-01): tabs are WORKSPACE tabs --
+         the structural file-folder metaphor, not skeuomorphism. The
+         active tab shares the workspace surface's background and border,
+         drops its bottom edge, and overlaps the band's top border by 1px
+         (margin-bottom: -1px + higher z-index) so the surface visibly
+         terminates INTO it -- one object. Inactive tabs recede:
+         borderless, muted, hover reveals a soft outline. A thin accent
+         bar (inset shadow, no layout shift) marks the active tab's top
+         edge -- the one modern affordance, in place of the old filled
+         blue pill. */
+      .stage-tabs { display: flex; gap: 0.3rem; margin-bottom: 0; width: 100%; position: relative; z-index: 2; }
+      .stage-tabs .tab { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.45rem 0.5rem; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--text-muted); }
+      .stage-tabs .tab:hover:not(.tab-active) { border-color: var(--border-soft); }
+      .stage-tabs .tab.tab-active { background: var(--surface-canvas); border-color: var(--border); color: var(--accent); font-weight: 600; margin-bottom: -1px; box-shadow: inset 0 2px 0 var(--accent); }
+      /* FINISHED STAGE (AG, 2026-08-03): green, with the check replacing
+         the fraction. Same --good the section headings and done rows
+         already use -- a finished tab is not a new state needing a new
+         colour, it is the app's existing completion language applied one
+         level up. Listed BEFORE .tab-active so the active stage keeps its
+         selected treatment (accent border, canvas fill) and only borrows
+         the green for its text: standing in a finished stage must still
+         read as "you are here" first. */
+      .stage-tabs .tab.tab-complete { color: var(--good); }
+      .stage-tabs .tab.tab-complete:hover:not(.tab-active) { border-color: var(--good); }
+      .stage-tabs .tab.tab-active.tab-complete { color: var(--good); box-shadow: inset 0 2px 0 var(--good); }
+      .stage-tabs .tab .keycap { font-size: 0.78rem; }
+      .stage-tabs .tab.tab-active .keycap { background: var(--surface); }
+      /* DIAGNOSTIC SCORING UI (2026-07-30) -- temporary development
+         feature (see app.ts renderScoreDiagnostics): tabs on the left,
+         the deliberately plain "why did the score change" text beside
+         them, three score labels flush-right on the same line. Existing
+         palette only, small type, no gauges. */
+      /* APPLICATION FRAME REFINEMENT (AG, 2026-08-01): .stage-tab-row /
+         .score-diagnostic / .score-summary retired -- scores moved into
+         the prominent .review-status strip (below) and tabs render
+         directly into the chrome at full width. */
+      /* Generic .tab/.tab-active fills retired (2026-08-01 stage
+         encapsulation) -- the workspace-tab treatment lives on the
+         .stage-tabs-scoped rules below; stage tabs are the only .tab
+         consumer. */
+      /* PROPOSAL SEPARATION (AG, 2026-07-30): canvas gray, panels white --
+         separation by whitespace and subtle contrast, not decoration.
+         STAGE ENCAPSULATION (AG, 2026-08-01): the body is the lower half
+         of the contained workspace surface -- no top border/radius (the
+         sticky workspace-top band above supplies that edge), so band +
+         body read as one panel the active tab terminates into. */
+      .stage-body { background: var(--surface-canvas); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.9rem 1rem; }
       .view-toggle { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; }
+      /* TYPE CHECK STAGE (PHASE 2, AG 2026-08-02): "display each type as a
+         clean card ... keep the interface visually calm. Make each
+         category feel small and approachable." Cards in an auto-fill
+         grid; the focused card takes the nav treatment (expansion IS
+         focus -- the expanded review surface renders beneath the grid);
+         completed cards mute with a green ✓, mirroring the addressed-item
+         language everywhere else. */
+      .type-check-intro { color: var(--text-muted); font-size: 0.88rem; margin: 0.1rem 0 0.75rem; }
+      .type-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.6rem; margin-bottom: 0.9rem; }
+      .type-card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; padding: 0.6rem 0.75rem; cursor: pointer; }
+      .type-card:hover { border-color: var(--border); }
+      .type-card-focused { border-color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+      .type-card-complete { opacity: 0.75; }
+      /* 2026-08-03: the name shares its line with the decision pills, which
+         sit at the card's upper right per the unified color system. */
+      .type-card-name-row { display: flex; align-items: center; gap: 0.4rem; }
+      .type-card-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .type-card-name-row .decision-pills { margin-left: auto; }
+      .type-card-counts { color: var(--text-muted); font-size: 0.82rem; margin-top: 0.15rem; }
+      .type-card-remaining { font-size: 0.82rem; font-weight: 600; margin-top: 0.3rem; }
+      /* Takes the card's own decision hue rather than a fixed green -- a
+         fully-redacted type reads "✓ Reviewed" in red, not green. */
+      .type-card-remaining-done { color: var(--decision-hue, var(--good)); }
+      .type-review-surface { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.9rem; }
+      .type-review-header { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; }
+      .type-bulk-bar { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding: 0.4rem 0; border-bottom: 1px solid var(--border-soft); margin-bottom: 0.5rem; }
+      /* ══ TYPE CHECK MEMBER GRID — TWO REGIONS (AG, 2026-08-04) ═════════
+         Instruction: "Use a top split region with the inspector on the left
+         and the first contiguous run of cells on the right. Continue the
+         remaining cells in a full-width grid directly below. Preserve one
+         ordered member collection and one cursor/navigation model across
+         both rendered grid regions. Do not use float, masonry, or overlay."
+
+         WHAT THIS SOLVES. A plain two-column split wastes everything below
+         a short inspector: the pane ends a third of the way down and the
+         item column keeps running beside dead space for the rest of the
+         page. Flowing cells around the pane would need a float (text-style
+         wrap-around), which grid cannot do and which was ruled out along
+         with masonry and overlays.
+
+         THE SHAPE INSTEAD: two ordinary grids, stacked.
+
+           ┌──────────────┬───────────────────────────┐
+           │              │ ▢ ▢ ▢                     │  region 1 (top)
+           │  inspector   │ ▢ ▢ ▢                     │  cells 0..k-1
+           │              │ ▢ ▢ ▢                     │
+           ├──────────────┴───────────────────────────┤
+           │ ▢ ▢ ▢ ▢ ▢ ▢ ▢ ▢ ▢                        │  region 2 (rest)
+           │ ▢ ▢ ▢ ▢ ▢ ▢ ▢ ▢ ▢                        │  cells k..n-1
+           └──────────────────────────────────────────┘
+
+         No dead space, even edges preserved, and both regions are plain
+         auto-fill grids -- no new layout mechanism enters the app.
+
+         `k` is the count of WHOLE ROWS that fit beside the inspector, which
+         is rendered geometry and therefore measured (layoutMemberRegions in
+         app.ts, a render-tail pass on the attached tree -- the same
+         deferred-layout pattern as sizeCategoryCells). The renderer emits
+         every cell into region 1; the tail moves the overflow down. Whole
+         rows only, so region 2 never begins mid-row.
+
+         THE TWO REGIONS HAVE DIFFERENT COLUMN COUNTS, deliberately -- that
+         is the entire point, since region 2 has the full width. The
+         collection and the cursor stay single (see memberGridTarget); it is
+         only the row arithmetic that is per-region, which is exactly the
+         situation `measuredColumnCount`'s per-cursor anchor already exists
+         for (2026-08-03, when the focus pane first made two grids on one
+         page differ). */
+      .type-member-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--type-track, 18rem), 1fr)); gap: 0.4rem; align-content: start; }
+      /* Region 2 sits directly below the split, same gap between the two
+         regions as between rows within one -- so the seam reads as another
+         row boundary rather than as a section break. One collection. */
+      .type-member-region-rest { margin-top: 0.4rem; }
+      /* An empty region must occupy nothing: with no cells the grid would
+         still contribute its own box and open a gap under the split. */
+      .type-member-rows:empty { display: none; }
+
+      /* ── THE CELL ────────────────────────────────────────────────────────
+         AG, 2026-08-04: "model it after Item Check's results -- simply the
+         text in the cell, the count, and let the main panel do the work",
+         plus "more padding so the cells don't feel as constricted" and "the
+         text can fill more of the cell space, don't worry about it taking a
+         bit more vertical height."
+
+         So this is `.result-cell` / `.result-cell-name` deliberately, down
+         to the padding and the type scale: the name IS the cell and the
+         count is reference information in small muted grey (VISUAL HIERARCHY
+         REFINEMENT, AG 2026-08-01 -- "the primary text in each cell,
+         regardless of section, should be large and fill a huge amount of the
+         cell space"). Type Check now reads as the same object as every other
+         item grid, which is what "they should all be a similar experience"
+         asks for.
+
+         ⚠️ WHAT LEFT THE CELL, AND WHY THAT IS A REVERSAL WORTH READING.
+         The four decision buttons AND the inline ① conclusion chips are both
+         gone from the cell. The chips were added to these exact rows one day
+         earlier (AG, 2026-08-03: "these are well-suited to add an inline
+         numbered option. plenty of space"), so this is a deliberate reversal
+         of a stated instruction by a later one, not an oversight or a
+         cleanup -- recorded here rather than silently applied.
+
+         Nothing is lost in capability: the inspector renders the same
+         suggestion chips and the same four decisions for the active member,
+         and the digit/letter keys still act on the cursor member. This is
+         the ONE CONTROL, ONE PLACE rule (AG, 2026-08-03) resolved in the
+         panel's favour on this surface.
+
+         It also retires the reserved-band mechanism this file carried for
+         about an hour. That band existed to stop an active cell growing and
+         reflowing the collection; with no per-cell controls there is nothing
+         to reveal, so the failure mode is gone rather than defended against.
+         `white-space: nowrap` on the value guarantees every cell is exactly
+         one line, which is what lets both regions have uniform row heights
+         with no fixed `grid-auto-rows` magic number. */
+      .type-member-row { display: flex; align-items: center; gap: 0.45rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); cursor: pointer; min-width: 0; }
+      .type-member-row:hover { border-color: var(--accent); }
+      .type-member-value { font-weight: 700; font-size: 1.05rem; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .type-member-count { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; flex-shrink: 0; }
+      .type-member-row-decided .type-member-value { color: var(--text-muted); }
+      /* 2026-08-03: names the member's own decision, so it takes that
+         decision's hue rather than a fixed green. Kept for the "covered by
+         group" case, which has no glyph of its own. */
+      .type-member-decision { color: var(--decision-hue, var(--good)); font-size: 0.78rem; font-weight: 600; flex-shrink: 0; }
+      /* Fixed-width slot so a decided row's value still starts on the same
+         column as a selectable one -- the same alignment rule the queue's
+         .triage-check-slot exists for. Selection SURVIVES the reduction to
+         "text and count": it is not a decision control, and it is the
+         feature the type-level bulk bar acts through. */
+      .type-member-check { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1.05rem; }
+      .type-member-check .triage-check { margin: 0; cursor: pointer; }
+      /* ROW BANDING (AG, 2026-08-04: "alternating white/grey for the rows to
+         help keep track"). Applied per VISUAL row by the same render-tail
+         pass that splits the regions -- `nth-child` cannot express "every
+         other row" when the column count is an auto-fill result rather than
+         a number in the stylesheet. Banded per region, because the two
+         regions have different column counts and a parity carried across the
+         seam would mean nothing. */
+      .type-member-row-band { background: var(--surface-muted); }
+      /* The cursor cell wins over both the band and the decision tint --
+         position must never be ambiguous. */
+      .type-member-row-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft, rgba(37, 99, 235, 0.08)); }
+
+      /* ── THE SPLIT ───────────────────────────────────────────────────────
+         INSPECTOR ON THE LEFT (AG, 2026-08-04), which also restores the DOM
+         order `.triage-split` and `.scope-split` already use -- pane first,
+         items second, reading order matching visual order with no CSS
+         reordering. The shares stay items-major (2fr inspector / 3fr items):
+         Type Check's object is the category, and People's 20rem track in a
+         40% column would yield exactly one item per row.
+
+         Below the breakpoint the two stack with the inspector on top, and
+         region 1 simply holds nothing (every cell falls to region 2) --
+         the measurement discovers that on its own, since no whole row fits
+         beside a full-width pane. No separate narrow-viewport code path.
+
+         NOTE, recorded as debt: third copy of this declaration; the right
+         end state is one `.focus-split` the three compose from. Not done in
+         this pass because ui-smoke asserts the literal text of both existing
+         copies, and rewriting a suite expectation in the same pass that
+         changes the behavior it guards is how a regression gets ratified. */
+      .type-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 0.75rem; align-items: start; }
+      @media (max-width: 1239.98px) { .type-split { grid-template-columns: minmax(0, 1fr); } }
+      .type-focus-pane { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+      .type-focus-empty { color: var(--text-muted); font-size: 0.85rem; }
       .chip-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
       .item-list { display: flex; flex-direction: column; gap: 0.4rem; }
-      .item-row { padding: 0.5rem 0.6rem; border: 1px solid var(--border-soft); border-radius: 6px; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; transition: background-color 0.3s ease, border-color 0.3s ease; }
-      /* .item-row.item-row-focused (compound selector, not just .item-row-
-         focused) so the focus cue reliably wins over a Group Check row's
-         decision-color class (.group-row-keep etc., added 2026-07-29) even
-         though both set border-color/background -- specificity settles it
-         rather than depending on which rule happens to come later in this
-         file. */
-      .item-row.item-row-focused { border-color: var(--accent); background: var(--accent-soft); }
+      /* PROPOSAL SEPARATION (2026-07-30): rows/cards carry their own
+         white surface -- previously they had NO background and only
+         looked white because the canvas was; the gray canvas made that
+         latent gap visible. Decision/focus tints override as before. */
+      .item-row { padding: 0.5rem 0.6rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; transition: background-color 0.3s ease, border-color 0.3s ease; }
+      /* FOCUS IS A RING, NEVER A FILL (AG, 2026-08-03, unified decision
+         color system). This rule used to also set `background:
+         var(--accent-soft)`, which put accent blue into the FILL channel --
+         the same channel Change (--rename, a blue only ~20 degrees away)
+         now owns as a decision color. Two blues carrying orthogonal
+         meanings in the same channel is unresolvable by the reviewer, so
+         focus moved out of it entirely: border + ring says "you are here,"
+         fill says "this is what was decided," and the two can never be
+         confused for one another again.
+
+         This generalizes the COMPLETED-COLOR CONTINUITY rule (AG,
+         2026-07-30), which had already established exactly this for
+         DECIDED rows ("a processed item that becomes active does NOT turn
+         nav-blue -- the accent survives only as the BORDER highlight").
+         That rule needed four per-decision override rules below to hold
+         the line; making it unconditional deletes all four AND fixes the
+         case it never covered -- a focused UNDECIDED row used to fill
+         accent-blue, which under the new palette made it read as a Change
+         decision it had not received. The compound selector is retained so
+         the ring still outranks a decision class's border-color. */
+      .item-row.item-row-focused { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+      /* RX-04: without this, the moment the chrome becomes sticky,
+         RX-01's scrollIntoView({block:"nearest"}) parks the focused row
+         UNDERNEATH it -- "nearest" treats a row behind a sticky overlay as
+         visible, because sticky elements are not part of the scrollport
+         calculation. scroll-margin-top equal to the measured obstruction
+         (plus the list's own 0.4rem row gap as a visual cushion) makes the
+         browser aim below the chrome instead. Applies to .group-row too
+         (it also carries .item-row). Ships in the same commit as the
+         sticky rule, deliberately -- one without the other silently
+         regresses already-validated Wave 1 behavior. */
+      /* `.type-member-row` joined this rule (AG, 2026-08-03) when Type
+         Check's member cursor became a scroll target: without it,
+         scrollIntoView aims at the true top of the row and the sticky
+         chrome covers the very row it just brought into view -- the exact
+         obstruction RX-04 measures this variable for. */
+      .item-row, .type-member-row { scroll-margin-top: calc(var(--workspace-chrome-height) + 0.4rem); }
+      /* RX-04: everything between the top bar and the stage body -- file
+         line, persistence status, banners, statistics, warnings, stage
+         tabs, command bar -- sticks as one unit so tabs and the command
+         bar stay reachable while deep in a long list. A REAL container
+         node built by render() (the chrome renderers write into it), not a
+         cosmetic class on siblings: this is the chrome/body DOM seam later
+         render-scoping work (RX-27) cuts along. The top bar (raw file
+         inputs) stays outside, above it, and scrolls away normally.
+         Opaque background so rows vanish under it rather than showing
+         through; small padding-bottom keeps the command bar's own bottom
+         margin (and its background coverage) inside the container instead
+         of collapsing through the bottom edge. */
+      /* APPLICATION FRAME REFINEMENT (AG, 2026-08-01): the chrome sticks
+         BELOW the sticky app header -- offset by the header's measured
+         height (syncWorkspaceChromeHeight publishes both vars; the
+         scroll-margin obstruction below is their sum). */
+      /* STAGE ENCAPSULATION (AG, 2026-08-01): zero bottom padding -- the
+         workspace-top band is the chrome's last child and must sit flush
+         against .stage-body below so the two read as one surface. */
+      .workspace-chrome { position: sticky; top: var(--app-header-height, 0px); z-index: 20; background: var(--surface-muted); padding-bottom: 0; }
 
       /* Workspace Interaction Revision (2026-07-29): brief acknowledgement
          after a decision or ambiguity link -- a soft highlight plus a
@@ -84,7 +563,11 @@
          shift + one badge, not an animation, per this app's "no unnecessary
          visual polish" baseline -- it only needs to say "accepted," not
          draw attention to itself. */
-      .item-row-acknowledged { border-color: var(--good); background: var(--good-soft); }
+      /* 2026-08-03: the acknowledgement flash takes the decision the
+         reviewer just MADE rather than a fixed green. The confirmation now
+         says "your Redact landed" in the Redact hue, which is both more
+         informative and consistent with the card it is flashing on. */
+      .item-row-acknowledged { border-color: var(--decision-hue, var(--good)); background: var(--decision-tint, var(--good-soft)); }
       /* Andrew (2026-07-29, Group Check follow-up #3): "clicking one of the
          'buttons' needs to result in a visual confirmation.. pulsing
          border? some movement simulation.. a brief 0.5-1sec UI experience
@@ -98,14 +581,41 @@
          shifting surrounding layout (transform doesn't reflow). */
       .row-acknowledged-pulse { animation: row-acknowledged-pulse 0.7s ease-out; }
       @keyframes row-acknowledged-pulse {
-        0% { box-shadow: 0 0 0 0 var(--good-soft); transform: scale(1); }
-        30% { box-shadow: 0 0 0 4px var(--good-soft); transform: scale(1.012); }
+        0% { box-shadow: 0 0 0 0 var(--decision-tint, var(--good-soft)); transform: scale(1); }
+        30% { box-shadow: 0 0 0 4px var(--decision-tint, var(--good-soft)); transform: scale(1.012); }
         100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
       }
-      .ack-badge { display: inline-flex; align-items: center; color: var(--good); font-weight: 600; font-size: 0.82rem; }
+      .ack-badge { display: inline-flex; align-items: center; color: var(--decision-hue, var(--good)); font-weight: 600; font-size: 0.82rem; }
       .not-quite-panel { margin: 0.4rem 0 0.6rem 1.5rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); }
       .verification-report { margin-top: 1rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; }
       .warnings { margin: 0.5rem 0; padding: 0.6rem 0.7rem; border: 1px solid #e3b3b7; border-radius: 6px; background: var(--caution-soft); }
+      /* REOPEN PROMPT (AG, 2026-08-03): full-width inline region directly
+         below the toolbar buttons, pushing the whole workspace down rather
+         than floating over it -- a modal would have to be dismissed before
+         the reviewer could even see which document they were being asked
+         about. Uses the CAUTION family, NOT .decision-redact: same red, but
+         a decision class asserts "this candidate is being redacted," and
+         this is a destructive-action warning, not a decision. --caution is
+         already this app's alert channel (.warnings, .toast-host, the
+         load-failure banner), so the palette keeps its one meaning. */
+      .reopen-prompt { width: 100%; margin: 0 0 0.9rem; padding: 0.85rem 1rem; border: 1px solid var(--caution); border-left-width: 4px; border-radius: 8px; background: var(--caution-soft); }
+      .reopen-prompt-title { margin: 0 0 0.2rem; font-size: 1.05rem; font-weight: 700; color: var(--caution); }
+      .reopen-prompt-detail { margin: 0 0 0.7rem; color: var(--text); font-size: 0.92rem; }
+      .reopen-prompt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      /* The two numbered choices carry the same keycap paradigm as every
+         other accelerator in the app; they lead in caution red rather than
+         accent blue because the whole region is a caution context. */
+      .reopen-prompt-actions .preferred-action { border-color: var(--caution); color: var(--caution); padding: 0.42rem 0.85rem; font-size: 1.02rem; }
+      .reopen-prompt-actions .preferred-action:hover:not(:disabled) { background: #f7dcdf; }
+      .reopen-prompt-actions .preferred-action .keycap { background: var(--surface); border-color: var(--caution); }
+      /* The one irreversible choice reads as solid rather than outlined --
+         the same "this is the committed, emphatic state" language
+         .group-action-active uses. */
+      .reopen-prompt-destructive.preferred-action { background: var(--caution); border-color: var(--caution); color: #fff; }
+      .reopen-prompt-destructive.preferred-action:hover:not(:disabled) { background: #8c1d25; border-color: #8c1d25; }
+      .reopen-prompt-destructive.preferred-action .keycap { background: var(--caution-soft); border-color: var(--caution-soft); color: var(--caution); }
+      .reopen-prompt-cancel { margin-left: 0.35rem; }
+      .reopen-prompt-note { margin: 0.55rem 0 0; color: var(--text-muted); font-size: 0.82rem; }
       .audit-section { margin-top: 1rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; }
       .audit-section > * { margin-right: 0.5rem; }
       .import-summary { color: var(--text-muted); font-size: 0.85rem; }
@@ -113,9 +623,19 @@
 
       /* CandidateDetailPanel (Milestone 1, Phase 1) */
       .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.78rem; font-weight: 600; background: var(--surface-muted); color: var(--text-muted); }
-      .badge-good { border-color: #bfe3cc; background: var(--good-soft); color: var(--good); }
-      .badge-warn { border-color: #efd9ab; background: var(--warn-soft); color: var(--warn); }
-      .badge-caution { border-color: #eec1c4; background: var(--caution-soft); color: var(--caution); }
+      /* CONFIDENCE IS A MEASUREMENT, NOT A DECISION (AG, 2026-08-03,
+         unified decision color system). These bands used to be
+         --good/--warn/--caution, which meant a 72%-confidence badge
+         rendered RED inside a card the reviewer had just marked Keep
+         (green) -- the exact "same color, different meaning depending on
+         where you look" problem the unified system exists to remove. The
+         three bands survive intact; they now speak in DEPTH OF INK rather
+         than hue, so the decision palette is left to mean only decisions.
+         Low confidence additionally carries a dotted underline, so the
+         band is legible without color vision at all. */
+      .confidence-high { color: var(--text); font-weight: 700; }
+      .confidence-mid { color: var(--text-muted); }
+      .confidence-low { color: var(--text-muted); text-decoration: underline dotted currentColor; text-underline-offset: 0.2em; }
       .detail-panel { flex-basis: 100%; margin: 0.15rem 0 0.5rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
       .detail-badges { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
       .detail-summary { margin: 0 0 0.75rem; font-size: 0.95rem; }
@@ -133,7 +653,24 @@
       .possible-identity-option:hover { border-color: var(--accent); background: var(--accent-soft); }
       .possible-identity-option-current { border-color: var(--good); background: var(--good-soft); }
       .possible-identity-name { font-weight: 600; }
+      /* KEYCAP (2026-07-30, replaces both the ①-⑨ button prefixes and the
+         old .possible-identity-index badge -- Andrew: the circled glyphs
+         were illegible at button size). The digit is the 1-9 shortcut's
+         visible referent, not decoration, so it sizes with the label text
+         it accompanies (em-relative) and gets a physical-key treatment --
+         square-ish 5px-radius cap with its own surface and a 2px bottom
+         edge -- so it reads as "press this key," distinct from the
+         clickable chip around it. One class for every digit surface:
+         recommendation suggestions, structural-card preferred actions,
+         and the Possible-identities list. */
+      .keycap { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 1.5em; height: 1.5em; padding: 0 0.25em; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); color: inherit; font-family: inherit; font-size: 0.95em; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; flex-shrink: 0; }
       .possible-identity-check { margin-left: auto; color: var(--good); font-weight: 600; font-size: 0.82rem; }
+      /* Deterministic Semantic Relationship Knowledge (2026-07-30):
+         per-option evidence lines inside Possible identities -- one
+         checkable deterministic fact per line, muted, full-width under the
+         option's name/confidence row. */
+      .identity-evidence { display: flex; flex-direction: column; gap: 0.1rem; flex-basis: 100%; margin-top: 0.15rem; }
+      .identity-evidence-line { color: var(--text-muted); font-size: 0.8rem; }
       .occurrence-browser, .expert-view { margin-top: 0.6rem; border-top: 1px solid var(--border-soft); padding-top: 0.5rem; }
       .occurrence-browser > summary, .expert-view > summary { cursor: pointer; font-weight: 600; color: var(--text); font-size: 0.85rem; }
       .occurrence-group { margin: 0.35rem 0 0.35rem 0.9rem; }
@@ -142,10 +679,635 @@
       .expert-grid ul { margin: 0.1rem 0 0.4rem 1.1rem; padding: 0; font-size: 0.85rem; }
       .expert-grid p { margin: 0 0 0.3rem; font-size: 0.85rem; }
 
-      /* Category Check aggregation view (Milestone 1, Phase 2) */
+      /* Category Check aggregation view (Milestone 1, Phase 2; rebuilt to
+         the Python reference layout per the 2026-07-30 feature spec:
+         labelled REVIEW STATE / FILTER header groups in distinct colors, a
+         CATEGORY cell grid with its small Show All link, and the Results
+         cell grid below). */
       .category-check-panel { margin-bottom: 0.85rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-soft); }
       .category-nav-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
-      .category-nav-row button { border-radius: 999px; font-size: 0.82rem; }
+      .category-nav-row button { border-radius: 999px; font-size: 0.84rem; }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the FILTER group
+         anchors at the horizontal midline instead of packing left after
+         REVIEW STATE -- the Python reference's Filter area "is actually
+         aligned with the screen center or close," which gives the header
+         two stable landmarks instead of one variable-width run. Falls
+         back to stacking on narrow windows. */
+      .category-header-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem 1.5rem; margin-bottom: 0.5rem; }
+      @media (max-width: 900px) { .category-header-row { grid-template-columns: 1fr; } }
+      .category-header-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.3rem; }
+      .chip { display: inline-flex; align-items: baseline; gap: 0.45rem; border-radius: 999px; }
+      .chip-count { font-weight: 700; }
+      /* Review State chips keep the blue accent via .chip-active; Filter
+         chips get the distinct filter hue ("Review State and Filters in
+         distinct colors"). */
+      .filter-context-chip.chip-active { color: var(--filter-hue); border-color: var(--filter-hue); background: var(--filter-soft); font-weight: 600; }
+      .category-section-row { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.4rem 0 0.35rem; }
+      .category-section-row .category-header-label { margin-bottom: 0; }
+      .category-show-all-link { border: none; background: none; padding: 0.1rem 0.2rem; font-weight: 700; text-decoration: underline; color: var(--text); }
+      .category-show-all-link.chip-active { color: var(--accent); background: none; }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01, from the Python
+         side-by-side): category cells are light-tinted RECTANGLES, not
+         white 999px pills -- the light background is what separates them
+         (Python reference), the modest radius lets a wrapped label read
+         cleanly, and a wider minimum column means fewer labels wrap at
+         all. `grid-auto-rows` is a FIXED track so a wrapped (two-line)
+         cell can span exactly two tracks -- "the two line pills fill
+         exactly twice the space of two single pills, meaning the grid is
+         unbroken" -- the span itself is applied by a render-tail
+         measurement in app.ts (sizeCategoryCells), since CSS alone cannot
+         see whether a label wrapped. */
+      .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr)); grid-auto-rows: 2.4rem; gap: 0.4rem; }
+      .category-cell { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; text-align: left; font: inherit; padding: 0.3rem 0.7rem; border: 1px solid transparent; border-radius: 7px; background: var(--pill-bg); cursor: pointer; }
+      .category-cell-label { font-weight: 700; font-size: 0.98rem; }
+      .category-cell-count { color: var(--text-muted); font-weight: 600; font-size: 0.8rem; }
+      .category-cell:hover { border-color: var(--accent); }
+      .category-cell-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+      .category-cell-active .category-cell-count { color: var(--accent); }
+
+      /* Results grid (2026-07-30): "a tight grid showing only the
+         title/name and the total occurrence count." Decided cells take
+         their decision's pale color via the shared .group-row-* classes
+         plus the circled check. */
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): section titles must
+         read as titles but never dominate the items beneath them --
+         "folks are going to spend their time looking at the items."
+         Results drops to the same small-caps muted treatment the other
+         section labels already use. */
+      .results-heading { display: flex; align-items: baseline; gap: 0.8rem; margin: 0.5rem 0 0.4rem; }
+      .results-title { color: var(--text-muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+      .results-context { color: var(--text-muted); font-size: 0.85rem; }
+      .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.4rem; }
+      .result-cell { display: flex; align-items: center; gap: 0.45rem; text-align: left; font: inherit; padding: 0.5rem 0.7rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); cursor: pointer; }
+      .result-cell:hover { border-color: var(--accent); }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): "the primary text in
+         each cell, regardless of section, should be large and fill a huge
+         amount of the cell space" -- the name is the cell; the count is
+         reference information in small muted grey. */
+      .result-cell-name { font-weight: 700; font-size: 1.05rem; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .result-cell-count { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; }
+      .result-cell-focused { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+      .result-cell-decided .result-cell-name { font-weight: 700; }
+
+      /* 2026-07-30: the circled check that replaces a percentage once an
+         item is addressed -- "a simple circled check mark, not an entire
+         explanatory pill." One glyph everywhere: candidate rows, group
+         rows, member rows, result cells. */
+      /* 2026-08-03: the reviewed ✓ takes its ROW's decision hue, not a
+         fixed green. It sits directly on the card whose tint it must agree
+         with -- a green check on a red Redact card was the most visible
+         remaining "same color, two meanings" contradiction. Falls back to
+         green only where no decision class is in scope. */
+      .reviewed-check { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 1.35rem; height: 1.35rem; border: 2px solid var(--decision-hue, var(--good)); border-radius: 50%; color: var(--decision-hue, var(--good)); font-weight: 700; font-size: 0.85rem; line-height: 1; }
+
+      /* 2026-07-30: plain bold colored confidence text (no pill chrome)
+         for group/member rows, with any "was x%" stacked UNDERNEATH in
+         grey -- less horizontal space, which the 2-column layout needs. */
+      .confidence-plain, .confidence-plain.confidence-high, .confidence-plain.confidence-mid, .confidence-plain.confidence-low { background: transparent; border: none; padding: 0; }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): larger figure --
+         the percentages are a primary scanning column ("the 91% next to
+         Liudmila would be bigger"). Parent and member figures share ONE
+         size so the column reads as one vertical line; the actual
+         column ALIGNMENT (member %s directly underneath the parent's,
+         despite different right-side controls) is a render-tail
+         measurement in app.ts (alignConfidenceColumns). Right-aligned
+         within itself so 9%/91%/100% share a right edge. */
+      .confidence-plain { display: inline-flex; flex-direction: column; align-items: flex-end; font-weight: 700; font-size: 1.08rem; line-height: 1.2; }
+      .confidence-plain .prior-score { display: block; margin-left: 0; font-style: italic; font-size: 0.78rem; }
+
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): "needs attention"
+         moved OUT of the title line (where the pill broke both the name's
+         prominence and the % column's scannability -- Andrew flagged the
+         pill directly) and INTO the confidence column, stacked under the
+         % exactly like "was x%": same words, quieter chrome, better
+         placement. */
+      .attention-note { display: block; font-size: 0.72rem; font-weight: 600; font-style: normal; color: var(--warn); white-space: nowrap; }
+
+      /* 2026-07-30: the member Source panel ("Context" renamed) -- inline
+         occurrence snippets with the actual reference highlighted. The
+         Source button rides the right edge of its member row. */
+      .source-button { margin-left: 0; }
+      .source-panel { margin: 0.1rem 0 0.45rem 2.4rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface-muted); }
+      .not-quite-panel .source-panel { margin-left: 1.2rem; background: var(--surface); }
+      .source-snippet { color: var(--text); }
+      .source-match { background: var(--source-mark); padding: 0 0.15rem; border-radius: 3px; font-weight: 600; }
+
+      /* STRUCTURAL RELATIONSHIP REVIEW (2026-07-30): the proposal cards at
+         the top of the Ambiguity stage -- observation + deterministic
+         evidence + member rows + the app's own bulk vocabulary. The
+         evidence line is deliberately monospace so a shape signature
+         (AAA-#####) reads as the exact, inspectable pattern it is. */
+      .relationship-section { margin-bottom: 1rem; }
+      /* flex-wrap: nowrap MATTERS (2026-07-30, root-caused live in Chrome):
+         the card inherits flex-wrap: wrap from .item-row, and a COLUMN
+         flex container with wrap makes Chromium size its intrinsic height
+         as if the auto-fill member grid were one stacked column -- the
+         card ballooned to the old one-per-line height and the grid then
+         stretched its row tracks to fill it (~157px-tall cells). Verified:
+         nowrap alone collapses card 566px -> 191px, tracks to natural
+         ~32px. Wrap was never wanted here anyway -- the card is a column
+         of header/evidence/members, not a wrapping row. */
+      /* UNIFIED WORKBENCH (2026-07-30): compressed -- tighter padding and
+         gaps; the card should read like a taller sibling of a triage row,
+         not a document. */
+      .relationship-card { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0.15rem; padding: 0.4rem 0.55rem; }
+      /* UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03): same eviction as
+         .triage-row-done -- an addressed card used to go green regardless
+         of what was actually decided on it. It now wears the dominant
+         decision of its own members (plus pills for the others, since a
+         relationship card is by definition multi-candidate and is exactly
+         the case the pills exist for). The class survives because
+         app.ts's advanceToNextRelationshipCard() queries it to find the
+         next UNaddressed card -- it is load-bearing for navigation, not
+         just styling, so it keeps its name and loses only its color. */
+      .relationship-card-addressed { border-color: var(--decision-border, var(--good)); }
+      /* AG (2026-07-30): the whole title/button line -- kind label,
+         keycap accelerators, Keep/Change/Redact/Unrelated -- stays on ONE
+         horizontal row; the card sizes to its content instead (fewer
+         cards per line is fine).
+         REVISED (AG, 2026-08-03, live report on "Possible acronym"): the
+         DECISION GROUP is now allowed off that one row. The original rule
+         held the buttons rigid and let the suggestion chips absorb every
+         squeeze, which at a real acronym expansion rendered "Information
+         Technology S" -- cut mid-word, and (see the .action-cluster block)
+         without even an ellipsis to say so. The line still does not wrap
+         as a whole; only the cluster reflows, which is the narrower change
+         and preserves the "one header line" reading at every width the
+         card is actually wide enough for. Layout now composed from
+         .action-cluster-host/.action-cluster/.action-cluster-content --
+         applied in app.ts, so this block carries only what is specific to
+         a relationship card. */
+      .relationship-kind { white-space: nowrap; }
+      .relationship-kind { font-weight: 700; font-size: 1.02rem; }
+      /* PREFERRED ACTIONS (2026-07-30): numbered accelerators on the same
+         row -- the circled digit is the keyboard hint, the label is the
+         resulting state. Accent-leaning so they read as the likely path
+         without shouting; the generic actions keep their place at the
+         right. */
+      /* ══ ACTION CLUSTER (AG, 2026-08-03) ══════════════════════════════
+         A REUSABLE answer to one recurring collision, deliberately not a
+         fix to the card that reported it ("we should abstract this in case
+         it needs to be applied elsewhere" -- AG).
+
+         THE COLLISION: a header row holds variable-length CONTENT beside a
+         fixed-membership CONTROL GROUP. The content is the information the
+         reviewer came for (a suggestion chip reading "Information
+         Technology Services", an entity name); the controls are labels
+         they have already read a hundred times (Keep all as-is / Change
+         all / Redact all / Unrelated). Flex shrinks both, so the content
+         loses characters to preserve buttons nobody needed to re-read.
+
+         THE PRINCIPLE: known controls yield SHAPE before unknown content
+         yields CHARACTERS. Losing "…Technology S" costs the reviewer the
+         thing they are deciding about; moving a familiar button to a
+         second line costs them nothing.
+
+         MECHANISM: ordinary flex wrapping, right-aligned. The ladder falls
+         straight out of it as the host narrows --
+
+             [K][C][R][U]  ->  [K][C][R]  ->  [K][C]
+                                  [U]           [R][U]
+
+         -- with no breakpoints and no magic widths. Every rung is the same
+         rule at a different width, so a cluster of three or five buttons,
+         or one whose labels get relabelled (three were, earlier today),
+         reflows correctly without anyone revisiting this block.
+
+         `flex-shrink: 100` on the cluster against `1` on the content is
+         the whole priority statement: the cluster absorbs essentially all
+         the squeeze first. It cannot over-absorb, because a wrapping flex
+         container's automatic min-content floor is its widest single
+         BUTTON -- so it reflows down to one-per-line and never clips a
+         label. Only after that floor does the content begin to truncate.
+         This is why the cluster must NOT be given `min-width: 0`: that
+         would remove the floor that makes the whole ladder safe.
+
+         2x2 is therefore the expected practical floor for four buttons at
+         the widths these cards occupy -- an OUTCOME, not an enforced
+         minimum. Enforcing it would require a min-width keyed to the
+         longest label, exactly the kind of magic number that rots the next
+         time a label changes.
+
+         USAGE: `.action-cluster-host` on the row, `.action-cluster` on the
+         button group, `.action-cluster-content` on whatever must not be
+         truncated. Applied so far to the structural relationship card
+         header; see the findings doc for the other candidate sites. */
+      .action-cluster-host { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: nowrap; min-width: 0; }
+      .action-cluster { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; flex-grow: 0; flex-shrink: 100; flex-basis: auto; margin-left: auto; }
+      .action-cluster > button { white-space: nowrap; }
+      .action-cluster-content { flex-grow: 1; flex-shrink: 1; flex-basis: auto; min-width: 0; }
+      /* The last rung, and a latent bug fixed on the way past: the old
+         mitigation put `text-overflow: ellipsis` on `.preferred-action`
+         itself, which is `display: inline-flex` -- and ellipsis does
+         nothing on a flex container, so a squeezed chip has always CLIPPED
+         mid-letter rather than degrading legibly. keycapButton already
+         wraps the label in its own <span>, so the truncation belongs
+         there, where it actually works. */
+      .action-cluster-content .preferred-action { min-width: 0; }
+      .action-cluster-content .preferred-action > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+      .preferred-actions { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; }
+      .preferred-action { display: inline-flex; align-items: center; gap: 0.45em; border-color: var(--accent); color: var(--accent); background: var(--surface); font-weight: 700; }
+      .preferred-action:hover:not(:disabled) { background: var(--accent-soft); }
+      /* Inside an accent chip the cap sits on the accent-tinted surface so
+         it still reads as a raised key when the chip's hover tint fills in. */
+      .preferred-action .keycap { background: var(--accent-soft); border-color: var(--accent); }
+      /* GROUP-SCOPE CHORD CAP (AG, 2026-08-03): "Opt R" / "Alt R" spelled
+         out, never the ⌥ glyph -- it is the least recognised modifier
+         symbol on the keyboard, and a cap the reviewer has to decode is a
+         cap that does not teach. Wider than a digit cap by necessity;
+         `tabular-nums` is pointless on letters and the tighter tracking
+         keeps a two-token cap from reading as two keys. */
+      /* SPELLED-OUT ACTION LABELS (AG, 2026-08-03: "let's spell them out if
+         there is space then"). "Change all…" / "Redact all…" carry the OS
+         convention for "this asks you for something" -- but this app also
+         truncates with a real ellipsis, so the glyph is ambiguous. Both
+         forms render; the breakpoint picks one. 1240px is the same width
+         the focus-pane split uses, so a window wide enough to hold two
+         columns of items is wide enough to spell a button out. */
+      .action-label-long { display: none; }
+      @media (min-width: 1240px) {
+        .action-label-short { display: none; }
+        .action-label-long { display: inline; }
+      }
+      .keycap-chord { min-width: 0; padding: 0 0.4em; font-variant-numeric: normal; letter-spacing: 0.01em; white-space: nowrap; }
+      /* IDLE CHORD CAP (AG, 2026-08-03): a chord is advertised on every
+         group button, but only the section the reviewer is standing in
+         actually answers it. The inactive ones dim rather than vanish --
+         vanishing taught reviewers the feature did not exist on any section
+         they were not in, which is exactly the report that produced this.
+         Opacity only, no colour change: the cap must still read as the same
+         key, just not the live one. The BUTTON keeps full contrast -- it is
+         clickable regardless of where focus sits; it is only the keyboard
+         route that is currently pointed elsewhere. */
+      .action-chord-idle .keycap-chord { opacity: 0.45; }
+      .relationship-card:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      /* REVIEWER RECOMMENDATION UX (2026-07-30): the panel leads with the
+         conclusion -- reviewer-voiced, largest text in the panel body --
+         then the suggestion buttons; the reasoning nests behind "Why?".
+         The Why? summary is quiet by design: it supports the
+         recommendation rather than compete with it. */
+      .recommendation-conclusion { margin: 0 0 0.45rem; font-size: 1.02rem; font-weight: 600; color: var(--text); }
+      .recommendation-suggestions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.6rem; }
+      /* Header placement (2026-07-30): suggestions sit in the item row
+         right after the title -- inline, no panel-body margin, free to
+         wrap as a group before ever overlapping the %/✓ column or the
+         decision buttons (the row is already a wrapping flex). */
+      .header-suggestions { display: inline-flex; margin-bottom: 0; min-width: 0; }
+      .why-view { margin-top: 0.5rem; border-top: 1px solid var(--border-soft); padding-top: 0.45rem; }
+      .why-view > summary { cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.85rem; }
+      /* Refinement (2026-07-30): detector confidence is disclosed inside
+         Why?, not headlined -- a quiet line, deliberately unlike a pill. */
+      /* CONFIDENCE, TOP RIGHT (AG, 2026-08-04). `margin-left: auto` pushes
+         it to the corner past the badges; tabular numerals so the figure
+         does not shift width as the reviewer moves between items. It
+         inherits the .confidence-high/mid/low ink ramp rather than a hue --
+         see app.ts for why the hue is deliberately still open. */
+      .detail-confidence { margin-left: auto; flex-shrink: 0; font-size: 0.85rem; white-space: nowrap; }
+
+      /* SIGNED EVIDENCE LIST (AG, 2026-08-04) -- replaces the run-on "because
+         X and Y, but Z" paragraph with the polarity made visual. The sign is
+         a fixed-width column so the two groups form one aligned stack, and
+         the +/− carry NO decision hue: this is evidence for and against a
+         CLASSIFICATION, not an outcome, and the decision palette is fully
+         allocated (see app.ts's unified colour system notes). Green here
+         would read as "Keep". Ink depth separates them instead, which is the
+         same device confidence uses two lines above. */
+      /* THE VERDICT IS THE HEADLINE, "Why?" IS THE DOOR (AG, 2026-08-04).
+         The size relationship is inverted from what it was: the disclosure
+         affordance shrinks to a small muted marker and the conclusion takes
+         the line. Both live in the <summary>, so the verdict survives the
+         reviewer collapsing the section -- `list-style: none` + the flex
+         row replace the default marker layout, which cannot align a
+         two-part summary. */
+      .why-summary { display: flex; align-items: baseline; gap: 0.5rem; cursor: pointer; list-style: none; }
+      .why-summary::-webkit-details-marker { display: none; }
+      .why-label { color: var(--text-muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; flex-shrink: 0; }
+      .detail-verdict { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; }
+      /* INLINE FLOW, not one line per item (AG). Wrapping chips mean the
+         line count follows the panel WIDTH rather than the evidence count,
+         which is what keeps six pieces of evidence from costing six lines
+         of a panel whose scarce axis is vertical. */
+      .evidence-flow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.55rem; margin: 0.3rem 0 0.45rem; }
+      .evidence-item { display: inline-flex; align-items: baseline; gap: 0.3rem; font-size: 0.85rem; white-space: nowrap; }
+      /* COPY-PASTE SEPARATOR (AG, 2026-08-04: "one of those bugs nobody
+         notices until someone pastes into Slack"). The chips are spaced by
+         CSS `gap`, which the clipboard does not carry -- copying yielded
+         "+Strong name structure−Single occurrence" with nothing between.
+         A generated `::after` middle dot is a real character in the copied
+         text. Middle dot rather than a comma per AG, because several labels
+         already contain slashes ("Email / Phone / ID"). `:last-child`
+         drops the trailing one. */
+      .evidence-item::after { content: " · "; color: var(--border); margin-left: 0.3rem; }
+      .evidence-item:last-child::after { content: ""; margin-left: 0; }
+      /* ✓ / ✗ (AG). The hue reinforces a glyph that already carries the
+         meaning on its own -- see app.ts: these ARE the decision palette's
+         green and red, in a decision-tinted panel, so the glyph has to be
+         sufficient by itself and the colour has to stay subordinate. Hence
+         the smaller size: the mark is an annotation on the label, never a
+         control competing with the Keep/Redact buttons above it. */
+      .evidence-sign { flex: 0 0 auto; font-weight: 700; font-size: 0.9em; }
+      .evidence-positive { color: var(--text); }
+      .evidence-positive .evidence-sign { color: var(--good); }
+      .evidence-negative { color: var(--text-muted); }
+      .evidence-negative .evidence-sign { color: var(--caution); }
+      /* NEUTRAL (AG, 2026-08-04): context the reviewer should have, which
+         did not argue either way. Quieter than both signed groups and the
+         dot takes NO hue at all -- any colour here would re-imply the
+         influence the neutral rendering exists to deny. It reads as a
+         bullet, which is exactly the right register: a fact in a list, not
+         a claim. */
+      .evidence-neutral { color: var(--text-muted); }
+      .evidence-neutral .evidence-sign { color: var(--border); }
+      /* "+2 more" -- says the list is a SUMMARY. Without it a truncated
+         chip list reads as exhaustive, and a verdict whose supporting
+         evidence is hidden looks unsupported by its own panel. */
+      .evidence-more { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+      /* "and similar" rides the retained snippet's own line (AG: "directly
+         next to the single entry"), quieter than the evidence text it
+         annotates -- it is a statement about the LIST, not about the
+         document. */
+      .snippet-similar { color: var(--text-muted); font-size: 0.85em; }
+      /* COMPACT UNTIL SELECTED (AG, 2026-07-30): the evidence only shows
+         on the selected card, where it IS the clarifying piece -- so it
+         reads as prose (the app's own font, near-body size), not as a
+         monospace data dump. Supersedes the earlier "deliberately
+         monospace" choice, which made sense when it was always-on
+         background text. */
+      .relationship-evidence { margin: 0.1rem 0 0.25rem; color: var(--text); font-size: 0.95rem; }
+
+      /* TRIAGE REFINEMENT (AG, 2026-07-30): the structural kind groups
+         are the triage collection's final sections. */
+      .triage-collection .relationship-section { margin-top: 0.9rem; }
+
+      /* Legacy two-column workbench (superseded same day by the one-
+         collection direction). Grid kept only for any stray consumers. */
+      .review-workbench { display: grid; grid-template-columns: minmax(24rem, 2fr) 3fr; gap: 1rem; align-items: start; }
+      /* KIND GROUPS (AG, 2026-07-30): no super-title; each kind is a
+         titled group (triage heading language) whose unlabeled cards flow
+         left-to-right. Cards size to their single-row header (fewer per
+         line is fine); grow shares leftover line space.
+         (The 2026-07-30 .review-flow one-collection rules were retired
+         2026-08-02 by AMBIGUITY CATEGORY-FIRST: the Ambiguity stage now
+         renders the same .triage-collection as the Triage view.) */
+      /* PROPOSAL SEPARATION (AG, 2026-07-30): wider gutters (1.5rem
+         between side-by-side proposals) and a touch more row spacing
+         (0.85rem) so each proposal reads as its own object. A lone card
+         on a line caps at roughly half the row instead of stretching
+         oddly across it -- the max() floor keeps wide headers (PERC) from
+         being clipped on narrower windows. */
+      .relationship-kind-group { display: flex; flex-wrap: wrap; gap: 0.85rem 1.5rem; margin: 0.35rem 0 1rem; }
+      .relationship-kind-group > .relationship-card { flex: 1 1 auto; max-width: max(38rem, calc(50% - 0.75rem)); min-width: 0; }
+      .review-workbench > * { min-width: 0; }
+      @media (min-width: 1200px) {
+        .review-workbench > .workbench-structural,
+        .review-workbench > .workbench-main {
+          max-height: calc(100vh - var(--workspace-chrome-height, 8rem) - 8rem);
+          overflow-y: auto;
+          padding-right: 0.25rem;
+        }
+      }
+      @media (max-width: 1199.98px) {
+        .review-workbench { grid-template-columns: 1fr; }
+      }
+      /* Inside the narrower structural column, member cells shrink a step
+         so the grid stays a grid. */
+      .workbench-structural .relationship-members-grid { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+      /* MULTI-ITEM MEMBER ROWS (2026-07-30, Andrew): one-per-line member
+         rows made the cards visually enormous. Acronym cards (two-ish
+         members, varied widths) flow inline on one row; identifier-pattern
+         cards (many members, uniform widths by construction -- they share
+         a shape signature) use an auto-fill grid, the same cell language
+         as Category Check's Results grid, so a dozen numbers read as 2-3
+         spreadsheet rows instead of a full-screen column. */
+      .relationship-members { gap: 0.35rem; margin-left: 1.4rem; }
+      .relationship-members-inline { display: flex; flex-wrap: wrap; }
+      .relationship-members-inline > .member-row { flex: 0 1 auto; }
+      .relationship-members-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+      .relationship-members > .member-row { padding: 0.3rem 0.55rem; }
+      .relationship-members .member-name { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      /* TRIAGE QUEUE (2026-07-30): compact sectioned review grid --
+         spreadsheet/email-triage density, not stacked cards. Rows are
+         uniform auto-fill cells (the Results-grid cell language); the
+         section heading carries the explanation ONCE; an expanded row's
+         detail panel spans the grid's full width beneath it. Completed
+         rows stay in place, green, minimal. */
+      .triage-queue { display: flex; flex-direction: column; gap: 0.9rem; }
+      /* CATEGORY-FIRST REVIEW (AG, 2026-08-01, "the category is the
+         decision; the items are the evidence"): the category heading is
+         the PRIMARY object -- prominent title line with progress and
+         Accept All Remaining, one-line conclusion beneath; items are
+         supporting evidence. NOTE: this deliberately supersedes the
+         same-day "titles recede (muted small-caps)" experiment from the
+         parallel workstream -- Andrew's category-first prompt asks for
+         the opposite emphasis. A fully-complete category goes green
+         (existing completion palette), so the page visibly turns green
+         as review progresses and the eye hunts remaining categories. */
+      .triage-section-heading { margin-bottom: 0.4rem; }
+      /* WRAPPING TITLE LINE (AG, 2026-08-03, taken globally by decision):
+         this line was `nowrap`, which meant a heading whose green actions
+         outgrew the width compressed its own TITLE and count -- the two
+         things that say which section you are looking at and how much of it
+         is left. Wrapping instead pushes the overflowing controls to a
+         second line and leaves the section's identity at full size. Applied
+         to every triage section heading, not just the structural kind
+         groups, because "the heading's identity text is the protected side"
+         is a property of headings, not of one surface. */
+      .triage-section-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; }
+      .triage-section-title { font-weight: 700; font-size: 1.05rem; }
+      .triage-section-count { color: var(--text-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+      .triage-section-explanation { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.05rem; }
+      .triage-section-complete .triage-section-title { color: var(--good); }
+      .triage-section-complete .triage-section-title::before { content: "✓ "; }
+      .triage-section-complete .triage-section-count { color: var(--good); }
+      /* Placement REVISED (AG, 2026-08-02, after seeing tiers on the 4K
+         canvas): the category action buttons sit INLINE after the
+         title/progress cluster, left-aligned -- "right of and inline
+         with the title/complete/remaining, with a little spacing" --
+         not pushed to the far edge (margin-left:auto retired; on a wide
+         window that stranded them a screen-width away from the words
+         they act on). First button gets the breathing-room offset; the
+         rest follow at the line's own flex gap. */
+      .triage-accept-all { margin-left: 0.75rem; font-size: 0.82rem; padding: 0.15rem 0.6rem; border-color: var(--good); color: var(--good); font-weight: 600; }
+      .triage-accept-all:hover:not(:disabled) { background: var(--good-soft); }
+      .triage-accept-all ~ .triage-accept-all { margin-left: 0; }
+      /* SECTION-ACTION DIGITS (AG, 2026-08-02): a numbered section button
+         is built by the shared keycapButton, which also carries
+         `.preferred-action` -- whose keycap is the blue ACCENT treatment.
+         On these green buttons that read as two different vocabularies in
+         one control, so the keycap adopts the section-action green. The
+         button body already resolves green by source order (this block
+         follows `.preferred-action`); this rule finishes the job for the
+         key itself, so "green means section-level" stays one signal. */
+      .triage-accept-all.preferred-action { color: var(--good); border-color: var(--good); }
+      .triage-accept-all.preferred-action .keycap { background: var(--good-soft); border-color: var(--good); }
+      /* Tier sub-headings ("Strong Recommendations" / "Needs Review"):
+         quieter than the section title -- the section stays the primary
+         object; the tier is a shelf within it. Completion reuses the
+         section's green vocabulary via the same class. */
+      .review-tier-heading { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.55rem 0 0.3rem; }
+      .review-tier-title { font-weight: 600; font-size: 0.88rem; color: var(--text-muted); }
+      .review-tier-heading.triage-section-complete .review-tier-title { color: var(--good); }
+      /* Category-first: items resemble spreadsheet cells, not cards --
+         tighter grid, flatter cells. */
+      .triage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.25rem; }
+      .triage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; min-width: 0; padding: 0.18rem 0.45rem; border: 1px solid var(--border-soft); border-radius: 3px; background: var(--surface); font-size: 0.92rem; cursor: pointer; transition: background-color 0.3s ease, border-color 0.3s ease; }
+      /* Refinement: bare tokens; the state slot is fixed-width so tokens
+         column-align whether it shows ✓, ▶, or nothing. Chips inside a
+         row shrink a step to keep the grid tight. */
+      .triage-state { display: inline-block; min-width: 1em; }
+      /* ROW SELECTION (AG, 2026-08-03). The slot is FIXED-WIDTH and present
+         on every row, decided or not: `.triage-state` beside it is already
+         a fixed-width alignment slot, and rendering the checkbox only on
+         undecided rows without reserving its space would shift every
+         completed row's token left of its neighbours' -- turning the
+         column the ✓/▶ slot exists to create back into a ragged edge.
+         `margin: 0` because the UA default on a checkbox is 3px, which is
+         enough to break that alignment on its own. */
+      .triage-check-slot { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1.05rem; }
+      .triage-check { margin: 0; cursor: pointer; }
+      /* The select-all sits left of the heading text, its own column, the
+         same relationship the row checkboxes have to their tokens. */
+      .triage-select-all { margin: 0 0.1rem 0 0; cursor: pointer; align-self: center; flex-shrink: 0; }
+      /* The scope indicator. Accent blue, not a decision hue: a selection
+         is a NAVIGATION/intent state -- what you are about to act on --
+         never an outcome, and the decision palette is fully allocated. */
+      .triage-selected-count { color: var(--accent); font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .triage-row .header-suggestions { font-size: 0.85rem; }
+      .triage-row .header-suggestions .preferred-action { padding: 0.1rem 0.45rem; }
+      .triage-row-focused { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+      /* UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03): this used to be a
+         flat --good-soft green for ANY decided row, which meant a row the
+         reviewer had just REDACTED rendered green -- the single most
+         direct contradiction of "the same color always means the same
+         thing" anywhere in the app. A done triage row now wears its own
+         decision (app.ts adds decisionClass + .decision-tinted), so the
+         fill comes from .decision-tinted and this class carries only the
+         completion treatment that is genuinely decision-independent. */
+      .triage-state { color: var(--text-muted); flex-shrink: 0; }
+      .triage-row-done .triage-state { color: var(--decision-hue, var(--text-muted)); font-weight: 700; }
+      .triage-token { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .triage-accept { font: inherit; font-size: 0.85rem; padding: 0.1rem 0.45rem; border: 1px solid var(--accent); border-radius: 5px; background: var(--surface); color: var(--accent); font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .triage-accept:hover { background: var(--accent-soft); }
+      .triage-arrow-done { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .triage-expand { margin-left: auto; flex-shrink: 0; border: none; background: none; padding: 0 0.15rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
+      .triage-expand:hover { color: var(--accent); }
+      /* ══ SIDE-BY-SIDE FOCUS PANE (AG, 2026-08-03) ═══════════════════
+         The detail panel used to be a full-width grid child inserted
+         beneath its own row, which cut the section's grid in two at
+         whatever row happened to be focused. "Making user decisions
+         across the entire collection of items is difficult unless they
+         are all in the same grid" (AG) -- so the panel takes a column of
+         its own and the items keep one unbroken grid beside it. Neither
+         region can push the other, so both are spatially stable.
+
+         60/40, not 2/3: the panel comfortably wants more than half, but
+         the item column has to stay wide enough for TWO 14rem tracks or
+         the grid it exists to preserve collapses to a single file. At a
+         ~1300px window a 1/3 item column measures ~25rem (one track);
+         2/5 measures ~30rem (two). 60/40 is the widest panel that still
+         clears the two-column bar at ordinary laptop widths.
+
+         The 1240px breakpoint is that same bar, solved for the viewport:
+         page padding (2rem x2) + stage padding (1rem x2) + this gap take
+         ~110px, so two 14rem tracks plus their 0.25rem gutter need about
+         (452 / 0.4) + 110 ~= 1240px. BELOW that the split has nothing
+         left to preserve -- it would be a one-column strip of items
+         beside a panel -- so the regions stack instead and the grid gets
+         the full width back. Approximate by construction (chrome heights
+         wrap); the failure mode either side is one column of items, not
+         a broken layout.
+
+         `minmax(0, …)` on both tracks so a long unbreakable string
+         inside the panel cannot blow the column out past its share --
+         the default `auto` minimum is min-content, not zero.
+
+         RESPONSIVENESS IS UNTOUCHED, deliberately: `.triage-grid` keeps
+         its own `repeat(auto-fill, minmax(14rem, 1fr))` verbatim, so the
+         item column re-wraps 2 -> 1 by exactly the mechanism it always
+         used, just inside a narrower container -- and because the track
+         minimum is unchanged, an individual cell is the SAME WIDTH it
+         was before (~238px at 1300px, two-up here vs. five-up
+         full-width); there are simply fewer per row. Below the
+         breakpoint the two regions stack (DOM order puts the pane on
+         top) and the grid gets the full width back, which is the
+         pre-change layout with the panel hoisted above the rows. */
+      .triage-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0.75rem; align-items: start; }
+      @media (max-width: 1239.98px) { .triage-split { grid-template-columns: minmax(0, 1fr); } }
+      .triage-focus-pane { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+      /* A grid can hold two open panels at once -- the focused row plus a
+         row held open by Space/chevron. Both live here, in row order; the
+         gap above is what keeps them legible as two. */
+      .triage-expanded { min-width: 0; }
+
+      /* REVIEW SCOPE, Pass 1 (AG, 2026-08-03): the workspace-level
+         inspector split -- Item Check's triage view only. Same geometry
+         and same breakpoint reasoning as .triage-split above (60/40 is
+         the widest inspector that keeps two item columns at ordinary
+         laptop widths), but wrapping the WHOLE queue rather than one
+         section: the inspector is permanent, so the layout never reflows
+         as focus moves. Ambiguity Check keeps .triage-split unchanged. */
+      .scope-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0.75rem; align-items: start; }
+      @media (max-width: 1239.98px) { .scope-split { grid-template-columns: minmax(0, 1fr); } }
+      .scope-inspector { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+      .scope-queue { min-width: 0; }
+      .scope-inspector-header { display: flex; align-items: baseline; gap: 0.6rem; }
+      .scope-inspector-title { font-weight: 700; font-size: 1.05rem; }
+      .scope-inspector-count { color: var(--text-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+      /* One decision opportunity: the queue's own section vocabulary,
+         summarized -- quiet card, muted explanation, member tokens as
+         plain text chips (never buttons: the ACTIONS live on the section
+         headings in the queue, deliberately -- see renderScopeInspector). */
+      .scope-section { border: 1px solid var(--border-soft); border-radius: 4px; background: var(--surface); padding: 0.45rem 0.6rem; }
+      .scope-section-titleline { display: flex; align-items: baseline; gap: 0.5rem; }
+      .scope-section-title { font-weight: 600; font-size: 0.95rem; }
+      .scope-section-count { color: var(--text-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+      .scope-section-explanation { color: var(--text-muted); font-size: 0.85rem; margin: 0.15rem 0 0.25rem; }
+      .scope-section-members { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+      .scope-section-member { font-size: 0.82rem; padding: 0.05rem 0.4rem; border: 1px solid var(--border-soft); border-radius: 3px; color: var(--text-muted); background: var(--surface); }
+      .scope-section-member-more { border-style: dashed; }
+      .scope-inspector-note { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
+      .scope-inspector-footer { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+      .scope-inspector-clear { font-size: 0.82rem; }
+      /* PARKED CURSOR: position without activation -- the row cursor is
+         still HERE (arrows resume from it) but a wider scope is the
+         working object, so the full nav-blue activation treatment stands
+         down to a dashed outline and the state slot shows ▷ not ▶.
+         Precedent: the rows-then-cards seam parks the row cursor the
+         same way while the card cursor is the working object. */
+      .triage-row-focused.triage-row-parked { box-shadow: none; border-style: dashed; }
+
+      /* 2026-07-30: expanded full view header -- bold name, small (x)
+         count. */
+      .detail-title { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): larger name, smaller
+         muted count -- the expanded view leads with the item itself. */
+      .detail-title-name { font-weight: 700; font-size: 1.3rem; }
+      .detail-title-count { color: var(--text-muted); font-weight: 500; font-size: 0.82rem; }
+      /* AG response (2026-07-30): pills share the title line. */
+      .detail-title .detail-badges { margin-bottom: 0; }
+      /* RECOMMENDATION IS THE ANCHOR (AG, 2026-08-03): the decision bar
+         should read "Recommendation -> Decision", not as five equally
+         weighted buttons. `align-items: center` vertically centres the
+         smaller decision buttons against the taller recommendation chip
+         (see .detail-actions .preferred-action below); the slightly wider
+         gap after the recommendation group is what separates the two
+         halves of that sentence without adding a divider. */
+      .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-bottom: 0.6rem; }
+      .detail-actions > .header-suggestions { margin-right: 0.35rem; }
+      /* The anchor itself: taller and wider than a decision button, so the
+         eye lands on what DocScrub recommends before reading the
+         alternatives. Deliberately only a SIZE difference -- it already
+         carries the accent color and the ① keycap, and adding weight on
+         top of those would make it shout rather than lead. */
+      .detail-actions .preferred-action { padding: 0.42rem 0.85rem; font-size: 1.02rem; }
+      .detail-actions .preferred-action .keycap { font-size: 0.9em; }
+      /* .nav-card retired (2026-08-01 stage encapsulation): the
+         Navigation section is now the command card's second row. */
+      .show-empty-categories { display: inline-flex; align-items: center; gap: 0.35rem; margin-left: auto; color: var(--text-muted); font-size: 0.82rem; }
+      .category-cell-empty { opacity: 0.55; }
 
       /* Review at Scale: search/filter/sort/bulk/command bar (Milestone 2)
          -- styling gap closed in Milestone 3 (these classes existed and
@@ -167,9 +1329,36 @@
          "(q)" hints that used to sit on every individual action button
          could be removed -- this one bar is now the single place that
          vocabulary lives. */
-      .command-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 0.82rem; }
-      .command-bar-legend { color: var(--text-muted); }
+      /* STAGE ENCAPSULATION (AG, 2026-08-01): the command area is the
+         contained workspace's TOP BAND -- same surface and side borders
+         as .stage-body directly beneath, zero gap, so the sticky band
+         and the scrolling body read as one object. The command bar is
+         now a compact two-section CARD at the band's right ("Current
+         Review" vs "Navigation" -- item commands vs application
+         movement), each row anchored by a small-caps section label.
+         Keycap legend language unchanged (COMMAND-BAR KEYCAPS, same
+         day). */
+      .workspace-top { display: flex; justify-content: flex-end; padding: 0.45rem 0.6rem; background: var(--surface-canvas); border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; position: relative; z-index: 1; }
+      /* COMMAND CARD PLACEMENT (AG, 2026-08-02): the card moved up beside
+         the Review Status scores/statistics (the chrome's status row),
+         leaving the band as a slim workspace top edge -- the active tab
+         still terminates into it, unchanged geometry, just no content. */
+      .workspace-top-slim { min-height: 0.55rem; padding: 0; }
+      .chrome-status-row { display: flex; align-items: flex-start; gap: 1.25rem; }
+      .chrome-status-left { flex: 1 1 auto; min-width: 0; }
+      .chrome-status-row > .command-card { flex: 0 1 auto; margin-left: auto; }
+      .command-card { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.4rem 0.65rem; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; font-size: 0.82rem; max-width: 100%; }
+      .command-card-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.3rem 0.65rem; }
+      .command-card-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-right: auto; padding-right: 0.7rem; white-space: nowrap; }
+      .legend-entry { display: inline-flex; align-items: center; gap: 0.28rem; white-space: nowrap; }
+      .legend-label { color: var(--text-muted); }
+      .legend-text { color: var(--text-muted); }
+      /* Keycaps in the card read as keys: their own surface does the
+         separating; text a step darker than the labels so the key is the
+         anchor of each pair. */
+      .command-card .keycap { color: var(--text); background: var(--surface-muted); }
       .command-bar-selection { font-weight: 600; color: var(--accent); }
+      .command-card button { padding: 0.14rem 0.45rem; font-size: 0.8rem; }
 
       /* INLINE EDITOR REVISION (2026-07-29): replaces window.prompt() for
          Rename/Redact text entry everywhere it appeared (Item Check/
@@ -182,6 +1371,22 @@
          decision. */
       .inline-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; flex-basis: 100%; margin-top: 0.3rem; }
       .inline-editor-input { font: inherit; flex: 1 1 auto; min-width: 12rem; padding: 0.3rem 0.55rem; border: 1px solid var(--accent); border-radius: 6px; }
+      /* COMPACT VARIANT (AG, 2026-08-03) -- the editor hosted ON a heading's
+         title line rather than on a row of its own. Dropping `flex-basis:
+         100%` is the whole change: the editor then asks for its content
+         width instead of the full line, so the browser -- not a breakpoint,
+         not a measurement -- decides inline vs. second line, and re-decides
+         on every resize for free.
+
+         WHAT SETS THE THRESHOLD: a flex item never compresses below its
+         min-content width, and this one's floor is `.inline-editor-input`'s
+         `min-width: 12rem` plus Confirm and Cancel (~22rem). With enough
+         room left on the heading it sits beside the green buttons; with
+         less, it wraps whole to a second line and `flex-grow: 1` lets it
+         fill. The title and count are structurally safe either way, because
+         wrapping is always cheaper for the layout engine than crushing
+         them. That 12rem is the one knob if the flip point wants tuning. */
+      .inline-editor-compact { flex-basis: auto; flex-grow: 1; margin-top: 0; align-self: center; }
       .action-editing { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
       /* Rename quick-pick chips (2026-07-29, Group Check Python-parity
          revision; RESTYLED same day from radio inputs to plain buttons per
@@ -211,9 +1416,29 @@
          Ambiguity Check, and removed the toggle button entirely (see
          app.ts's groupUncheckedMemberIds doc comment for the full history). */
       .group-parent-checkbox { accent-color: var(--accent); }
+      /* SPLIT REVIEW MODE (AG, 2026-08-02): the suspended group row --
+         greyed, clearly out of play -- and its mode badge; the entry row
+         above the member list; the ACTIVE split member carries the focus
+         ring the keyboard letters act on. Understated, existing palette. */
+      .group-row-suspended { opacity: 0.55; }
+      .group-row-suspended .group-row-label { color: var(--text-muted); }
+      .split-badge { margin-left: 0.6rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); background: var(--surface-muted); }
+      .separate-these-row { margin: 0.1rem 0 0.35rem; }
+      .split-member-row { flex-wrap: wrap; }
+      .split-member-row .group-row-actions { margin-left: auto; }
+      /* Strengthened (AG live feedback): the cursor member must read as
+         THE thing the letters act on -- full nav-blue treatment, not a
+         subtle ring. */
+      .split-member-active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent); }
       .group-members { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.3rem 0 0.6rem 1.9rem; }
       .member-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.55rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); }
-      .member-name { flex: 1 1 auto; }
+      /* 2026-07-30 follow-up: entering an item with Down highlights the
+         selected member ROW (not just its focused control) -- the roving
+         grid moves real DOM focus, so :focus-within is the row-level cue. */
+      .member-row:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): member names join
+         the primary-text tier too -- every cell leads with its text. */
+      .member-name { flex: 1 1 auto; font-weight: 600; font-size: 1rem; }
 
       /* Group Check revision (2026-07-29) -- compact, color-coded rows and
          a working sort + 2-column layout, replacing the plain unstyled
@@ -226,29 +1451,131 @@
          aggressive" instruction. */
       .group-check-toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
       .group-sort-label { color: var(--text-muted); font-size: 0.85rem; }
-      .group-list-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
-      .group-list-grid .not-quite-panel { grid-column: 1 / -1; }
-      .group-row-label { font-weight: 600; }
-      .group-row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-left: auto; }
-      .group-reviewed-check { display: inline-flex; align-items: center; color: var(--good); font-weight: 700; font-size: 0.82rem; }
+      /* 2026-07-30 feature spec: two columns arrive AUTOMATICALLY above a
+         window-width threshold (the manual toggle is gone). Row-major
+         auto-flow means DOM order reads across each row before moving
+         down, so Tab/advance order is the spec's "peruse a horizontal row
+         completely before moving to the next row" with zero JS. Each
+         .group-cell holds one group's row + member breakdown, so an
+         expanded group stays inside its own column; a Fix this panel
+         (.group-cell-wide) spans both. */
+      .group-list { display: flex; flex-direction: column; gap: 0.4rem; }
+      .group-cell { display: flex; flex-direction: column; gap: 0.4rem; align-self: start; }
+      @media (min-width: 1280px) {
+        .group-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
+        .group-cell-wide { grid-column: 1 / -1; }
+      }
+      /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the name is the row.
+         Counts (and the "n of m selected" note) sit beside it small and
+         muted -- same primary/secondary split as the result cells. */
+      .group-row-label { font-weight: 700; font-size: 1.12rem; }
+      .row-count { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; }
+      .item-row-title { font-weight: 600; font-size: 1.05rem; }
+      .item-row-meta { color: var(--text-muted); font-weight: 400; font-size: 0.8rem; }
+      /* AG response (2026-07-30): percentages and circled checks sit
+         directly LEFT of the action buttons, right-aligned -- so they form
+         a scannable vertical column across rows (the Python template's
+         arrangement). The confidence/check carries the margin-left:auto;
+         the buttons follow it. */
+      .group-row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+      .item-row > .row-confidence, .item-row > .reviewed-check, .group-row > .confidence-plain,
+      .member-row > .confidence-plain, .member-row > .reviewed-check { margin-left: auto; margin-right: 0.35rem; }
 
-      .group-row-keep { border-color: #bfe3cc; background: var(--good-soft); }
-      .group-row-rename { border-color: #c3cdf0; background: var(--rename-soft); }
-      .group-row-redact { border-color: #eec1c4; background: var(--caution-soft); }
-      .group-row-ignore { border-color: #d7c3ea; background: var(--ignore-soft); }
-      .group-row-attention { border-color: #efd9ab; background: var(--warn-soft); }
+      /* ══ UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03) ══════════════
+         Color represents review DECISIONS, not review stages: the same
+         hue means the same thing in Ambiguity Check, Group Check, Item
+         Check, Type Check and QA, so a reviewer never relearns the
+         palette when moving between them.
 
-      .group-action-active { font-weight: 700; }
-      .group-action-active.group-row-keep { background: var(--good); border-color: var(--good); color: #fff; }
-      .group-action-active.group-row-rename { background: var(--rename); border-color: var(--rename); color: #fff; }
-      .group-action-active.group-row-redact { background: var(--caution); border-color: var(--caution); color: #fff; }
-      .group-action-active.group-row-ignore { background: var(--ignore-color); border-color: var(--ignore-color); color: #fff; }
+         This block replaced ~24 hand-enumerated rules (.group-row-<kind>,
+         .item-row-focused.group-row-<kind>, .group-cell-<kind>,
+         .group-action-active.group-row-<kind>) that differed only in
+         which decision and which SURFACE they painted. Those two axes are
+         now separated: a DECISION class below supplies four custom
+         properties, and a SURFACE class decides what to do with them.
+         Adding a fifth decision is one line here, not six edits.
+
+         PRECEDENCE (Redact > Change > Keep > Ignore) is not expressed in
+         CSS at all -- it is a statement about decisions rather than
+         pixels, so it lives in src/domain/DecisionPrecedence.ts where the
+         engine can share it. CSS only ever paints the single dominant
+         decision the summary already picked. */
+      .decision-keep { --decision-hue: var(--good); --decision-tint: var(--good-soft); --decision-tint-contrast: #dcefe3; --decision-border: #bfe3cc; }
+      .decision-rename { --decision-hue: var(--rename); --decision-tint: var(--rename-soft); --decision-tint-contrast: #dee5f7; --decision-border: #c3cdf0; }
+      .decision-redact { --decision-hue: var(--caution); --decision-tint: var(--caution-soft); --decision-tint-contrast: #f6dfe2; --decision-border: #eec1c4; }
+      .decision-ignore { --decision-hue: var(--ignore-color); --decision-tint: var(--ignore-soft); --decision-tint-contrast: #e9def4; --decision-border: #d7c3ea; }
+
+      /* NON-DECISION SCHEMES feed the same cascade so containment works
+         identically, but are deliberately OUTSIDE the decision palette --
+         being a different family is precisely what makes them legible as
+         "a mode you are in" rather than "an outcome you chose."
+         .scheme-nav: the focused-but-undecided item. .scheme-fixthis: an
+         OPEN Fix this session (amber). Amber now means ONLY this -- it
+         used to also carry mixed-decision "needs attention" on cards,
+         which the dominant-tint + pills model replaced (2026-08-03), and
+         a confidence band, which moved to depth-of-ink. One hue, one
+         meaning. The solid GRAY Fix this button emphasis on already-fixed
+         mixed groups is a different, committed state and stays gray. */
+      .scheme-nav { --decision-hue: var(--accent); --decision-tint: var(--accent-soft); --decision-tint-contrast: #d9e6f8; --decision-border: var(--accent); }
+      .scheme-fixthis { --decision-hue: var(--warn); --decision-tint: var(--warn-soft); --decision-tint-contrast: #f6e7c8; --decision-border: #efd9ab; }
+
+      /* SURFACE: a filled element wearing its decision. The one rule that
+         replaced the four .group-row-<kind> rules AND the four
+         .item-row-focused.group-row-<kind> continuity overrides -- the
+         latter are unnecessary now that focus is a ring and never touches
+         the fill channel (see .item-row-focused above). */
+      .decision-tinted { border-color: var(--decision-border); background: var(--decision-tint); }
+
+      /* ITEM-SCHEME CASCADE (AG, 2026-07-30, retained): the item's
+         containing color flows to every inline derived area so "the item
+         always feels contained by the color." Members take the soft tint;
+         the Source panel and the selected member take a slightly
+         CONTRASTING shade of the same hue (never accent blue inside a
+         decided item). Renamed from --item-* to --decision-* so one
+         vocabulary covers both the container and the surfaces it feeds. */
+      .item-schemed .not-quite-panel { background: var(--decision-tint); border-color: var(--decision-tint-contrast); }
+      .item-schemed .not-quite-panel .item-row.item-row-focused { background: var(--decision-tint-contrast); border-color: var(--decision-hue); }
+      .item-schemed .not-quite-panel .source-panel { background: var(--decision-tint-contrast); border-color: var(--decision-hue); }
+      .item-schemed .member-row { background: var(--decision-tint); border-color: var(--decision-tint-contrast); }
+      .item-schemed .member-row:focus-within { background: var(--decision-tint-contrast); border-color: var(--decision-hue); }
+      .item-schemed .source-panel { background: var(--decision-tint-contrast); border-color: var(--decision-hue); }
+      /* CONTEXTUAL MEMBER DECISIONS (AG, 2026-07-30): a member's or
+         focused row's OWN pending Change/Redact editor outranks the
+         item's containment scheme on that one row -- same precedence as
+         everywhere. Two rules now instead of four: each reads
+         --decision-tint from the row's own decision class, which shadows
+         the container's value on that element. */
+      .item-schemed .not-quite-panel .item-row.item-row-focused.decision-tinted { background: var(--decision-tint); border-color: var(--decision-hue); }
+      .item-schemed .member-row.member-pending.decision-tinted { background: var(--decision-tint); border-color: var(--decision-hue); }
+
+      /* SURFACE: solid emphasis on the currently-active bulk action
+         button. Five rules collapsed to two -- the button already wears a
+         decision class, so it already has --decision-hue; Fix this simply
+         supplies its own gray into the same slot ("Not Quite: same but
+         gray", 2026-07-30 feature spec). */
+      .group-action-active { font-weight: 700; background: var(--decision-hue, var(--accent)); border-color: var(--decision-hue, var(--accent)); color: #fff; }
+      .group-action-notquite { --decision-hue: var(--notquite); }
+
+      /* SURFACE: decision pills. The card's tint speaks its DOMINANT
+         decision; these speak every ADDITIONAL decision it contains, in
+         the same precedence order, so a card with one decision shows no
+         pills at all and any pill means "more than one thing happened
+         here." The letter (K/C/R/I) is not decoration -- it is what keeps
+         the signal readable for a red-green colorblind reviewer, for whom
+         these tints are near-identical. See ui/decisionLabels.ts. */
+      .decision-pills { display: inline-flex; align-items: center; gap: 0.2rem; }
+      .item-row > .decision-pills { margin-left: auto; }
+      .decision-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 0.22rem; border: 1px solid var(--decision-hue); border-radius: 999px; background: var(--decision-tint); color: var(--decision-hue); font-size: 0.66rem; font-weight: 700; line-height: 1; }
       .jump-category-select { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; }
 
       /* Reviewer Productivity (Milestone 3) */
-      .persistence-status { display: inline-block; margin: 0.15rem 0 0.5rem; font-size: 0.82rem; color: var(--text-muted); }
-      .persistence-status-warn { color: var(--warn); font-weight: 600; }
-      .persistence-status-error { color: var(--caution); font-weight: 600; }
+      /* .persistence-status retired (2026-08-01): save state lives in the
+         header's permanent .app-save-status slot now. */
+      /* Toolbar primary actions (New Document / Resume): the annotated
+         reference shows these as solid accent buttons -- the two actions
+         a reviewer starts from. */
+      .primary-action { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .primary-action:hover:not(:disabled) { background: #1e4a91; border-color: #1e4a91; }
       .recent-documents { margin-top: 1rem; }
       .recent-documents-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
       .recent-document-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.5rem 0.65rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); }
@@ -259,22 +1586,243 @@
       .review-stats-by-type summary { cursor: pointer; }
       .redaction-rules-panel { margin-bottom: 0.9rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-soft); }
       .redaction-rules-panel > summary { cursor: pointer; font-weight: 600; }
-      .redaction-rule-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; }
-      .redaction-rule-type { min-width: 8rem; font-weight: 600; }
+      /* REDACTION RULES, PYTHON LAYOUT (AG, 2026-08-01): one bordered row
+         per entity type -- bold type name, Apply to all / Sequential
+         radio pair, a labelled Replacement Text input, an inline
+         "Preview:" of the resulting placeholder, and an italic
+         "autosaves" note at the right edge (the change commits on
+         blur/Enter with no Save button, so the note says so). The
+         Advanced checkbox beside the summary swaps the radios for the
+         raw strategy select + custom {n} template. */
+      .redaction-rules-header { display: inline-flex; align-items: center; gap: 0.8rem; }
+      .redaction-rules-advanced { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.82rem; font-weight: 400; }
+      .redaction-rule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.1rem; margin: 0; padding: 0.55rem 0.2rem; border-bottom: 1px solid var(--border-soft); }
+      .redaction-rule-type { min-width: 7.5rem; font-weight: 700; font-size: 1.02rem; }
+      .redaction-rule-modes { display: inline-flex; align-items: center; gap: 0.9rem; }
+      .redaction-rule-mode { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+      .redaction-rule-mode input { accent-color: var(--accent); }
+      .redaction-rule-text { display: inline-flex; flex-direction: column; gap: 0.1rem; }
+      .redaction-rule-text-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+      .redaction-rule-input { font: inherit; padding: 0.28rem 0.55rem; border: 1px solid var(--border); border-radius: 6px; min-width: 13rem; }
+      .redaction-rule-preview { color: var(--text-muted); font-size: 0.85rem; }
+      .redaction-rule-autosaves { margin-left: auto; color: var(--text-muted); font-style: italic; font-size: 0.8rem; }
       .redaction-rules-preview { margin-top: 0.5rem; }
 
       @media (max-width: 900px) {
         .expert-grid { grid-template-columns: 1fr; }
       }
+
+      /* INTERACTION LANGUAGE (2026-07-30, keyboard UX refinement).
+         .chip-nav-cursor -- the Shift+Arrow cursor ring on the narrowing
+         column's header rows: rendered on the ACTIVE chip of whichever row
+         the cursor is on (position IS selection within a single-select
+         row), so vertical travel between rows is always visibly anchored
+         (see app.ts's filterHeaderRow).
+         .result-cell-selected -- X-key selection membership on the tight
+         Results cells, which deliberately carry no checkbox (the grid's
+         only selection affordance is the keyboard).
+         :focus-visible -- Chrome-mode and detail-panel traversal move real
+         DOM focus through controls that historically only ever saw mouse
+         clicks; the keyboard path needs a visible ring the mouse path
+         doesn't draw. */
+      .chip-nav-cursor { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .result-cell-selected { box-shadow: inset 0 0 0 2px var(--accent); }
+      .workspace-chrome :focus-visible, .keyboard-region :focus-visible, .top-bar :focus-visible, .detail-panel :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      /* RX-18 (2026-07-29): persistent status region -- a calm, fixed bar
+         along the bottom edge (the conventional home for ambient status),
+         visually part of the application chrome without competing with the
+         sticky top chrome for vertical space. pointer-events: none -- it
+         is read-only furniture, never an interaction target; :empty hides
+         it entirely until the first message so a fresh session shows no
+         hollow strip. Fixed overlay: appearing/disappearing never shifts
+         layout (body's existing 3rem bottom padding keeps the last row
+         clear of it). */
+      .status-region { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 0.35rem 2rem; font-size: 0.82rem; color: var(--text-muted); background: var(--surface); border-top: 1px solid var(--border-soft); pointer-events: none; }
+      .status-region:empty { display: none; }
+
+      /* RX-09 (2026-07-29): transient toast for recoverable failures --
+         top-right overlay, ~1.3s visible (TOAST_VISIBLE_MS in app.ts) with
+         a CSS fade, never inserted flow content. Caution styling, not
+         alarm-red: these are "that didn't work" moments, not emergencies
+         (action-required failures get the persistent inline banner
+         instead). pointer-events: none so a fading toast never blocks a
+         click on whatever sits beneath it. */
+      .toast-host { position: fixed; top: 0.75rem; right: 1rem; z-index: 40; max-width: 24rem; padding: 0.5rem 0.8rem; border: 1px solid #eec1c4; border-radius: 8px; background: var(--caution-soft); color: var(--caution); font-size: 0.85rem; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+      .toast-host.toast-visible { opacity: 1; }
+
+      /* RX-26 (Wave 2 rider, 2026-07-29): with RX-14 landed, the pulse +
+         colour change + "✓ Saved" badge fire on EVERY decision -- the most
+         frequent action in the app. The colour and badge carry the meaning
+         unaided, so reviewers who ask the OS for reduced motion lose
+         nothing but the animation. */
+      @media (prefers-reduced-motion: reduce) {
+        .row-acknowledged-pulse { animation: none; }
+      }
+
+      /* Workspace Analysis (standalone subsystem, src/workspace-analysis/).
+         Scoped entirely under .wsa- so it can be styled and changed without
+         touching any rule above -- the CSS-side mirror of that subsystem's
+         file/type/state independence from the review pipeline. Reuses the
+         SAME palette variables as the rest of the app (no new hues) so the
+         page reads as part of DocScrub, not a bolted-on tool, even though
+         no rule here depends on anything above it. */
+      .wsa-page { max-width: 52rem; }
+      .wsa-header h2 { margin: 0 0 0.2rem; }
+      .wsa-subtitle { margin: 0 0 1rem; color: var(--text-muted); font-size: 0.9rem; max-width: 40rem; }
+      .wsa-import-controls { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+      .wsa-file-label { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.88rem; color: var(--text); }
+      .wsa-status { color: var(--text-muted); }
+      .wsa-status-error { color: var(--caution); font-weight: 600; }
+      .wsa-feedback { margin: 0 0 0.75rem; padding: 0.5rem 0.7rem; border-radius: 6px; font-size: 0.85rem; }
+      .wsa-feedback-error { background: var(--caution-soft); color: var(--caution); border: 1px solid #eec1c4; }
+      .wsa-feedback-info { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border); }
+      .wsa-summary { color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem; }
+      .wsa-groupings h3 { margin: 1.1rem 0 0.5rem; font-size: 0.95rem; }
+      .wsa-empty-note { color: var(--text-muted); font-size: 0.88rem; }
+      .wsa-grouping-card { margin-bottom: 0.7rem; padding: 0.65rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+      .wsa-grouping-card.wsa-status-accepted { border-color: var(--good); background: var(--good-soft); }
+      .wsa-grouping-card.wsa-status-merged { border-color: var(--accent); }
+      .wsa-grouping-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.35rem; }
+      .wsa-grouping-strength { font-weight: 600; font-size: 0.85rem; color: var(--text); }
+      .wsa-grouping-status-badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--text-muted); background: var(--surface-muted); }
+      .wsa-grouping-members { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+      .wsa-member-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; color: var(--text); }
+      .wsa-evidence-list { margin: 0 0 0.5rem; padding-left: 1.2rem; color: var(--text-muted); font-size: 0.82rem; }
+      .wsa-evidence-item { margin-bottom: 0.1rem; }
+      .wsa-grouping-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+      .wsa-merge-select { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); max-width: 16rem; }
+      .wsa-unrelated-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+      .wsa-unrelated-item { padding: 0.35rem 0.6rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); color: var(--text-muted); font-size: 0.88rem; }
     </style>
   </head>
   <body>
+    <!-- APPLICATION FRAME REFINEMENT (AG, 2026-08-01): the header is the
+         permanent application frame -- sticky, answering "what am I
+         working on / is my work saved / what can I do" before the
+         workspace begins. Static markup outside #app (the .app-version
+         precedent: render() clears #app.innerHTML), with the dynamic
+         slots (.app-document-title, .app-document-panel,
+         .app-save-status) written by app.ts's syncAppHeader() on every
+         render rather than rebuilt. The old subtitle line (an
+         implementation pointer, not reviewer information) is gone. -->
     <div class="app-header">
-      <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="28" />
-      <span class="app-version" title="See docs/architecture/design-notes.md for what changed in this version"></span>
+      <div class="app-header-left">
+        <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="28" />
+        <span class="app-version" title="See docs/architecture/design-notes.md for what changed in this version"></span>
+      </div>
+      <div class="app-document">
+        <span class="app-document-title"></span>
+        <div class="app-document-panel" hidden></div>
+      </div>
+      <div class="app-header-right">
+        <span class="app-save-status"></span>
+        <button class="app-settings-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="menu">⚙</button>
+        <div class="app-settings-menu" role="menu" hidden>
+          <!-- WORKSPACE METRICS (AG, 2026-08-02): read-only telemetry for
+               the active workspace in a separate window -- wired in
+               app.ts's one-time header block. -->
+          <button class="app-settings-item app-settings-metrics" role="menuitem" type="button">Workspace Metrics</button>
+          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Preferences</div>
+          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">User account</div>
+          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">DocScrub Vault</div>
+          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Licensing</div>
+          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Updates</div>
+          <!-- PREVIEW GATE (AG, 2026-08-01): the one interactive item for
+               now -- clears the preview-session flag and returns to the
+               access screen (wired in previewGate.ts, not app.ts). -->
+          <button class="app-settings-item app-settings-exit-preview" type="button" role="menuitem">Exit Preview</button>
+          <div class="app-settings-item app-settings-about" role="menuitem"></div>
+        </div>
+      </div>
     </div>
-    <p class="app-subtitle">Review Workspace -- Milestone 3 (Reviewer Productivity). See docs/architecture/review-workspace-reconstruction.md.</p>
     <div id="app"></div>
-    <script type="module" src="./dist/ui/app.js"></script>
+    <!-- RX-18 / RX-09 (Reviewer Experience Wave 2, 2026-07-29): the two
+         notification hosts live in STATIC markup outside #app, following
+         .app-version's established pattern, because render() clears
+         #app.innerHTML on every state change (including background
+         autosave renders) -- a message inside #app would vanish
+         non-deterministically within milliseconds. Static hosts also work
+         from the landing view, where render() returns before any workspace
+         chrome exists and where the most probable first error of a session
+         (a document load/resume failure) actually fires. app.ts writes
+         them via setStatus()/notifyToast(); render() never creates,
+         clears, or writes them.
+
+         .status-region is the app's persistent, non-blocking channel for
+         refusals, results, and narration ("latest message only, not a
+         log") -- and, with role="status"/aria-live, this application's
+         first accessibility primitive: one element, one writer,
+         aria-atomic, so later screen-reader work extends it rather than
+         replacing it. The toast host is aria-hidden: every toast text is
+         ALSO written to the status region, so announcing both would
+         double-speak. Both are fixed overlays -- notifications never
+         shift page layout. -->
+    <div class="status-region" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="toast-host" aria-hidden="true"></div>
+    <!-- PREVIEW GATE (AG, 2026-08-01): a TEMPORARY shared-password access
+         screen, the visual foundation of a future login. All behavior
+         lives in previewGate.ts (the module below), which defers the
+         application module's import until access is granted -- app.ts
+         knows nothing about the gate. See previewGate.ts's doc comment
+         for the replacement seam and the deliberate scope restraint. -->
+    <div class="preview-gate" hidden>
+      <div class="preview-gate-card">
+        <div class="preview-gate-brand">
+          <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="30" />
+          <span class="preview-badge">Private Preview</span>
+        </div>
+        <h1 class="preview-gate-heading">DocScrub Preview</h1>
+        <p class="preview-gate-supporting">Individual accounts are not yet enabled. Enter the shared preview password to continue.</p>
+        <!-- onsubmit="return false" (2026-08-02): a MARKUP-LEVEL hard stop
+             on native form submission. Root cause of "type password, press
+             Enter, dots disappear": in some page states (observed live)
+             the module's submit handler wasn't attached, so Enter fell
+             through to a NATIVE GET submit -- the page navigated to
+             index.html?, wiping the field and re-showing a fresh gate,
+             indistinguishable from rejection. The inline attribute exists
+             the instant the form exists, needs no module, and cannot be
+             lost to any script race: the module's listener still handles
+             the real submit; native navigation is simply impossible. -->
+        <form class="preview-gate-form" onsubmit="return false">
+          <label class="preview-field">
+            <span class="preview-field-label">Email</span>
+            <input type="text" value="Preview account" disabled />
+          </label>
+          <label class="preview-field">
+            <span class="preview-field-label">Password</span>
+            <!-- SHARED preview password, not a personal credential
+                 (2026-08-02, root cause of "the password does not work!"):
+                 autocomplete="current-password" INVITED password managers
+                 to attach, and 1Password's inline overlay was capturing
+                 the user's keystrokes -- typing went into its search box,
+                 Enter searched the vault, and the page never received a
+                 single key. The opt-outs below tell 1Password/LastPass/
+                 Dashlane to stand down; re-invite managers only when this
+                 becomes a real per-user login. -->
+            <input type="password" class="preview-password" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" autofocus />
+          </label>
+          <p class="preview-gate-error" hidden>Incorrect preview password.</p>
+          <button type="submit" class="primary-action preview-submit">Enter DocScrub</button>
+        </form>
+      </div>
+    </div>
+    <!-- Supabase config: browser-safe project URL + publishable key only.
+         env-config.js is gitignored; env-config.example.js is the checked-in
+         template. Must run before the module graph below. -->
+    <script src="./env-config.js"></script>
+    <!-- No bundler in this app (see README.md, "no framework, no bundler").
+         This import map lets src/lib/supabase.ts's bare `@supabase/supabase-js`
+         specifier resolve natively in the browser via a pinned CDN build,
+         while the same specifier resolves through node_modules for `tsc`
+         type-checking (package.json). Bump both together. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.112.1"
+        }
+      }
+    </script>
+    <script type="module" src="./dist/ui/previewGate.js"></script>
   </body>
 </html>

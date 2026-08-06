@@ -113,6 +113,13 @@ import {
   type CandidateQualityEngine,
 } from "../engines/CandidateQualityEngine.js";
 import { RegexEntityResolutionEngine, type EntityResolutionEngine, type GroupingResult } from "../engines/EntityResolutionEngine.js";
+import { cleanupIdentityOptions, identityCleanupStats, insertedWordNameProposals, type IdentityCleanupStats } from "../engines/entity-resolution/identity-cleanup.js";
+import { normalizeDetection, type NormalizationResult } from "../engines/normalization/normalization.js";
+import { evaluateContextualPersonEvidence } from "../engines/contextual-person-evidence/contextual-person-evidence.js";
+import { StructuralRelationshipEngine } from "../engines/StructuralRelationshipEngine.js";
+import { builtInSemanticRelationshipProviders } from "../engines/knowledge/RelatedNameProvider.js";
+import type { RelationshipKind, StructuralRelationshipResult } from "../domain/StructuralRelationship.js";
+import { buildSemanticTypeGroups, qualityCategoriesOf, semanticTypeFor, type SemanticTypeGroup, type SemanticTypeId } from "../domain/semanticTypes.js";
 import { RegexOccurrenceClassifier, type OccurrenceClassifier, type OccurrenceClassificationResult } from "../engines/OccurrenceClassifier.js";
 import type { QualityResult } from "../domain/Evidence.js";
 
@@ -121,6 +128,9 @@ import { createReviewSession } from "../engines/review/session.js";
 import { DeterministicFocusNavigator, type FocusNavigator } from "../engines/FocusNavigator.js";
 import type { NavigationContext } from "../engines/navigation/navigator.js";
 import { DeterministicDecisionReuseEngine, type DecisionReuseEngine } from "../engines/DecisionReuseEngine.js";
+// DECISION MEMORY (AG, 2026-08-03): cross-document carry-over of the
+// reviewer's own prior decisions. See domain/DecisionMemory.ts.
+import { mergeDecisionMemory, projectDecisionMemory } from "../domain/DecisionMemory.js";
 import { deserializeImportedDecisions } from "../io/DecisionImport.js";
 import type { DecisionReuseMatchTier } from "../domain/DecisionReuse.js";
 import { IndexedDbSessionRepository } from "../io/IndexedDbSessionRepository.js";
@@ -130,6 +140,7 @@ import {
   type SessionRecord,
   type SessionSummary,
   type QuotaStatus,
+  type PersistedUiState,
 } from "../io/LocalSessionRepository.js";
 import { DeterministicReplacementRuleEngine, type ReplacementRuleEngine } from "../engines/ReplacementRuleEngine.js";
 import { defaultReplacementRuleConfig, type ReplacementRuleConfig } from "../domain/ReplacementRule.js";
@@ -213,6 +224,16 @@ export interface DecisionReuseSummary {
   tierCounts: Record<DecisionReuseMatchTier, number>;
   appliedCount: number;
   skippedAlreadyDecidedCount: number;
+  /** DECISION MEMORY (AG, 2026-08-03): how these decisions arrived.
+   *  "imported-file" is the original Feature 002 path -- the reviewer chose
+   *  a decisions.json. "decision-memory" is automatic carry-over from
+   *  earlier documents in this browser. The reviewer did not ASK for the
+   *  second one, so the UI must say so plainly; the distinction exists
+   *  precisely so the banner can, rather than presenting both as the same
+   *  event. `documentsDrawnFrom` is meaningful only for the automatic path
+   *  (an aggregate over prior reviews has no single source document). */
+  origin: "imported-file" | "decision-memory";
+  documentsDrawnFrom?: number;
 }
 
 export interface WorkspaceReadiness {
@@ -221,6 +242,15 @@ export interface WorkspaceReadiness {
    *  read directly from stages.ts's already-derived rule. */
   reviewComplete: boolean;
   unresolvedItemCount: number;
+  /** REVIEW ARTIFACTS (AG, 2026-08-02): outstanding non-item reviewer work
+   *  across every stage -- today the unaddressed structural relationship
+   *  proposals. Read straight off the same StageStatus fields the workflow
+   *  membership rule uses, never recounted here. Exists so the Output
+   *  stage can SAY what is still outstanding: `unresolvedItemCount` alone
+   *  reported "0 items unresolved" while a proposal still blocked
+   *  completion, which is exactly the silence that let the original defect
+   *  go unnoticed. */
+  unresolvedArtifactCount: number;
   /** True once a VerificationReport exists AND it was computed against the
    *  CURRENT ReviewSession state (see this file's top doc comment on
    *  verification staleness). False after any decision changes until
@@ -253,6 +283,21 @@ export interface WorkspaceState {
   quality: QualityResult | null;
   grouping: GroupingResult | null;
   classification: OccurrenceClassificationResult | null;
+  /** Structural Relationship Review (2026-07-30): deterministic
+   *  relationship proposals (acronym/full-name, shared identifier
+   *  patterns), recomputed per load like every other pipeline output --
+   *  see StructuralRelationshipEngine.ts. Null until a document loads. */
+  structuralRelationships: StructuralRelationshipResult | null;
+  /** PHASE 2, TYPE CHECK (2026-08-02): the ordered, populated-only
+   *  semantic type membership -- computed ONCE per load (see
+   *  loadDocument()) from domain/semanticTypes.ts's semanticTypeFor()
+   *  over detected type + quality categories + structural relationship
+   *  kinds, then shared by BOTH the FocusNavigator's type-check traversal
+   *  (via navigationContext()) and the UI's card rendering -- one
+   *  assignment, two consumers, no drift. Membership is decision-blind
+   *  and immutable for the lifetime of a loaded document. Null until a
+   *  document loads. */
+  semanticTypes: readonly SemanticTypeGroup[] | null;
   reviewSession: ReviewSession | null;
   focus: FocusState | null;
   stageStatuses: StageStatus[];
@@ -261,6 +306,19 @@ export interface WorkspaceState {
   hasGeneratedOutput: boolean;
   /** Milestone 3, Phase 1 -- see WorkspacePersistenceStatus above. */
   persistence: WorkspacePersistenceStatus;
+  /** WORKSPACE METRICS (AG, 2026-08-02): the identity-cleanup pass's
+   *  factual removal record -- ADDITIVE, read-only exposure of state the
+   *  load pipeline already implied; recomputed deterministically on every
+   *  load, so it needs (and gets) no persistence of its own. Null until a
+   *  document loads. No review behavior reads it. */
+  identityCleanup: IdentityCleanupStats | null;
+  /** NORMALIZATION (AG, 2026-08-03): per-candidate provenance for the
+   *  Detection -> Normalization -> Grouping collapse, plus its factual
+   *  stats. ADDITIVE and read-only, recomputed on every load and never
+   *  persisted -- exactly like identityCleanup above. The review stages
+   *  read nothing from it; only Expert View's "Normalized from" evidence
+   *  and the metrics window do. Null until a document loads. */
+  normalization: NormalizationResult | null;
 }
 
 export type LoadDocumentResult =
@@ -270,6 +328,7 @@ export type LoadDocumentResult =
 const EMPTY_READINESS: WorkspaceReadiness = {
   reviewComplete: false,
   unresolvedItemCount: 0,
+  unresolvedArtifactCount: 0,
   verificationCurrent: false,
   verificationPassed: null,
   verificationWarningCount: 0,
@@ -283,6 +342,7 @@ export class ReviewWorkspace {
   private readonly qualityEngine: CandidateQualityEngine;
   private readonly resolutionEngine: EntityResolutionEngine;
   private readonly occurrenceClassifier: OccurrenceClassifier;
+  private readonly structuralRelationshipEngine: StructuralRelationshipEngine;
   private readonly rebuilder: DocumentRebuilder;
   private readonly verifier: OutputVerifier;
   private readonly auditExporter: AuditExporter;
@@ -294,9 +354,22 @@ export class ReviewWorkspace {
 
   private document: DocumentModel | null = null;
   private detection: DetectionResult | null = null;
+  /** NORMALIZATION (2026-08-03): the RAW detector output, kept verbatim
+   *  alongside the normalized stream. Nothing in review reads it today --
+   *  it exists so "the original detector output remains unchanged" is a
+   *  fact about the running system rather than a claim in a comment, and
+   *  so any future QA/audit surface that needs the pre-collapse record can
+   *  have it without re-running detection. */
+  private rawDetection: DetectionResult | null = null;
+  private normalization: NormalizationResult | null = null;
   private quality: QualityResult | null = null;
   private grouping: GroupingResult | null = null;
   private classification: OccurrenceClassificationResult | null = null;
+  private structuralRelationships: StructuralRelationshipResult | null = null;
+  /** PHASE 2, TYPE CHECK (2026-08-02): see WorkspaceState.semanticTypes. */
+  private semanticTypeGroups: readonly SemanticTypeGroup[] | null = null;
+  /** WORKSPACE METRICS (2026-08-02): recomputed per load, never stored. */
+  private identityCleanupStats: IdentityCleanupStats | null = null;
   private reviewEngine: DurableReviewEngine | null = null;
   private focusNavigator: FocusNavigator | null = null;
 
@@ -335,8 +408,20 @@ export class ReviewWorkspace {
     this.parser = deps.parser ?? new OoxmlDocumentParser();
     this.detectionEngine = deps.detectionEngine ?? new RegexDetectionEngine();
     this.qualityEngine = deps.qualityEngine ?? new RegexCandidateQualityEngine();
-    this.resolutionEngine = deps.resolutionEngine ?? new RegexEntityResolutionEngine();
+    // Deterministic Semantic Relationship Knowledge (2026-07-30): the
+    // REAL workspace engine carries the built-in curated providers
+    // (related-name library today), so document loads produce
+    // knowledge-augmented, evidence-annotated ambiguity proposals. Suites
+    // and display-recalculation instances construct the engine bare and
+    // stay byte-identical to the Python oracle -- see
+    // semantic-augmentation.ts.
+    this.resolutionEngine = deps.resolutionEngine ?? new RegexEntityResolutionEngine(builtInSemanticRelationshipProviders());
     this.occurrenceClassifier = deps.occurrenceClassifier ?? new RegexOccurrenceClassifier();
+    // Structural Relationship Review (2026-07-30): stateless and
+    // deterministic; not injectable via deps for now -- the detector
+    // registry (StructuralRelationshipEngine's constructor) is the
+    // extension point, and no test has needed to swap the whole engine.
+    this.structuralRelationshipEngine = new StructuralRelationshipEngine();
     this.rebuilder = deps.rebuilder ?? new OoxmlDocumentRebuilder();
     this.verifier = deps.verifier ?? new OoxmlOutputVerifier();
     this.auditExporter = deps.auditExporter ?? new DeterministicAuditExporter();
@@ -362,7 +447,21 @@ export class ReviewWorkspace {
     if (!this.detection || !this.grouping || !this.classification) {
       throw new Error("ReviewWorkspace.navigationContext() called before a document was loaded");
     }
-    return { detection: this.detection, grouping: this.grouping, classification: this.classification };
+    return {
+      detection: this.detection,
+      grouping: this.grouping,
+      classification: this.classification,
+      // Phase 2: type-check traversal membership -- see loadDocument().
+      ...(this.semanticTypeGroups ? { semanticTypes: this.semanticTypeGroups } : {}),
+      // REVIEW ARTIFACTS (AG, 2026-08-02): the structural relationship
+      // proposals are reviewer work, so the work model must see them --
+      // otherwise a stage completes and disappears with proposals still
+      // outstanding (see navigation/stages.ts's REVIEW ARTIFACTS block).
+      // Passed as the proposal list only; the DISMISSAL state that
+      // dissolves one is read from ReviewSession at derivation time, so
+      // this stays decision-blind like every other context member.
+      ...(this.structuralRelationships ? { structuralRelationships: this.structuralRelationships.proposals } : {}),
+    };
   }
 
   /**
@@ -397,11 +496,112 @@ export class ReviewWorkspace {
       return { ok: false, reason: `failed to read file bytes: ${error instanceof Error ? error.message : String(error)}` };
     }
 
-    const detection = this.detectionEngine.detect(document);
+    const rawDetection = this.detectionEngine.detect(document);
     const profile = buildDefaultScoringProfileSnapshot(this.clock());
-    const quality = this.qualityEngine.evaluate(document, detection, profile);
-    const grouping = this.resolutionEngine.propose(detection, quality);
+    // NORMALIZATION (AG, 2026-08-03) -- Detection -> Normalization ->
+    // Grouping, per Andrew's pipeline. It collapses deterministic
+    // conversational/formatting variants of an already-detected entity
+    // ("Hi Andrew", "Thanks, Andrew") into the single review candidate the
+    // reviewer should actually be asked about, preserving every original
+    // detector span as evidence. See engines/normalization/normalization.ts.
+    //
+    // WHY QUALITY IS EVALUATED TWICE, deliberately. The pass's safety gate
+    // is the quality engine's own person-name evidence for the MERGE
+    // TARGET, so a first assessment must exist before normalization can
+    // run; and normalization changes occurrence counts (folding seven
+    // variants of "Andrew" together takes it from 46 to 72 occurrences),
+    // which is itself scoring evidence -- so the assessment every
+    // downstream stage reads has to describe the stream it is actually
+    // describing, not the pre-merge one. Reusing the first pass would leave
+    // assessments keyed to candidates that no longer exist and frequency
+    // evidence that is quietly wrong. Measured cost on Andrew's real
+    // 609-candidate transcript: 46ms, run twice. That is the right trade;
+    // caching a stale assessment to save it would not be.
+    //
+    // CONTEXTUAL PERSON EVIDENCE (AG, 2026-08-05) runs BEFORE each quality
+    // evaluation, because its output is an input to scoring, and is
+    // recomputed after normalization for the same reason quality is: merging
+    // seven variants of "Andrew" into one candidate changes which
+    // occurrences that candidate owns, and therefore which sentences its
+    // contextual evidence is drawn from. A stale pre-merge contextual result
+    // would attribute the wrong representative example to the surviving
+    // candidate -- exactly the "assessments keyed to candidates that no
+    // longer exist" problem described above.
+    const rawContextual = evaluateContextualPersonEvidence(document, rawDetection);
+    const preNormalizationQuality = this.qualityEngine.evaluate(document, rawDetection, profile, rawContextual);
+    const normalization = normalizeDetection(rawDetection, {
+      categoriesOf: (candidateId) => qualityCategoriesOf(preNormalizationQuality.assessmentByCandidate[candidateId]),
+      // GATE 3 (Andrew's decision, 2026-08-05): contextual evidence counts
+      // as person-name evidence for the normalization merge gate -- but only
+      // above GATE_3_CONTEXTUAL_THRESHOLD. See that constant's comment for
+      // why presence alone is not enough to be allowed to authorize a merge.
+      contextualStrengthOf: (candidateId) => rawContextual.byCandidate[candidateId]?.contribution ?? 0,
+    });
+    const detection = normalization.detection;
+    const contextual = evaluateContextualPersonEvidence(document, detection);
+    const quality = this.qualityEngine.evaluate(document, detection, profile, contextual);
+    // IDENTITY CLEANUP (AG, 2026-08-02): the pure phrase-fragment pass
+    // over the engine's proposals -- the same additive-layer slot as
+    // semantic augmentation, wired HERE so every parity suite's bare
+    // engine remains byte-identical to the Python oracle. See
+    // identity-cleanup.ts's doc comment for rules and evidence sources.
+    // Phase 2 (2026-08-02): the "filterRules if any, else reasons" rule
+    // moved to domain/semanticTypes.ts's qualityCategoriesOf() when the
+    // semantic-type assignment below became a second consumer -- one rule,
+    // shared, instead of a third inline copy.
+    const categoriesOf = (candidateId: string): readonly string[] => qualityCategoriesOf(quality.assessmentByCandidate[candidateId]);
+    const proposed = this.resolutionEngine.propose(detection, quality);
+    const grouping = cleanupIdentityOptions(proposed, detection, categoriesOf);
     const classification = this.occurrenceClassifier.classify(document, detection, quality, grouping);
+    // Structural Relationship Review (2026-07-30): deterministic, derived,
+    // recomputed per load -- deliberately SEPARATE from
+    // EntityResolutionEngine's grouping (entity ambiguity is semantic
+    // identity; this is non-semantic shape), which also keeps the
+    // Python-parity surface untouched.
+    const engineRelationships = this.structuralRelationshipEngine.propose(detection);
+    // "Probable Name with Inserted Word" (AG, 2026-08-02): the identity-
+    // cleanup pass contributes proposals over noisy-phrase entity groups
+    // -- merged here, re-sorted to the result contract (by kind, then
+    // proposalId), so every downstream consumer (cards, dismissals,
+    // audit) sees one uniform proposal stream.
+    const insertedWord = insertedWordNameProposals(grouping, detection, categoriesOf);
+    // WORKSPACE METRICS (AG, 2026-08-02): factual cleanup record --
+    // recomputed on every load (deterministic), never persisted.
+    this.identityCleanupStats = identityCleanupStats(proposed, grouping, insertedWord.length);
+    // Appended, not re-sorted: the engine's own KIND_ORDER governs its
+    // proposals, and "inserted-word-name" is the final kind (order 3) --
+    // appending preserves both contracts without re-deriving either.
+    const structuralRelationships = {
+      proposals: [...engineRelationships.proposals, ...insertedWord.sort((a, b) => a.proposalId.localeCompare(b.proposalId))],
+    };
+
+    // PHASE 2, TYPE CHECK (AG, 2026-08-02): the ONE semantic-type
+    // assignment pass -- candidate insertion order preserved (Map), facts
+    // read from the same pipeline outputs assembled just above (including
+    // the merged inserted-word proposals, so relationship-derived types see
+    // the full stream). Relationship DISMISSALS deliberately not consulted:
+    // membership is decision-blind and stable for the document's lifetime
+    // (see domain/semanticTypes.ts's SemanticTypeGroup doc comment).
+    const kindsByCandidate = new Map<string, Set<RelationshipKind>>();
+    for (const proposal of structuralRelationships.proposals) {
+      for (const candidateId of proposal.candidateIds) {
+        const kinds = kindsByCandidate.get(candidateId) ?? new Set<RelationshipKind>();
+        kinds.add(proposal.kind);
+        kindsByCandidate.set(candidateId, kinds);
+      }
+    }
+    const semanticAssignments = new Map<string, SemanticTypeId>();
+    for (const candidate of detection.candidates) {
+      semanticAssignments.set(
+        candidate.id,
+        semanticTypeFor({
+          detectedType: candidate.detectedType,
+          categories: categoriesOf(candidate.id),
+          relationshipKinds: kindsByCandidate.get(candidate.id) ?? new Set<RelationshipKind>(),
+        })
+      );
+    }
+    const semanticTypeGroups = buildSemanticTypeGroups(semanticAssignments);
 
     let sessionRestored = false;
     let session: ReviewSession;
@@ -443,9 +643,15 @@ export class ReviewWorkspace {
 
     this.document = document;
     this.detection = detection;
+    this.rawDetection = rawDetection;
+    this.normalization = normalization;
     this.quality = quality;
     this.grouping = grouping;
     this.classification = classification;
+    this.structuralRelationships = structuralRelationships;
+    // Set BEFORE the navigator construction below -- navigationContext()
+    // embeds it, and the navigator binds its context once.
+    this.semanticTypeGroups = semanticTypeGroups;
     this.reviewEngine = new DurableReviewEngine(detection, grouping, session, this.clock);
     this.focusNavigator = sessionRestored
       ? DeterministicFocusNavigator.fromResumePosition(this.navigationContext(), session, restoreFocusPosition)
@@ -481,9 +687,90 @@ export class ReviewWorkspace {
     // ever resolving to "All changes saved", which is actively misleading.
     // Scheduling one here closes both gaps with the exact same
     // fire-and-forget mechanism every other autosave already uses.
+    // DECISION MEMORY (AG, 2026-08-03): carry forward what this reviewer
+    // already decided in earlier documents, BEFORE the initial autosave
+    // below so the freshly-persisted record already reflects it.
+    // Deliberately skipped for a RESTORED session -- those decisions are
+    // the reviewer's own, already made against this very document, and
+    // re-deriving over them would be both pointless and a chance to
+    // disturb work that is already correct.
+    if (!sessionRestored) await this.applyRememberedDecisions();
+
     this.scheduleAutosave();
 
     return { ok: true, sessionRestored };
+  }
+
+  /**
+   * Apply decisions this reviewer made in EARLIER documents to the document
+   * just loaded -- "review once, apply everywhere" without an export/import
+   * round trip (AG, 2026-08-03).
+   *
+   * EXACT-KEY TIER ONLY, and that restriction is the heart of the design.
+   * `DeterministicDecisionReuseEngine` offers three tiers; the other two
+   * (grouped-alias, similarity-threshold) each involve a JUDGEMENT that one
+   * string stands for the same thing as another. Those judgements are
+   * perfectly reasonable when a reviewer has explicitly chosen to import a
+   * decisions file, but this path was not asked for -- it happens on every
+   * load -- so it is confined to the tier that asserts nothing at all: the
+   * candidate key (normalizeCandidate()'s "type:normalized text") is
+   * byte-identical to one already decided. That is a statement of fact, not
+   * an inference, which is what makes automatic application defensible
+   * without the system needing any theory about WHY an edit was made (AG's
+   * own framing: a stray word this time, "not guaranteed in future edits").
+   *
+   * NOT SILENT. Every applied decision goes through the same
+   * `applyDecisionReuse` command the file-import path uses, so each lands
+   * stamped `source: "imported"` with its `DecisionReuseEvidence`, is
+   * rendered with the existing provenance suffix, appears in the audit
+   * export, and is overridable by the reviewer like any other. This
+   * respects the standing rule that the app never invents confirmation
+   * history a reviewer did not create -- a carried-over decision is
+   * permanently distinguishable from one authored here.
+   *
+   * NEVER OVERWRITES. `applyDecisionReuse` already skips candidates that
+   * already carry a decision, so this cannot disturb existing work.
+   *
+   * BEST EFFORT. Any failure (storage unavailable, malformed records)
+   * leaves the document loaded with no carried-over decisions rather than
+   * failing the load: this is a convenience, and it must never be the
+   * reason a reviewer cannot open a document.
+   */
+  private async applyRememberedDecisions(): Promise<void> {
+    if (!this.document || !this.detection || !this.grouping || !this.reviewEngine) return;
+    try {
+      const memories = await this.sessionRepository.listDecisionMemory(this.document.documentId);
+      if (memories.length === 0) return;
+      const merged = mergeDecisionMemory(memories);
+      if (merged.candidates.length === 0) return;
+
+      const proposals = this.decisionReuseEngine
+        .proposeReuse(this.detection, this.grouping, merged)
+        .filter((proposal) => proposal.evidence.tier === "exact-key");
+      if (proposals.length === 0) return;
+
+      const beforeDecided = new Set(Object.keys(this.reviewEngine.getState().candidateDecisions));
+      const result = this.reviewEngine.dispatch({ family: "review", type: "applyDecisionReuse", proposals });
+      if (!result.ok) return;
+      this.reconcileFocus();
+
+      const appliedCount = proposals.filter((p) => !beforeDecided.has(p.candidateId)).length;
+      this.lastDecisionReuseSummary = {
+        sourceDocumentId: merged.documentId,
+        sourceSessionId: merged.sessionId,
+        proposalCount: proposals.length,
+        // Exact-key by construction -- the other tiers were filtered out
+        // above, and stating that here keeps the summary honest rather than
+        // implying tiers that were never considered.
+        tierCounts: { "exact-key": proposals.length, "grouped-alias": 0, "similarity-threshold": 0 },
+        appliedCount,
+        skippedAlreadyDecidedCount: proposals.length - appliedCount,
+        origin: "decision-memory",
+        documentsDrawnFrom: memories.length,
+      };
+    } catch {
+      // Intentionally swallowed -- see this method's "BEST EFFORT" note.
+    }
   }
 
   getReviewEngine(): DurableReviewEngine | null {
@@ -519,6 +806,33 @@ export class ReviewWorkspace {
    *  since this runs detached from any caller that could catch it. */
   private scheduleAutosave(): void {
     this.autosaveQueue = this.autosaveQueue.then(() => this.persistCurrentSession().then(() => undefined));
+  }
+
+  /**
+   * Resolves once every autosave scheduled SO FAR has settled.
+   *
+   * Exists for one narrow, real problem (AG, 2026-08-03): loadDocument()
+   * ends with a fire-and-forget `scheduleAutosave()` so a freshly opened
+   * document is immediately resumable, but the UI's own "refresh the
+   * Recent Documents list" call runs straight afterwards and therefore
+   * usually READ the repository before that write landed -- the document
+   * the reviewer just opened was missing from the list until some later,
+   * unrelated refresh happened to pick it up. Switching documents at that
+   * moment appeared to lose the newly opened one.
+   *
+   * Deliberately NOT a way to make autosave blocking: `scheduleAutosave()`
+   * stays fire-and-forget for every decision path (the "uninterrupted
+   * review flow" rule above is unchanged). This only lets a caller that
+   * genuinely needs to READ BACK what was just written wait for it, which
+   * is a different thing from making the write synchronous.
+   *
+   * Never rejects -- persistCurrentSession() captures its own errors into
+   * `lastAutosaveError` (surfaced via getState().persistence), so a failed
+   * autosave settles this promise rather than throwing at a caller that
+   * only wants to know "is it safe to re-read now."
+   */
+  async autosaveSettled(): Promise<void> {
+    await this.autosaveQueue;
   }
 
   /** Writes the CURRENT document/session/focus state to `sessionRepository`
@@ -561,6 +875,14 @@ export class ReviewWorkspace {
 
     try {
       await this.sessionRepository.save(record);
+      // DECISION MEMORY (AG, 2026-08-03): re-projected from the session on
+      // every save rather than maintained incrementally, so it cannot drift
+      // from the decisions it describes (see DecisionMemory.ts). Awaited
+      // inside the same try as the session save -- a memory write that
+      // fails should surface exactly like any other autosave failure rather
+      // than being silently swallowed and leaving the reviewer with a
+      // memory that quietly stopped updating.
+      await this.sessionRepository.saveDecisionMemory(projectDecisionMemory(session, this.document.documentId, session.updatedAt));
       this.lastAutosaveAt = session.updatedAt;
       this.lastAutosaveError = null;
       // Best-effort refresh; a failure here must not mask a successful
@@ -625,11 +947,42 @@ export class ReviewWorkspace {
     return this.sessionRepository.listRecent(limit);
   }
 
+  /**
+   * The stored session for `documentId`, or null if this document has never
+   * been worked on (AG, 2026-08-03, reopen prompt).
+   *
+   * Reads through `listRecent()` with NO limit rather than the repository's
+   * `load()`, for one deliberate reason: `load()` also stamps the record's
+   * `lastOpenedAt` as a side effect (see LocalSessionRepository's own note
+   * on why that is load()'s job). This is a pure question -- "do you know
+   * this file?" -- asked before the reviewer has decided to open anything,
+   * so it must not mutate the recents ordering. A reviewer who picks a file
+   * and then cancels should leave no trace.
+   */
+  async findStoredSession(documentId: string): Promise<SessionSummary | null> {
+    const all = await this.sessionRepository.listRecent();
+    return all.find((summary) => summary.documentId === documentId) ?? null;
+  }
+
   /** Passthrough removal for a Recent Documents "remove from list"
    *  affordance -- deliberately the only management operation exposed
    *  (Andrew: "do not implement a document-management system"). */
   async deleteStoredSession(documentId: string): Promise<void> {
     return this.sessionRepository.delete(documentId);
+  }
+
+  /** UI-STATE PERSISTENCE (AG, 2026-08-02): document-tied UI snapshot
+   *  passthroughs -- the workspace neither reads nor interprets the
+   *  snapshot (its shape is the UI layer's; see
+   *  LocalSessionRepository.PersistedUiState). Best-effort by contract:
+   *  callers fire-and-forget saves and treat load failures as "no
+   *  snapshot". */
+  async saveUiState(documentId: string, uiState: PersistedUiState): Promise<void> {
+    return this.sessionRepository.saveUiState(documentId, uiState);
+  }
+
+  async loadUiState(documentId: string): Promise<PersistedUiState | null> {
+    return this.sessionRepository.loadUiState(documentId);
   }
 
   /** Milestone 3, Phase 3. The config `generateOutput()` will use the next
@@ -800,6 +1153,7 @@ export class ReviewWorkspace {
       tierCounts,
       appliedCount,
       skippedAlreadyDecidedCount: proposals.length - appliedCount,
+      origin: "imported-file",
     };
 
     return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? "applyDecisionReuse rejected" };
@@ -828,6 +1182,8 @@ export class ReviewWorkspace {
         quality: null,
         grouping: null,
         classification: null,
+        structuralRelationships: null,
+        semanticTypes: null,
         reviewSession: null,
         focus: null,
         stageStatuses: [],
@@ -835,6 +1191,8 @@ export class ReviewWorkspace {
         verification: null,
         hasGeneratedOutput: false,
         persistence: EMPTY_PERSISTENCE_STATUS,
+        identityCleanup: null,
+        normalization: null,
       };
     }
 
@@ -852,6 +1210,7 @@ export class ReviewWorkspace {
     const readiness: WorkspaceReadiness = {
       reviewComplete: outputStatus?.available ?? false,
       unresolvedItemCount: itemCheckStatus?.unresolvedCount ?? 0,
+      unresolvedArtifactCount: stageStatuses.reduce((sum, status) => sum + status.unresolvedArtifactCount, 0),
       verificationCurrent,
       verificationPassed,
       verificationWarningCount,
@@ -868,12 +1227,16 @@ export class ReviewWorkspace {
       quality: this.quality,
       grouping: this.grouping,
       classification: this.classification,
+      structuralRelationships: this.structuralRelationships,
+      semanticTypes: this.semanticTypeGroups,
       reviewSession: session,
       focus: this.focusNavigator.getFocus(),
       stageStatuses,
       readiness,
       verification,
       hasGeneratedOutput: verificationCurrent,
+      identityCleanup: this.identityCleanupStats,
+      normalization: this.normalization,
       persistence: {
         lastAutosaveAt: this.lastAutosaveAt,
         lastAutosaveError: this.lastAutosaveError,

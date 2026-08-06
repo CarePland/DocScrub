@@ -69,7 +69,7 @@
  * byte-identical to before whenever no `replacements` map is passed.
  */
 
-import type { DocumentModel, Occurrence } from "../domain/DocumentModel.js";
+import { redactionSpanOf, type DocumentModel, type Occurrence } from "../domain/DocumentModel.js";
 import type { DetectionResult } from "../engines/DetectionEngine.js";
 import type { ReviewSession } from "../domain/ReviewSession.js";
 import { parseDocumentXml } from "./ooxml/document-text.js";
@@ -151,7 +151,16 @@ export class OoxmlDocumentRebuilder implements DocumentRebuilder {
       if (block.kind === "body" || block.kind === "header" || block.kind === "footer" || block.kind === "comment") {
         const partName = block.sourceMapping.partId;
         const list = replacementsByPart.get(partName) ?? [];
-        list.push({ search: occurrence.text, replace: replacement });
+        // NORMALIZATION (2026-08-03): search for the REDACTION span, not
+        // the raw detector span. For an ordinary occurrence these are the
+        // same string. For one the Normalization pass folded into another
+        // candidate ("Thanks, Andrew" -> "Andrew") the detector span
+        // includes the reviewer's own prose, and editing it would delete
+        // that prose from the output -- so the search text is the narrowed
+        // sub-range and the result reads "Thanks, [REDACTED PERSON]".
+        // Routed through redactionSpanOf() rather than reading
+        // occurrence.effectiveSpan directly -- see that helper.
+        list.push({ search: redactionSpanOf(occurrence).text, replace: replacement });
         replacementsByPart.set(partName, list);
       } else if (block.kind === "hyperlink") {
         const ref = decodeSourceRef(block.sourceMapping.sourceRef);
