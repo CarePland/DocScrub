@@ -10,7 +10,7 @@
  * Design notes:
  * - Sections exist so the EXPLANATION lives once, in the heading, instead
  *   of repeating per row ("avoid repeating identical explanatory text
- *   hundreds of times") -- a row inside "Common words" needs no sentence.
+ *   hundreds of times") -- a row inside "Other Words" needs no sentence.
  * - Section assignment uses the archetype derived AS IF the item were
  *   undecided (app.ts passes that), so a row does not jump to a different
  *   section the moment it is accepted -- completed items stay put, in
@@ -33,6 +33,37 @@ export type TriageSectionId =
   | "calendar"
   | "common-words"
   | "other";
+
+/**
+ * WHICH USER-FACING CATEGORY A RELATIONSHIP PROPOSAL BELONGS TO
+ * (AG, 2026-08-06).
+ *
+ * Andrew, ruling out the separate-category design that preceded this:
+ *
+ * > Users do not care that one is a candidate review and the others are
+ * > relationship proposals. ... Please do not rename or create additional
+ * > user-facing categories to reflect internal object types. Candidate
+ * > reviews and relationship proposals are implementation details. The
+ * > navigation taxonomy should reflect the user's work, not the underlying
+ * > data structures.
+ *
+ * So a proposal lands in the category a reviewer would look for it in. The
+ * ITS/PERC/QBU pairs are acronym work and belong beside the singleton
+ * acronym candidate; identifier-shaped pairs are Numeric work.
+ * `inserted-word-name` goes to "other" rather than an identity section on
+ * Andrew's call: a probable name with an inserted word is genuinely
+ * ambiguous work that wants individual review, not a bulk conclusion.
+ *
+ * Keyed by RelationshipKind but typed against the TRIAGE ids, which the
+ * Ambiguity ids reuse verbatim for exactly these four -- so one map serves
+ * both stages and neither can drift from the other.
+ */
+export const RELATIONSHIP_KIND_SECTION: Record<string, TriageSectionId> = {
+  acronym: "acronyms",
+  "numeric-identifier": "identifiers",
+  "alphanumeric-identifier": "identifiers",
+  "inserted-word-name": "other",
+};
 
 /** Display order (Triage refinement, 2026-07-30: reviewer-decision
  *  order per Andrew's prompt -- People first, term sections together,
@@ -193,6 +224,10 @@ export interface AmbiguityQueueItem {
    *  archetype, so neither the section nor the tier of a row ever moves
    *  once decided. Null = no category home (the "other" bucket). */
   tier: ReviewTier | null;
+  /** POSITIVE name evidence (recommendations.ts's hasKnownNameEvidence) --
+   *  what tells a name the app understands from a word it merely does not
+   *  recognize. See the uncertain branch of ambiguitySectionFor. */
+  nameEvidence: boolean;
 }
 
 export type AmbiguitySectionId =
@@ -204,6 +239,10 @@ export type AmbiguitySectionId =
 /** Identity sections first (the stage's namesake work), term sections
  *  together, identifiers last before the structural kind groups app.ts
  *  appends after the queue -- mirroring the triage ordering rationale. */
+/** IDENTIFIERS MOVED ABOVE COMMON-WORDS (AG, 2026-08-06), with the rest of
+ *  the shortened-label pass: his own ordering put Numeric before Common
+ *  Words. Term sections still sit together; this only reorders within
+ *  them. */
 export const AMBIGUITY_SECTION_ORDER: readonly AmbiguitySectionId[] = [
   "shortened-names",
   "nicknames",
@@ -211,17 +250,40 @@ export const AMBIGUITY_SECTION_ORDER: readonly AmbiguitySectionId[] = [
   "acronyms",
   "institutional",
   "calendar",
-  "common-words",
   "identifiers",
+  "common-words",
   "other",
 ];
 
+/**
+ * SHORTENED FOR THE PILL BAR (AG, 2026-08-06), his list verbatim:
+ * "Shortened Names / Other Names / Acronyms / Institutional / Time
+ * Calendar / Numeric / Other Words / Other".
+ *
+ * AMBIGUITY-ONLY OVERRIDES, DELIBERATELY. Five of these labels
+ * (institutional, calendar, common-words, identifiers, other) are inherited
+ * from TRIAGE_SECTION_LABELS by the spread below, so shortening them AT THE
+ * SOURCE would have renamed Item Check's categories too -- a surface he did
+ * not ask about and whose headings have room for the long form. The cost is
+ * that the same section id now reads differently on two stages; that is
+ * acceptable because the label is presentation and the id is the identity,
+ * but a third stage wanting a third name should make this a per-stage
+ * lookup rather than a second spread.
+ *
+ * "Numeric" over "Identifier Patterns": he named the category after what a
+ * reviewer SEES in it, not after the detector that found it.
+ */
 export const AMBIGUITY_SECTION_LABELS: Record<AmbiguitySectionId, string> = {
   ...TRIAGE_SECTION_LABELS,
-  "shortened-names": "Shortened Person Names",
-  nicknames: "Nicknames / Alternate Names",
-  "org-aliases": "Organizational Aliases",
-  other: "Other / Needs Individual Review",
+  "shortened-names": "Shortened Names",
+  nicknames: "Other Names",
+  "org-aliases": "Org Names",
+  acronyms: "Acronyms",
+  institutional: "Institutional",
+  calendar: "Time / Calendar",
+  identifiers: "Numeric",
+  "common-words": "Other Words",
+  other: "Other",
 };
 
 export const AMBIGUITY_SECTION_EXPLANATIONS: Partial<Record<AmbiguitySectionId, string>> = {
@@ -230,6 +292,18 @@ export const AMBIGUITY_SECTION_EXPLANATIONS: Partial<Record<AmbiguitySectionId, 
   nicknames: "These appear to be alternate or familiar names for the same person.",
   "org-aliases": "These appear to be alternate names for the same organization.",
   acronyms: "These appear to be acronym relationships.",
+  /* OTHER WORDS OVERRIDES THE INHERITED EXPLANATION (AG, 2026-08-07).
+   * The spread above brings "Likely ordinary English words rather than
+   * names" from TRIAGE_SECTION_EXPLANATIONS, which is the DICTIONARY
+   * MEMBERSHIP claim the Other Words reframing exists to stop making --
+   * it survived the 2026-08-06 rename because the rename touched the
+   * LABEL map and not this one. Kept correct on Item Check, where
+   * `triageSectionFor` really does route only `archetype ===
+   * "common-word"` here and the dictionary claim is the actual model;
+   * overridden on Ambiguity, where the population is "no name evidence"
+   * and asserting an English-lexicon entry would be false of every item
+   * that arrived by falling through. */
+  "common-words": "Words rather than names -- no name evidence was found for these.",
   other: "Ambiguous items without a category conclusion -- reviewed individually.",
 };
 
@@ -307,15 +381,15 @@ export interface SectionAction {
    * The earlier rule -- only "scope-naming" labels get a selected form,
    * conclusion-naming ones are scope-neutral and keep their wording --
    * was wrong twice over. It keyed on the literal word "all", which
-   * "These are all common words" contains while quantifying over "these"
-   * rather than claiming the section. And it left a checked subset with a
+   * "These are all words, not names" contains while quantifying over
+   * "these" rather than claiming the section. And it left a checked subset with a
    * button reading like a claim about everything: AG, "if they happen to
    * process several, the option should exist for the remainder, i.e.
    * 'Selected' as elsewhere built."
    *
    * So the two voices split by SCOPE, not by label style:
    *   - nothing checked -> the authored label, stating the category
-   *     conclusion over all remaining work ("These are all common words");
+   *     conclusion over all remaining work ("These are all words, not names");
    *   - a subset checked -> the canonical action voice ("Ignore selected"),
    *     because a conclusion asserted over a hand-picked subset is no
    *     longer telling the reviewer anything they did not just decide,
@@ -416,8 +490,16 @@ export const AMBIGUITY_TIER_ACTIONS: Partial<Record<AmbiguitySectionId, Partial<
   calendar: {
     strong: [bulk("These are all calendar terms", "Ignore", "Treat every remaining item as calendar terminology, not personal information.")],
   },
+  /* THE LABEL FOLLOWS THE CATEGORY, NOT THE OLD ONE (AG, 2026-08-07).
+   * "These are all common words" asserted DICTIONARY MEMBERSHIP over a
+   * population that is now defined by the ABSENCE of name evidence -- the
+   * exact claim the Other Words rename retired one map away, left behind
+   * here because the rename changed AMBIGUITY_SECTION_LABELS and nothing
+   * else. The conclusion shape ("These are all ...") is preserved because
+   * the term sections share it; only the claim narrows to what the
+   * sectioning predicate actually decided. */
   "common-words": {
-    strong: [bulk("These are all common words", "Ignore", "Treat every remaining item as ordinary words, not personal information.")],
+    strong: [bulk("These are all words, not names", "Ignore", "Treat every remaining item as a word rather than a person's name; the text is left alone.")],
   },
   identifiers: {
     strong: [bulkScoped("Redact", "Redact every remaining item with the default placeholder.")],
@@ -450,7 +532,61 @@ export function ambiguitySectionFor(item: AmbiguityQueueItem): AmbiguitySectionI
       // the reviewer to either accept an expansion or reject the person
       // entirely"), not "Other" junk. Everything else stays "other"
       // (divergence 2 above: never a bulk-acceptable people section).
-      return item.tier === "needs-review" && item.detectedType === "person" ? "shortened-names" : "other";
+      /* OTHER WORDS (AG, 2026-08-06). "Other" had become the sink for two
+       * unrelated populations, and Andrew spotted it from the outside:
+       * "Can you take a look at the Other category? These seem.. curious
+       * choices" -- Kyle beside Math and Residency.
+       *
+       * They arrive by the same route (person-typed, no archetype matched)
+       * but they are not the same thing. Kyle carries POSITIVE name
+       * evidence and a 95% identity match; it is a name the app already
+       * understands and belongs with the names. Math and Residency carry
+       * none -- they are ordinary words that the quality dictionary simply
+       * does not list, which is a LEXICON GAP, not a judgement call, and
+       * parking them under "needs individual review" asked the reviewer to
+       * adjudicate our missing data.
+       *
+       * So the split is on evidence, not on tier: name evidence goes to the
+       * names family, everything else person-typed goes to Other Words.
+       *
+       * WHY THAT CATEGORY WORKS -- Andrew's own reframing: "Common English
+       * Words" asserts DICTIONARY MEMBERSHIP, so it can only ever hold what
+       * the lexicon knows and every gap falls through. "Other Words"
+       * asserts only "this is a word, not a name," which Math and Residency
+       * satisfy with no dictionary entry at all. The category stops being
+       * coupled to lexicon coverage, so the next unlisted word lands right
+       * instead of repeating this.
+       *
+       * `tier === "needs-review"` is no longer consulted here: it was a
+       * proxy for "has something worth reviewing" that name evidence
+       * answers directly, and it sent Kyle -- tier "Likely" -- to Other.
+       *
+       * THE SPLIT IS ONLY AS GOOD AS THE PREDICATE, AND THE PREDICATE IS
+       * CURRENTLY TOO NARROW (verified live 2026-08-07 against the Teams
+       * transcript, NOT reasoned from source). Kyle -- the worked example
+       * two paragraphs up -- does NOT reach "shortened-names". It is in
+       * Other Words, because `hasKnownNameEvidence` gates on the quality
+       * name dictionaries and KNOWN_GIVEN_NAMES holds 23 entries and
+       * KNOWN_SURNAMES 5. "kyle" is in neither, so the predicate answers
+       * false however strong the other evidence is: Kyle carries a 95%
+       * exact first-name match to "Kyle Francis" and still files as a
+       * word. Amy is the sharper case -- source text "im so surprised
+       * [Amy] doesn't know how to answer her own Staff questions", a 90%
+       * match to "Amy Miller" -- and it lands in the STRONG tier here,
+       * inside the blast radius of the section's bulk Ignore.
+       *
+       * So the REASONING above is intact and the ROUTING is not: this
+       * reads "no name evidence" where the truth is "no name evidence THE
+       * LEXICON KNOWS ABOUT", which is the coupling to lexicon coverage
+       * the reframing was supposed to end -- moved one layer down rather
+       * than removed. The document-level identity evidence that makes
+       * Kyle and Amy obviously names is computed elsewhere and never
+       * consulted here. See the handoff's OPEN list before widening: the
+       * fix is a predicate question, not a sectioning one, and touching
+       * this return without touching hasKnownNameEvidence would just move
+       * the same defect again. */
+      if (item.detectedType !== "person") return "other";
+      return item.nameEvidence ? "shortened-names" : "common-words";
   }
 }
 
@@ -673,8 +809,8 @@ export type GroupScopeChord = "K" | "C" | "R" | "N" | "U";
  *
  * The real one: `Ignore` is being retired as a decision the reviewer can
  * NAME. Every group-level control that applies it now states a conclusion
- * instead -- "These are all common words", "None are personal", "None are
- * names" -- and every one of those sentences begins with the claim that
+ * instead -- "These are all words, not names", "None are personal", "None
+ * are names" -- and every one of those sentences begins with the claim that
  * these items are Not what the detector took them for. So the letter names
  * what the buttons actually say, rather than the mechanism underneath, and
  * `I` disappears from the reviewer's vocabulary entirely along with the

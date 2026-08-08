@@ -56,7 +56,16 @@ import { isStageActive } from "../engines/navigation/workflow.js";
 import type { WorkflowStage } from "../domain/FocusState.js";
 import { SEMANTIC_TYPE_LABELS, buildSemanticTypeSummaries, type SemanticTypeId, type SemanticTypeSummary } from "../domain/semanticTypes.js";
 import type { AnyCommand, ReviewCommand, ReviewTransactionResult } from "../domain/Commands.js";
-import { advanceWithinVisibleList } from "./visibleListAdvance.js";
+import {
+  advanceWithinReviewTargets,
+  advanceWithinVisibleList,
+  candidateReviewTarget,
+  proposalReviewTarget,
+  reviewDisplayTargetKey,
+  sectionDisplayTargets,
+  sectionGridSequence,
+  type ReviewDisplayTarget,
+} from "./visibleListAdvance.js";
 import { DeterministicExplanationEngine } from "../engines/ExplanationEngine.js";
 // `confidenceOpener` joins the import (2026-08-04) so the panel's verdict
 // line is the ENGINE'S sentence opener, not a UI paraphrase of it -- the
@@ -85,17 +94,24 @@ import type { RelationshipProposal } from "../domain/StructuralRelationship.js";
 import {
   deriveRecommendation,
   deriveReviewTier,
+  hasKnownNameEvidence,
   identityDigitAssignments,
   isNonNameAnchorEvidence,
   type RecommendationFacts,
+  type RecommendationSuggestion,
   type ReviewRecommendation,
   type SuggestionOp,
 } from "./recommendations.js";
 import {
   AMBIGUITY_SECTION_EXPLANATIONS,
+  AMBIGUITY_SECTION_LABELS,
+  AMBIGUITY_SECTION_ORDER,
   AMBIGUITY_TIER_ACTIONS,
+  RELATIONSHIP_KIND_SECTION,
   TRIAGE_SECTION_ACCEPT_DEFAULT,
   TRIAGE_SECTION_EXPLANATIONS,
+  TRIAGE_SECTION_LABELS,
+  TRIAGE_SECTION_ORDER,
   ambiguityQueueOrder,
   buildAmbiguitySections,
   buildTriageSections,
@@ -143,7 +159,9 @@ import { DeterministicReplacementRuleEngine, genericPlaceholder } from "../engin
 import { decisionProvenance, decisionProvenanceSuffix } from "./decisionProvenance.js";
 import { computeDocumentScores, explainScoreChange, formatScoreChange, type DocumentScoreReport, type ScoreChange } from "./documentScores.js";
 import { partitionCandidatesByResolution } from "../engines/review/coverage.js";
-import { decisionTrackerFigures, explainTimeSaved } from "../metrics/decisionTracker.js";
+import { decisionTrackerFigures, explainTimeSaved, explainTimeSavedPending, timeSavedUnitLabel } from "../metrics/decisionTracker.js";
+import { formatPercentFigure, isRestingFigure } from "../metrics/percentDisplay.js";
+import { ZONE_CAPACITY, partitionByZone, reviewZone, zoneActionLabel } from "./reviewZone.js";
 import {
   decisionReduction,
   formatFewerDecisionsPercent,
@@ -171,6 +189,14 @@ import { decisionSummary, UNDECIDED_SUMMARY, type DecisionSummary } from "../dom
 // doc comment for the "open documents = working set" interpretation).
 import { documentDisplaySummary } from "./documentDisplay.js";
 import { APP_VERSION } from "./version.js";
+import {
+  deriveDocumentUsagePayload,
+  opaqueUsageSessionId,
+  retryPendingDocumentUsageMetrics,
+  submitDocumentUsageMetricBestEffort,
+  type UsageExportCounts,
+  type UsageExportType,
+} from "../account/usageMetrics.js";
 import { RegexEntityResolutionEngine, type EntityGroupProposal } from "../engines/EntityResolutionEngine.js";
 // WORKSPACE ANALYSIS (2026-08-02): the ONE narrow entry point into the
 // standalone Workspace Analysis subsystem (src/workspace-analysis/). This
@@ -192,6 +218,8 @@ import { renderWorkspaceAnalysisPage } from "../workspace-analysis/ui/renderWork
 // declaration further down -- safe, since `function render()` is hoisted.
 const workspace = new ReviewWorkspace({ onPersistenceChange: () => render() });
 const dispatcher = new WorkspaceCommandDispatcher(workspace);
+const usageExportCountsBySession = new Map<string, UsageExportCounts>();
+let lastSubmittedUsageSnapshot = "";
 
 // WORKSPACE ANALYSIS (2026-08-02): its own independent state container,
 // constructed with no reference to `workspace`/`dispatcher` above and no
@@ -257,28 +285,37 @@ const resolutionEngine = new RegexEntityResolutionEngine();
  * Check's row-level bulk actions and Not Quite's per-member actions
  * genuinely had NO acknowledgement at all before this (a real, disclosed
  * gap this closes, not a deliberate prior omission Andrew asked to keep).
- * `AcknowledgementTarget` now has three shapes -- one per kind of row this
- * app can decide something about -- and `acknowledge()`/`isAcknowledged()`
- * below are the single choke point every decision path (candidate, group,
- * not-quite-member) goes through, so the pulse/highlight treatment (see
- * index.html's `.row-acknowledged` pulse animation) stays consistent
- * everywhere rather than three independently-maintained copies.
+ * `AcknowledgementTarget` now has row shapes plus a section-completion
+ * shape, and `acknowledge()`/`isAcknowledged()` below are the single choke
+ * point every decision path goes through, so the pulse/highlight treatment
+ * (see index.html's `.row-acknowledged` pulse animation) stays consistent
+ * everywhere rather than independently-maintained copies.
  */
 type AcknowledgementTarget =
   | { kind: "candidate"; stage: WorkflowStage; candidateId: string }
   | { kind: "group"; groupId: string }
-  | { kind: "not-quite-member"; groupId: string; candidateId: string };
+  | { kind: "not-quite-member"; groupId: string; candidateId: string }
+  | { kind: "section"; stage: "item-check" | "ambiguity-check"; sectionId: string };
 
-let acknowledgement: (AcknowledgementTarget & { timeoutHandle: ReturnType<typeof window.setTimeout> }) | null = null;
+interface AcknowledgementWindow {
+  targets: readonly AcknowledgementTarget[];
+  timeoutHandle: ReturnType<typeof window.setTimeout>;
+  onComplete?: () => void;
+}
+
+let acknowledgement: AcknowledgementWindow | null = null;
 
 /** Andrew's own explicit range: "a brief 0.5-1sec UI experience." */
 const ACKNOWLEDGEMENT_MS = 700;
 
 function isAcknowledged(target: AcknowledgementTarget): boolean {
   if (!acknowledgement) return false;
-  if (target.kind === "candidate") return acknowledgement.kind === "candidate" && acknowledgement.stage === target.stage && acknowledgement.candidateId === target.candidateId;
-  if (target.kind === "group") return acknowledgement.kind === "group" && acknowledgement.groupId === target.groupId;
-  return acknowledgement.kind === "not-quite-member" && acknowledgement.groupId === target.groupId && acknowledgement.candidateId === target.candidateId;
+  return acknowledgement.targets.some((acknowledged) => {
+    if (target.kind === "candidate") return acknowledged.kind === "candidate" && acknowledged.stage === target.stage && acknowledged.candidateId === target.candidateId;
+    if (target.kind === "group") return acknowledged.kind === "group" && acknowledged.groupId === target.groupId;
+    if (target.kind === "section") return acknowledged.kind === "section" && acknowledged.stage === target.stage && acknowledged.sectionId === target.sectionId;
+    return acknowledged.kind === "not-quite-member" && acknowledged.groupId === target.groupId && acknowledged.candidateId === target.candidateId;
+  });
 }
 
 /** Starts (or restarts) the acknowledgement window for `target` -- does NOT
@@ -289,13 +326,33 @@ function isAcknowledged(target: AcknowledgementTarget): boolean {
  *  file's autosave queue already uses for a different overlapping-async
  *  concern -- a fast reviewer deciding the next thing before the timeout
  *  fires would otherwise race two overlapping acknowledgements. */
-function acknowledge(target: AcknowledgementTarget): void {
+function acknowledge(target: AcknowledgementTarget | readonly AcknowledgementTarget[], onComplete?: () => void): void {
   if (acknowledgement) window.clearTimeout(acknowledgement.timeoutHandle);
+  const targets = Array.isArray(target) ? target : [target];
   const timeoutHandle = window.setTimeout(() => {
+    const complete = acknowledgement?.onComplete;
     acknowledgement = null;
+    if (complete) complete();
     render();
   }, ACKNOWLEDGEMENT_MS);
-  acknowledgement = { ...target, timeoutHandle };
+  acknowledgement = onComplete ? { targets, timeoutHandle, onComplete } : { targets, timeoutHandle };
+}
+
+function decisionsVisuallyEqual(before: CandidateDecision | undefined, after: CandidateDecision | undefined): boolean {
+  return before?.decision === after?.decision && before?.replacement === after?.replacement && before?.rationale === after?.rationale;
+}
+
+function changedCandidateAcknowledgements(
+  before: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  after: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  candidateIds: readonly string[],
+  stage: WorkflowStage
+): AcknowledgementTarget[] {
+  const beforeDecisions = before.reviewSession?.candidateDecisions ?? {};
+  const afterDecisions = after.reviewSession?.candidateDecisions ?? {};
+  return [...new Set(candidateIds)]
+    .filter((candidateId) => !decisionsVisuallyEqual(beforeDecisions[candidateId], afterDecisions[candidateId]))
+    .map((candidateId) => ({ kind: "candidate", stage, candidateId }));
 }
 
 /**
@@ -479,6 +536,18 @@ type InlineEditorTarget =
 
 let inlineEditor: (InlineEditorTarget & { draftText: string; customInputActive: boolean }) | null = null;
 
+type ResetScopeKind = "zone" | "category";
+
+interface PendingResetConfirmation {
+  key: string;
+  scope: ResetScopeKind;
+  label: string;
+  candidateIds: string[];
+  landingTarget: ReviewDisplayTarget | null;
+}
+
+let pendingResetConfirmation: PendingResetConfirmation | null = null;
+
 /** Per-target draft cache (2026-07-29, interaction model revision). Andrew,
  *  after using the shipped editors: "the keyboard K/C/R/I/F should always
  *  change the buttons, even if they have been selected. So going from
@@ -596,25 +665,20 @@ function confirmInlineEditor(text: string): void {
     // CONTEXTUAL MEMBER DECISIONS (AG, 2026-07-30): a candidate editor
     // opened on a GROUP MEMBER (stage "group-check") confirms through the
     // member path, so the selection advances to the next unedited member
-    // exactly like a one-key K/I decision.
-    const memberGroup =
-      target.stage === "group-check" ? dispatcher.getState().grouping?.entityGroupProposals.find((g) => g.candidateIds.includes(target.candidateId)) : undefined;
-    // PHASE 2, TYPE CHECK: a candidate editor opened on a TYPE MEMBER
-    // confirms through the member-cursor path, so the cursor advances to
-    // the next unresolved member exactly like a one-key K/I decision --
-    // the same rule the group-member branch above established.
-    const typeGroup =
-      target.stage === "type-check" ? dispatcher.getState().semanticTypes?.find((g) => g.candidateIds.includes(target.candidateId)) : undefined;
-    if (memberGroup) {
-      decideGroupMemberAndAdvance(memberGroup, target.candidateId, command);
-    } else if (typeGroup) {
-      decideTypeMemberAndAdvance(typeGroup, target.candidateId, command);
-    } else {
-      decideAndAdvance(command, target.candidateId, target.stage);
-    }
+    // exactly like a one-key K/I decision. PHASE 2, TYPE CHECK extended the
+    // same rule to a TYPE MEMBER's cursor.
+    //
+    // 2026-08-06: that ladder was written out inline here and nowhere else,
+    // which is exactly why the suggestion-chip path did not advance in Type
+    // Check -- it had no copy. Both now call the shared
+    // decideThroughOwningCursor; behavior is unchanged here, the rule just
+    // stopped being this function's private property. See that function for
+    // why one shared call site is still a patch rather than the fix.
+    decideThroughOwningCursor(command, target.candidateId, target.stage);
   } else if (target.scope === "bulk") {
     // RX-02b: same visible-order advance as dispatchBulkDecision's own
     // Keep/Ignore path -- see dispatchReviewWithVisibleAdvance.
+    const before = dispatcher.getState();
     const result = dispatchReviewWithVisibleAdvance({
       family: "review",
       type: "bulkApplyDecision",
@@ -624,6 +688,7 @@ function confirmInlineEditor(text: string): void {
     });
     if (result.ok) {
       selectedCandidateIds.clear();
+      acknowledgeBulkCandidateFeedback(before, target.candidateIds, "item-check");
       setStatus(`${decisionDisplayLabel(target.action)} applied to ${target.candidateIds.length} candidate(s).`); // RX-18 + RX-22
     } else {
       notifyToast(`Bulk action failed: ${result.reason}`); // RX-09: recoverable
@@ -663,6 +728,7 @@ function confirmInlineEditor(text: string): void {
     // Same single audit model as `type-members` -- one bulkApplyDecision
     // over an explicit id list, through the visible-advance choke point so
     // clearing a whole kind group advances like every other decision.
+    const before = dispatcher.getState();
     const result = dispatchReviewWithVisibleAdvance({
       family: "review",
       type: "bulkApplyDecision",
@@ -671,19 +737,8 @@ function confirmInlineEditor(text: string): void {
       ...(trimmed ? { replacement: trimmed } : {}),
     });
     if (result.ok) {
+      acknowledgeBulkCandidateFeedback(before, target.candidateIds, "ambiguity-check");
       setStatus(`${decisionDisplayLabel(target.action)} applied to ${target.candidateIds.length} ${RELATIONSHIP_KIND_LABEL[target.kind]} member(s).`); // RX-18 + RX-22
-      // COMPLETION-PATH AUDIT (AG, 2026-08-03): the choke point above
-      // advances the ROW cursor, which is the wrong cursor here -- Opt C /
-      // Opt R are fired while standing on a CARD, and the row cursor is
-      // merely parked wherever the row half was left (the ROWS-THEN-CARDS
-      // seam's own note). Advancing it yanked the viewport somewhere
-      // unrelated. While the card cursor is set, the cards are the working
-      // object, so the card advance is the one that applies.
-      const cardId = structuralCardFocusPending as string | null;
-      if (cardId) {
-        advanceStructuralCursor(cardId);
-        return;
-      }
     } else {
       notifyToast(`Bulk action failed: ${result.reason}`); // RX-09: recoverable
     }
@@ -691,6 +746,7 @@ function confirmInlineEditor(text: string): void {
   } else if (target.scope === "type-members") {
     // PHASE 2, TYPE CHECK: type-level bulk Change/Redact over the type's
     // remaining members -- plain bulkApplyDecision, single audit model.
+    const before = dispatcher.getState();
     const result = dispatchReviewWithVisibleAdvance({
       family: "review",
       type: "bulkApplyDecision",
@@ -699,6 +755,7 @@ function confirmInlineEditor(text: string): void {
       ...(trimmed ? { replacement: trimmed } : {}),
     });
     if (result.ok) {
+      acknowledgeBulkCandidateFeedback(before, target.candidateIds, "type-check");
       setStatus(`${decisionDisplayLabel(target.action)} applied to ${target.candidateIds.length} ${SEMANTIC_TYPE_LABELS[target.typeId as SemanticTypeId] ?? target.typeId} item(s).`); // RX-18 + RX-22
     } else {
       notifyToast(`Bulk action failed: ${result.reason}`); // RX-09: recoverable
@@ -985,11 +1042,125 @@ type FilterHeaderRow = "state" | "filter" | "category";
 let filterHeaderRow: FilterHeaderRow = "category";
 let detailPanelFocusPending = false;
 
+/**
+ * INSIDE THE CARD, as distinct from ON it (AG, 2026-08-06: "I want Enter to
+ * enter the card, ESC to exit. That is clean and easily learnable, and lets
+ * the arrows function in both sections in similar fashion").
+ *
+ * `structuralCardFocusPending` conflates two states the reviewer experiences
+ * as different: "the grid cursor is sitting on a proposal cell" and "I am
+ * working inside that proposal's card." Both painted a blue border, which is
+ * why a single ArrowDown produced TWO highlights at once, and why arrows then
+ * stopped behaving like arrows -- the render tail handed DOM focus to the
+ * card, so the card's own keydown listener intercepted them and moved between
+ * CARDS instead of between cells. From the reviewer's side that reads as the
+ * arrow keys changing meaning without being asked.
+ *
+ * Splitting the states restores one rule for arrows everywhere: they move the
+ * grid cursor, over candidate cells and proposal cells alike, and never
+ * change level. Enter changes level; Escape changes it back. That is the
+ * grammar handleTriageKey already documents for candidates ("ENTER ENTERS ...
+ * Esc is the symmetric exit"), now true of proposals too, so the two cell
+ * types stop needing separate instructions.
+ *
+ * Presentation state, deliberately -- like `structuralCardFocusPending`
+ * itself. Nothing durable depends on whether the reviewer is inside a card,
+ * and a reload landing them on the cell rather than in it is the safer of the
+ * two wrong answers.
+ */
+/**
+ * ONE FLAG FOR "AM I IN THE PANEL", covering BOTH cell types (AG,
+ * 2026-08-06). Began as `structuralCardEntered`, which answered the question
+ * only for proposal cells, so the ring and the muting fired on a pair and
+ * not on a plain candidate -- two cell types behaving differently at the
+ * same level, which is exactly what the Enter/Escape grammar exists to stop.
+ *
+ * Set by both entry paths: Enter on a proposal cell (below, in the keydown
+ * listener) and the domain's `enterItem` for a candidate. Cleared by Escape,
+ * by any arrow that moves the grid cursor, and by the card's disappearance.
+ *
+ * DISTINCT FROM `detailPanelFocusPending`, which sits beside it and is NOT a
+ * substitute: that one is a one-shot instruction consumed at the render tail
+ * ("hand DOM focus to the panel this time"), so it is false on every
+ * subsequent render and cannot answer "is the reviewer in the panel right
+ * now." Presentation needs the durable answer; focus delivery needs the
+ * one-shot. Keeping them separate is why the ring does not flicker off on
+ * the next incidental re-render.
+ */
+let focusPanelEntered = false;
+
 /** The focused itemId as of the LAST completed render -- lets render()
  *  distinguish "incidental rebuild of the same item" (restore panel focus)
  *  from "focus advanced to a different item" (return to Review mode). See
  *  render()'s activeWasInDetailPanel. */
 let lastRenderedFocusedItemId: string | null = null;
+
+/**
+ * WHERE THE REVIEWER WAS, PER STAGE (AG, 2026-08-07: "changing Stages causes
+ * the internal categories in Ambiguity Check to not preserve state. when I go
+ * back to the Ambiguity stage it shows a different category highlighted").
+ *
+ * THE CAUSE is in navigator.ts: both `focusStage` and `moveStage` build their
+ * new focus from `arrivalTarget()`, which returns `firstActiveItemId` -- the
+ * first UNRESOLVED item in the whole stage. That is right for a first arrival
+ * and wrong for a return, and nothing distinguished the two because no stage
+ * remembered anything.
+ *
+ * The category then follows for free, and that is the visible symptom: the
+ * rendered category is DERIVED from the cursor's section (`cursorSectionId` in
+ * renderSectionedQueue), never stored. So landing on a different item is
+ * landing in a different category -- the reviewer loses their place in a list
+ * of 48 without having navigated anywhere.
+ *
+ * FIXED IN THE UI LAYER, NOT THE NAVIGATOR, deliberately. `arrivalTarget`'s
+ * "first unresolved" is documented, correct, and shared with
+ * `createInitialFocusState` -- a genuinely fresh arrival should still land on
+ * work. What is missing is not different arrival semantics but a memory of
+ * having been there, which is presentation state of exactly the same kind as
+ * `triageExpandedId` or the section pill's own highlight. Storing it here
+ * keeps the domain's focus model unchanged and makes the whole behaviour
+ * revertible by deleting one map.
+ *
+ * Deliberately NOT persisted across reloads: `FocusResumePosition` already
+ * owns cross-session resume and restores one position, not six. This is a
+ * within-session convenience for the tab-hopping Andrew is describing.
+ */
+const lastFocusedItemByStage = new Map<WorkflowStage, string>();
+
+/** Called from render()'s tail, so every route that moves focus -- keyboard,
+ *  click, post-decision advance -- updates the memory without each needing to
+ *  know it exists. */
+function rememberStageFocus(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): void {
+  const target = state.focus?.target;
+  if (target?.itemId) lastFocusedItemByStage.set(target.stage, target.itemId);
+}
+
+/**
+ * Re-select the remembered item after a stage change. Call AFTER dispatching
+ * the stage command and BEFORE render(), so a single render paints the
+ * restored position rather than flashing the arrival default first.
+ *
+ * Restores the exact item rather than "the first unresolved item in the
+ * remembered category". The reviewer's place is the item they were on, and a
+ * decided row is a perfectly good landing here -- this queue keeps completed
+ * rows in place by design, so returning to one is returning to where they
+ * stood, not to a dead end.
+ *
+ * Every rung falls through to the navigator's own choice, which is why this is
+ * safe: no memory, a stage whose list no longer contains the item (a filter or
+ * a new document), or a stage with no visible-id concept at all (QA / Output)
+ * all leave `arrivalTarget`'s result exactly as it was.
+ */
+function restoreStageFocus(stage: WorkflowStage): void {
+  const remembered = lastFocusedItemByStage.get(stage);
+  if (!remembered) return;
+  const state = dispatcher.getState();
+  if (state.focus?.target.stage !== stage) return; // the stage change was refused
+  if (state.focus.target.itemId === remembered) return;
+  const visible = snapshotVisibleIdsForStage(stage, state);
+  if (!visible || !visible.includes(remembered)) return;
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: remembered });
+}
 
 /**
  * MILESTONE 2 ("Review at Scale", 2026-07-28): search/filter/sort state
@@ -1222,6 +1393,7 @@ let rovingFocusPending: HTMLElement | null = null;
 // (pointerdown elsewhere, triage-row keys, the boundary move into the
 // rows), so it can never yank focus back from real work.
 let structuralCardFocusPending: string | null = null;
+let lastRenderedActiveStage: WorkflowStage | null = null;
 
 /** Attaches the arrow-key roving-focus handler to `containers` (the row
  *  element and, when rendered, the member-list element) -- `stopPropagation`
@@ -1319,6 +1491,8 @@ let searchInputFocusPending: { start: number; end: number } | null = null;
  * first document would.
  */
 let recentSessions: SessionSummary[] = [];
+let archivedSessions: SessionSummary[] = [];
+let showArchivedSessions = false;
 let showingLanding = false;
 /** WORKSPACE ANALYSIS (2026-08-02): same shape as `showingLanding` --
  *  transient UI-only navigation state, not gated by
@@ -1343,9 +1517,11 @@ let showingWorkspaceAnalysis = false;
 async function refreshRecentSessions(): Promise<void> {
   try {
     recentSessions = await dispatcher.listRecentSessions();
+    archivedSessions = await dispatcher.listArchivedSessions();
   } catch (error) {
     console.warn("Recent Documents unavailable -- continuing without it.", error);
     recentSessions = [];
+    archivedSessions = [];
   }
 }
 
@@ -1515,6 +1691,8 @@ interface UiSnapshot {
   v: 1;
   stage: WorkflowStage;
   itemId: string | null;
+  sectionedCategoryId: string | null;
+  sectionedProposalId: string | null;
   panelKind: "not-quite" | null;
   itemCheckViewMode: "list" | "category" | "triage";
   categoryReviewState: CategoryReviewState;
@@ -1535,6 +1713,8 @@ const LAST_OPEN_DOC_KEY = "docscrub-last-open-document";
 function captureUiSnapshot(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): UiSnapshot | null {
   if (!state.documentLoaded || !state.documentId) return null;
   const target = state.focus?.target;
+  const queueStage = sectionedQueueStage(target?.stage);
+  const stageCategoryList = queueStage ? stageCategories(state, queueStage) : [];
   let editorTarget: InlineEditorTarget | null = null;
   if (inlineEditor) {
     const { draftText: _draft, customInputActive: _custom, ...targetOnly } = inlineEditor;
@@ -1544,6 +1724,16 @@ function captureUiSnapshot(state: ReturnType<WorkspaceCommandDispatcher["getStat
     v: 1,
     stage: target?.stage ?? "ambiguity-check",
     itemId: target?.itemId ?? null,
+    // SECTIONED QUEUE RESTORE (AG, 2026-08-08): the active Ambiguity/Triage
+    // pill is presentation state, but it is still part of "refresh keeps
+    // me where I was." Proposal-only categories exposed the omission: the
+    // domain item cursor could still point at an older candidate in another
+    // category, so refresh reopened the document and then highlighted that
+    // stale category. Persist the rendered category and card cursor here,
+    // in the opaque UI snapshot, rather than teaching ReviewSession about a
+    // non-decision.
+    sectionedCategoryId: queueStage ? currentStageCategoryId(state, stageCategoryList) : null,
+    sectionedProposalId: queueStage ? (structuralCardFocusPending as string | null) : null,
     panelKind: target?.panel.kind === "not-quite" ? "not-quite" : null,
     itemCheckViewMode,
     categoryReviewState,
@@ -1575,6 +1765,8 @@ function resetUiToDefaults(): void {
   scopeWidenedFrom = null; // REVIEW SCOPE, Pass 1: a widening never survives a document change
   sourceViewFor = null;
   groupRovingFocus = null;
+  structuralCardFocusPending = null;
+  focusPanelEntered = false;
   inlineEditor = null;
 }
 
@@ -1596,9 +1788,27 @@ function applyUiSnapshot(raw: unknown): void {
     if (typeof snap.groupCheckSortOrder === "string") groupCheckSortOrder = snap.groupCheckSortOrder;
     triageExpandedId = typeof snap.triageExpandedId === "string" ? snap.triageExpandedId : null;
     sourceViewFor = snap.sourceViewFor && typeof snap.sourceViewFor === "object" ? snap.sourceViewFor : null;
-    // Focus: stage, then item, then the Not Quite panel if one was open.
+    // Focus: stage, then item/card/category, then the Not Quite panel if
+    // one was open.
     dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: snap.stage });
-    if (snap.itemId) dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: snap.itemId });
+    const queueStage = sectionedQueueStage(snap.stage);
+    const savedProposalId = typeof snap.sectionedProposalId === "string" ? snap.sectionedProposalId : null;
+    const savedCategoryId = typeof snap.sectionedCategoryId === "string" ? snap.sectionedCategoryId : null;
+    let restoredSectionedCursor = false;
+    if (queueStage) {
+      const proposalStillActive = savedProposalId ? activeRelationshipProposalById(savedProposalId, dispatcher.getState()) : null;
+      if (proposalStillActive) {
+        structuralCardFocusPending = savedProposalId;
+        restoredSectionedCursor = true;
+      }
+    }
+    if (snap.itemId && !restoredSectionedCursor) dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: snap.itemId });
+    if (queueStage && savedCategoryId) {
+      const categories = stageCategories(dispatcher.getState(), queueStage);
+      const currentId = currentStageCategoryId(dispatcher.getState(), categories);
+      const savedCategory = categories.find((category) => category.id === savedCategoryId);
+      if (savedCategory && currentId !== savedCategoryId) restoredSectionedCursor = selectStageCategoryCursor(savedCategory);
+    }
     if (snap.panelKind === "not-quite" && snap.itemId) {
       dispatcher.dispatchReview({ family: "review", type: "enterNotQuite", groupId: snap.itemId });
     }
@@ -1608,11 +1818,25 @@ function applyUiSnapshot(raw: unknown): void {
       inlineEditor = { ...snap.editorTarget, draftText: typeof snap.editorDraft === "string" ? snap.editorDraft : "", customInputActive: false };
     }
     render();
+    resetViewportSnapAnchors(); // a restored document is a new page; see the helper
     // Scroll last, after RX-01's own focused-row scroll has run -- the
     // absolute offset wins when both apply, and if layout shifted since
     // the snapshot, the focused row is already in view as the fallback.
+    //
+    // GUARDED AGAINST A LATER BLOCKING PROMPT (2026-08-06): this is a
+    // deferred write to the viewport, so by the time it lands the reviewer
+    // may have picked another file and be looking at the reopen prompt. A
+    // stale restore firing then would scroll a deep saved offset -- "72 of
+    // 607, far down the page" -- straight over the question they are being
+    // asked, which is one of the ways the prompt was ending up off-screen.
+    // Re-checked at fire time rather than cancelled at set time: the prompt
+    // can appear at any point inside the window, and there is no handle to
+    // cancel from where it is raised.
     const y = typeof snap.scrollY === "number" ? snap.scrollY : 0;
-    window.setTimeout(() => window.scrollTo({ top: y }), 80);
+    window.setTimeout(() => {
+      if (reopenPrompt) return;
+      window.scrollTo({ top: y });
+    }, 80);
   } catch {
     /* a snapshot must never break a load -- fall through to defaults */
   }
@@ -1640,6 +1864,39 @@ function scheduleUiStateSave(): void {
       });
     }
   }, 500);
+}
+
+function exportCountsForUsageSession(opaqueSessionId: string): UsageExportCounts {
+  return usageExportCountsBySession.get(opaqueSessionId) ?? { csvAudit: 0, docx: 0, jsonDecisions: 0 };
+}
+
+function recordUsageExport(exportType: UsageExportType): void {
+  const state = dispatcher.getState();
+  if (!state.documentLoaded || !state.documentId) return;
+  const opaqueSessionId = opaqueUsageSessionId(state.documentId);
+  const current = exportCountsForUsageSession(opaqueSessionId);
+  const next = { ...current };
+  if (exportType === "docx") next.docx += 1;
+  else if (exportType === "csv_audit") next.csvAudit += 1;
+  else if (exportType === "json_decisions") next.jsonDecisions += 1;
+  usageExportCountsBySession.set(opaqueSessionId, next);
+  submitCurrentUsageMetric(state);
+}
+
+function submitCurrentUsageMetric(state = dispatcher.getState()): void {
+  if (!state.documentLoaded || !state.documentId) return;
+  const opaqueSessionId = opaqueUsageSessionId(state.documentId);
+  const payload = deriveDocumentUsagePayload(state, {
+    appVersion: APP_VERSION,
+    exportCounts: exportCountsForUsageSession(opaqueSessionId),
+    opaqueSessionId,
+    organizationId: null,
+  });
+  if (!payload) return;
+  const snapshot = JSON.stringify(payload);
+  if (snapshot === lastSubmittedUsageSnapshot) return;
+  lastSubmittedUsageSnapshot = snapshot;
+  void submitDocumentUsageMetricBestEffort(payload);
 }
 // ==========================================================================
 
@@ -1679,6 +1936,10 @@ async function handleLoadFile(file: File, options?: { force?: boolean }): Promis
     if (known) {
       reopenPrompt = { file, documentId: known.documentId, summary: known };
       failureBanner = null;
+      // The prompt is now the only thing on screen worth looking at, and the
+      // render below must not inherit the OUTGOING document's viewport
+      // intent -- see scrollFocusedRowIntoView's blocking-prompt guard.
+      resetViewportSnapAnchors();
       render();
       return;
     }
@@ -1915,14 +2176,14 @@ async function handleResumeFromRecent(documentId: string): Promise<void> {
   if (result.ok) await applyStoredUiStateFor(documentId);
 }
 
-/** The only Recent Documents management affordance this milestone adds --
- *  deliberately just "remove," per Andrew's "do not implement a
- *  document-management system." Does not touch the currently loaded
- *  document even if it happens to be the one removed from the list; it
- *  only stops that document from being offered as a resume target next
- *  time. */
-async function handleRemoveRecentSession(documentId: string): Promise<void> {
-  await dispatcher.deleteStoredSession(documentId);
+async function handleArchiveRecentSession(documentId: string): Promise<void> {
+  await dispatcher.archiveStoredSession(documentId);
+  await refreshRecentSessions();
+  render();
+}
+
+async function handleRestoreRecentSession(documentId: string): Promise<void> {
+  await dispatcher.restoreStoredSession(documentId);
   await refreshRecentSessions();
   render();
 }
@@ -1969,12 +2230,13 @@ function handleDownloadOutput(): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  recordUsageExport("docx");
 }
 
 /** Shared download helper for the text-based audit artifacts (JSON/CSV) --
  *  handleDownloadOutput above stays separate since it downloads a Blob of
  *  actual DOCX bytes, not a string this file itself constructed. */
-function downloadText(filename: string, content: string, mime: string): void {
+function downloadText(filename: string, content: string, mime: string, usageExportType?: UsageExportType): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const link = el("a", { href: url, download: filename });
@@ -1982,6 +2244,7 @@ function downloadText(filename: string, content: string, mime: string): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  if (usageExportType) recordUsageExport(usageExportType);
 }
 
 async function handleGenerateAudit(): Promise<void> {
@@ -2087,11 +2350,27 @@ function formatRelativeTime(iso: string): string {
  * affordance this milestone adds (remove).
  */
 function renderRecentDocuments(container: HTMLElement): void {
-  if (recentSessions.length === 0) return;
+  if (recentSessions.length === 0 && archivedSessions.length === 0) return;
   const section = el("div", { class: "recent-documents" });
-  section.appendChild(el("strong", {}, "Recent documents"));
+  const header = el("div", { class: "recent-documents-header" });
+  header.appendChild(el("strong", {}, showArchivedSessions ? "Archived documents" : "Recent documents"));
+  if (archivedSessions.length > 0) {
+    header.appendChild(
+      button(showArchivedSessions ? "View active" : "View archived", () => {
+        showArchivedSessions = !showArchivedSessions;
+        render();
+      })
+    );
+  }
+  section.appendChild(header);
+  const sessions = showArchivedSessions ? archivedSessions : recentSessions;
+  if (sessions.length === 0) {
+    section.appendChild(el("p", { class: "recent-document-empty" }, showArchivedSessions ? "No archived documents." : "No active recent documents."));
+    container.appendChild(section);
+    return;
+  }
   const list = el("div", { class: "recent-documents-list" });
-  for (const summary of recentSessions) {
+  for (const summary of sessions) {
     const row = el("div", { class: "recent-document-row" });
     row.appendChild(el("span", { class: "recent-document-name" }, summary.fileName));
     row.appendChild(
@@ -2101,8 +2380,12 @@ function renderRecentDocuments(container: HTMLElement): void {
         `${summary.completionPercent}% complete (${summary.reviewedCandidateCount}/${summary.totalCandidateCount}) · last opened ${formatRelativeTime(summary.lastOpenedAt)}`
       )
     );
-    row.appendChild(button("Resume", () => void handleResumeFromRecent(summary.documentId)));
-    row.appendChild(button("Remove", () => void handleRemoveRecentSession(summary.documentId)));
+    if (showArchivedSessions) {
+      row.appendChild(button("Restore", () => void handleRestoreRecentSession(summary.documentId)));
+    } else {
+      row.appendChild(button("Resume", () => void handleResumeFromRecent(summary.documentId)));
+      row.appendChild(button("Archive", () => void handleArchiveRecentSession(summary.documentId)));
+    }
     list.appendChild(row);
   }
   section.appendChild(list);
@@ -2326,13 +2609,18 @@ function renderReviewStatistics(container: HTMLElement, state: ReturnType<Worksp
   const total = candidates.length;
   if (total === 0) return;
   const reviewed = total - state.readiness.unresolvedItemCount;
-  const completionPercent = Math.round((reviewed / total) * 100);
+  // ~100% (AG, 2026-08-06): this line is where the rounding lie is worst.
+  // "100% complete (606/607)" tells a reviewer their work is finished on a
+  // line that simultaneously shows it is not, and completion is precisely
+  // the figure someone stops looking at once it reads 100. See
+  // metrics/percentDisplay.ts.
+  const completionPercent = formatPercentFigure((reviewed / total) * 100);
   const distribution = decisionDistribution(state.reviewSession);
   const ambiguityCount = state.grouping?.ambiguityProposals.length ?? 0;
   const estimate = estimateRemainingReviewTime(state.reviewSession, state.readiness.unresolvedItemCount);
 
   const stats = el("div", { class: "review-stats" });
-  stats.appendChild(el("span", { class: "review-stats-item" }, `${completionPercent}% complete (${reviewed}/${total})`));
+  stats.appendChild(el("span", { class: "review-stats-item" }, `${completionPercent} complete (${reviewed}/${total})`));
   // RX-22: rendered by ITERATING the display map rather than hand-writing
   // the template string -- a future CandidateDecisionKind cannot be
   // silently omitted from this bar (the map is exhaustive by construction,
@@ -2415,7 +2703,14 @@ let lastScoreChange: ScoreChange | null = null;
  *  findings): < 40 low (muted red), 40–79 in progress (muted amber),
  *  >= 80 approaching/at completion (muted green). Existing palette hues
  *  only -- "subtle and professional, not saturated or dashboard-like." */
+/** RESTING FIGURE (AG, 2026-08-06): an exact zero is not the bottom of the
+ *  low band, it is the absence of a measurement -- so it takes its own
+ *  class rather than `score-low`'s "measured, and low" dotted underline.
+ *  Ordered before the band test so zero can never fall through into it.
+ *  Only an EXACT zero qualifies: formatPercentFigure renders a rounded-
+ *  down non-zero as `~0%`, which is what keeps "grey" unambiguous. */
 function scoreStatusClass(value: number): string {
+  if (isRestingFigure(value)) return "score-none";
   if (value >= 80) return "score-high";
   if (value >= 40) return "score-mid";
   return "score-low";
@@ -2460,8 +2755,13 @@ function renderReviewStatus(container: HTMLElement, state: ReturnType<WorkspaceC
   ];
   for (const [label, value] of scores) {
     const item = el("div", { class: "review-status-item" });
+    // VALUE ABOVE LABEL (AG, 2026-08-06). The Decision Tracker beside this
+    // is title / value / label; while these were label / value, the two
+    // panels' NUMBERS sat on different lines however they were aligned.
+    // Same shape in both is what lets the strip's shared row heights (see
+    // index.html's .review-status) line the figures up.
+    item.appendChild(el("span", { class: `review-status-value ${scoreStatusClass(value)}` }, formatPercentFigure(value)));
     item.appendChild(el("span", { class: "review-status-label" }, label));
-    item.appendChild(el("span", { class: `review-status-value ${scoreStatusClass(value)}` }, `${Math.round(value)}%`));
     strip.appendChild(item);
   }
 
@@ -2558,42 +2858,71 @@ function renderDecisionTracker(strip: HTMLElement, state: ReturnType<WorkspaceCo
   const panel = el("div", { class: "decision-tracker" });
   panel.appendChild(el("div", { class: "decision-tracker-title" }, "Decision Tracker"));
   const row = el("div", { class: "decision-tracker-row" });
-  const cells: [string, string][] = [
-    ["Made", tracker.decisionsMade.toLocaleString()],
-    ["Avoided", tracker.avoidedDecisionCount.toLocaleString()],
-    ["Fewer", formatFewerDecisionsPercent(tracker)],
+  // RESTING FIGURES (AG, 2026-08-06): "any item that is at 0 because there
+  // is no data gets a muted grey color." The numeric figure decides the
+  // muting, not the formatted string, so this cannot be fooled by a
+  // rounded-down non-zero -- percentDisplay.ts renders those as `~0%`
+  // precisely so that a plain "0%" is always a true zero. See that
+  // module's RULE 2 for why the two halves have to agree.
+  const cells: [string, string, number][] = [
+    ["Made", tracker.decisionsMade.toLocaleString(), tracker.decisionsMade],
+    ["Avoided", tracker.avoidedDecisionCount.toLocaleString(), tracker.avoidedDecisionCount],
+    ["Fewer", formatFewerDecisionsPercent(tracker), tracker.fewerDecisionPercent],
   ];
-  for (const [label, value] of cells) {
-    const cell = el("div", { class: "decision-tracker-cell" });
-    cell.appendChild(el("span", { class: "decision-tracker-value" }, value));
+  for (const [label, value, figure] of cells) {
+    const resting = isRestingFigure(figure);
+    const cell = el("div", { class: `decision-tracker-cell${resting ? " metric-resting" : ""}` });
+    cell.appendChild(el("span", { class: `decision-tracker-value${resting ? " metric-resting" : ""}` }, value));
     cell.appendChild(el("span", { class: "decision-tracker-label" }, label));
     row.appendChild(cell);
   }
-  // TIME SAVED (AG, 2026-08-03): the fourth figure, laid out differently on
-  // purpose -- number at the same size as the others, with its phrase
-  // vertically centred to the right and free to wrap to two lines, rather
-  // than a value stacked over a one-word label. The different shape is
-  // itself the signal: this is the one MODELED number in a panel of exact
-  // counts, and it should not read as a fourth measurement.
+  // TIME AVOIDED -- PERMANENTLY PRESENT (AG, 2026-08-06), reversing this
+  // cell's original "absent until it can be honest" rule.
   //
-  // Absent entirely until it can be honest -- estimateTimeSaved returns
-  // null with too few observed individual decisions, or nothing avoided
-  // yet, and a blank is better than a fabricated first number.
-  if (tracker.timeSaved) {
-    const saved = el("div", { class: "decision-tracker-cell decision-tracker-time" });
-    saved.appendChild(el("span", { class: "decision-tracker-value" }, tracker.timeSaved.display));
-    saved.appendChild(el("span", { class: "decision-tracker-time-label" }, tracker.timeSaved.label));
-    saved.appendChild(timeSavedInfoControl());
-    row.appendChild(saved);
-  }
+  // The old behavior was right about the risk and wrong about the remedy.
+  // Suppressing the figure did not make the panel say less -- it made the
+  // panel CHANGE SHAPE mid-session, gaining a fourth cell (and, with the
+  // old sideways layout, a second line of wrapping text) at an arbitrary
+  // moment, which moved everything around it. A metric strip that resizes
+  // while being watched is its own kind of dishonesty, and it was feeding
+  // the header misalignment this pass exists to fix.
+  //
+  // The honesty requirement is met a different way, and a better one: the
+  // resting value renders as a MUTED "~0.0", which is the same grey the
+  // three counts beside it use to say "nothing here yet." A reader who can
+  // see that Made and Avoided are grey zeros is not being told a story
+  // about time. No fabricated first number, and no moving furniture.
+  //
+  // `~` on every value, resting or real: this is the one modeled figure in
+  // a panel of exact counts, and the tilde is now what says so (the cell's
+  // formerly-different SHAPE used to carry that signal -- see
+  // index.html's .decision-tracker-time for why it stopped).
+  const saved = el("div", { class: `decision-tracker-cell decision-tracker-time${tracker.timeSaved ? "" : " metric-resting"}` });
+  const savedFigure = el("div", { class: "decision-tracker-time-figure" });
+  savedFigure.appendChild(
+    el("span", { class: `decision-tracker-value${tracker.timeSaved ? "" : " metric-resting"}` }, `~${tracker.timeSaved?.display ?? "0.0"}`)
+  );
+  // Unit only, not the full phrase, so the label fits a stacked cell
+  // without wrapping. Resting shows the ladder's first rung -- the unit a
+  // real first estimate is overwhelmingly likely to arrive in -- so the
+  // cell does not change width when it wakes up.
+  savedFigure.appendChild(el("span", { class: "decision-tracker-time-label" }, timeSavedUnitLabel(tracker.timeSaved)));
+  saved.appendChild(savedFigure);
+  saved.appendChild(timeSavedInfoControl());
+  row.appendChild(saved);
   panel.appendChild(row);
   // The explanation opens BENEATH the panel rather than floating over it:
   // no positioning maths, no layer that can trap focus, and nothing that
   // covers the metrics the reviewer was reading. A plain disclosure that
   // pushes the chrome down slightly is the calmest thing available here.
-  if (timeSavedExplanationOpen && tracker.timeSaved) {
+  // 2026-08-06: the disclosure answers for the RESTING state too. With the
+  // cell permanently rendered, guarding this on `tracker.timeSaved` would
+  // have left a visible ⓘ that did nothing on exactly the documents where
+  // a reviewer is most likely to press it.
+  if (timeSavedExplanationOpen) {
     const note = el("div", { class: "decision-tracker-note" });
-    for (const paragraph of explainTimeSaved(tracker.timeSaved)) note.appendChild(el("p", {}, paragraph));
+    const paragraphs = tracker.timeSaved ? explainTimeSaved(tracker.timeSaved) : explainTimeSavedPending(session, resolved);
+    for (const paragraph of paragraphs) note.appendChild(el("p", {}, paragraph));
     panel.appendChild(note);
   }
   // One sentence for the whole panel rather than a tooltip per figure --
@@ -2762,6 +3091,10 @@ function renderStageTabs(container: HTMLElement, activeStage: WorkflowStage, sta
       tab.appendChild(el("span", {}, label));
       tab.addEventListener("click", () => {
         dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: status.stage });
+        // Return to where the reviewer was in THIS stage, before the single
+        // render below -- see restoreStageFocus. Clicking a tab you have
+        // visited is a return, not a fresh arrival.
+        restoreStageFocus(status.stage);
         render();
       });
       // Deliberately NOT disabled -- an empty/not-yet-relevant stage is still
@@ -2794,7 +3127,24 @@ function decisionButtons(candidateId: string, stage: WorkflowStage, container: H
   // unchanged, which is the decision actually being made. Sourced from
   // DECISION_ACTION_LABEL so a wording change lands everywhere at once;
   // state readouts keep the noun form (see decisionLabels.ts).
-  const keepBtn = button(decisionActionLabel("Keep"), () => decideAndAdvance({ family: "review", type: "keepCandidate", candidateId }, candidateId, stage));
+  /* THE KEY LIVES ON THE BUTTON (AG, 2026-08-06: "KCRI will be added to the
+   * panel focus buttons in the same style as they were at one point ... KCRI
+   * then leave the command bar").
+   *
+   * Which is the rule the rest of this app already follows and this panel
+   * had drifted from: a kind-group action carries its chord, a section
+   * action carries its digit, a suggestion carries its number -- each on the
+   * control it fires. Only the four decision keys were advertised somewhere
+   * else entirely, in a legend across the screen from the buttons they act
+   * on. Putting them here lets the command bar drop them, which is most of
+   * why that card was crowded.
+   *
+   * `keycapButton` is the app's one faux-key control, so these match the
+   * numbered identity buttons directly above them in the same panel rather
+   * than inventing a second look for the same idea. */
+  const keepBtn = keycapButton("K", decisionActionLabel("Keep"), () =>
+    decideAndAdvance({ family: "review", type: "keepCandidate", candidateId }, candidateId, stage)
+  );
   container.appendChild(keepBtn);
 
   // RELABELED (2026-07-29, interaction model revision): "Rename" -> "Change"
@@ -2804,16 +3154,16 @@ function decisionButtons(candidateId: string, stage: WorkflowStage, container: H
   // keymap.ts's top doc comment for why that vocabulary is deliberately
   // left alone.
   const renameEditing = isEditingCandidate(candidateId, stage, "Rename");
-  const renameBtn = button(decisionActionLabel("Rename"), () => openInlineEditor({ scope: "candidate", stage, candidateId, action: "Rename" }));
+  const renameBtn = keycapButton("C", decisionActionLabel("Rename"), () => openInlineEditor({ scope: "candidate", stage, candidateId, action: "Rename" }));
   renameBtn.classList.toggle("action-editing", renameEditing);
   container.appendChild(renameBtn);
 
   const redactEditing = isEditingCandidate(candidateId, stage, "Redact");
-  const redactBtn = button(decisionActionLabel("Redact"), () => openInlineEditor({ scope: "candidate", stage, candidateId, action: "Redact" }));
+  const redactBtn = keycapButton("R", decisionActionLabel("Redact"), () => openInlineEditor({ scope: "candidate", stage, candidateId, action: "Redact" }));
   redactBtn.classList.toggle("action-editing", redactEditing);
   container.appendChild(redactBtn);
 
-  const ignoreBtn = button(decisionActionLabel("Ignore"), () => decideAndAdvance({ family: "review", type: "ignoreCandidate", candidateId }, candidateId, stage));
+  const ignoreBtn = keycapButton("I", decisionActionLabel("Ignore"), () => decideAndAdvance({ family: "review", type: "ignoreCandidate", candidateId }, candidateId, stage));
   container.appendChild(ignoreBtn);
 
   // 2026-07-30 feature spec: processed rows carry the full color tier --
@@ -2878,6 +3228,251 @@ function snapshotVisibleIdsForStage(stage: WorkflowStage, state: ReturnType<Work
   }
 }
 
+/* The section-order helpers (sectionCandidateTargetGroups /
+ * sectionProposalTargets / sectionGridSequence / sectionDisplayTargets) live
+ * in visibleListAdvance.ts, imported above. They decide where a cursor may
+ * land, so they belong in the pure module the verification suite can pin
+ * without a browser -- and keeping them there is what makes
+ * `sectionGridSequence(s).flat() === sectionDisplayTargets(s)` an executable
+ * assertion rather than a comment two call sites promise to honour.
+ * `SectionedQueueSection` satisfies `ReviewTargetSection` structurally. */
+
+function sectionedQueueTargetsFromSections(sections: readonly SectionedQueueSection[]): ReviewDisplayTarget[] {
+  return sections.flatMap(sectionDisplayTargets);
+}
+
+function displayedReviewTargetsForSectionedStage(
+  stage: "item-check" | "ambiguity-check",
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] {
+  return sectionedQueueTargetsFromSections(sectionedQueueModel(state, stage).sections);
+}
+
+function currentReviewDisplayTargetKey(stage: WorkflowStage | null, itemId: string | null, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string | null {
+  if (stage !== null && sectionedQueueStage(stage) !== null && structuralCardFocusPending !== null) {
+    return reviewDisplayTargetKey(proposalReviewTarget(structuralCardFocusPending));
+  }
+  return itemId !== null ? reviewDisplayTargetKey(candidateReviewTarget(itemId)) : null;
+}
+
+function activeRelationshipProposalById(proposalId: string, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): RelationshipProposal | null {
+  if (state.reviewSession?.relationshipDismissals?.[proposalId]) return null;
+  const candidates = state.detection?.candidates ?? [];
+  const proposal = (state.structuralRelationships?.proposals ?? []).find((p) => p.proposalId === proposalId) ?? null;
+  if (!proposal) return null;
+  return proposal.candidateIds.some((id) => candidates.some((c) => c.id === id)) ? proposal : null;
+}
+
+function isReviewDisplayTargetResolved(
+  stage: "item-check" | "ambiguity-check",
+  target: ReviewDisplayTarget,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): boolean {
+  if (target.kind === "candidate") return isItemResolvedInState(stage, target.id, state);
+  const proposal = activeRelationshipProposalById(target.id, state);
+  if (!proposal) return true;
+  return proposal.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]));
+}
+
+function candidateIdsForReviewTarget(target: ReviewDisplayTarget, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string[] {
+  if (target.kind === "candidate") return [target.id];
+  const proposal = activeRelationshipProposalById(target.id, state);
+  return proposal ? [...proposal.candidateIds] : [];
+}
+
+function resettableCandidateIdsForTargets(
+  targets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): string[] {
+  const decisions = state.reviewSession?.candidateDecisions ?? {};
+  const ids: string[] = [];
+  for (const target of targets) {
+    for (const candidateId of candidateIdsForReviewTarget(target, state)) {
+      if (!decisions[candidateId] || ids.includes(candidateId)) continue;
+      ids.push(candidateId);
+    }
+  }
+  return ids;
+}
+
+function firstTargetForResetCandidateIds(
+  targets: readonly ReviewDisplayTarget[],
+  candidateIds: readonly string[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget | null {
+  const resetIds = new Set(candidateIds);
+  for (const target of targets) {
+    if (target.kind === "candidate" && resetIds.has(target.id)) return target;
+    if (target.kind === "proposal" && candidateIdsForReviewTarget(target, state).some((id) => resetIds.has(id))) return target;
+  }
+  return null;
+}
+
+interface ResetScopeDescriptor {
+  scope: ResetScopeKind;
+  key: string;
+  label: string;
+  candidateIds: string[];
+  targets: ReviewDisplayTarget[];
+  landingTarget: ReviewDisplayTarget | null;
+}
+
+function resetScopeFromTargets(
+  scope: ResetScopeKind,
+  key: string,
+  label: string,
+  targets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ResetScopeDescriptor | null {
+  const candidateIds = resettableCandidateIdsForTargets(targets, state);
+  if (candidateIds.length === 0) return null;
+  return { scope, key, label, candidateIds, targets: [...targets], landingTarget: firstTargetForResetCandidateIds(targets, candidateIds, state) };
+}
+
+function currentSectionedQueueContext(
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): { stage: "item-check" | "ambiguity-check"; sections: SectionedQueueSection[]; section: SectionedQueueSection; targetKey: string | null } | null {
+  const stage = activeSectionedQueueStage(state);
+  if (!stage) return null;
+  const { sections } = sectionedQueueModel(state, stage);
+  const cardId = structuralCardFocusPending as string | null;
+  const itemId = state.focus?.target.itemId ?? null;
+  const section = cardId
+    ? sections.find((candidateSection) => (candidateSection.relationshipProposalIds ?? []).includes(cardId))
+    : itemId !== null
+      ? sections.find((candidateSection) => candidateSection.candidateIds.includes(itemId))
+      : undefined;
+  if (!section) return null;
+  const targetKey = currentReviewDisplayTargetKey(state.focus?.target.stage ?? null, state.focus?.target.itemId ?? null, state);
+  return { stage, sections, section, targetKey };
+}
+
+function paintedZoneResetScope(
+  stage: "item-check" | "ambiguity-check",
+  section: SectionedQueueSection,
+  targetKey: string | null,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ResetScopeDescriptor | null {
+  const grids = sectionGridSequence(section);
+  const grid =
+    (targetKey ? grids.find((targets) => targets.some((target) => reviewDisplayTargetKey(target) === targetKey)) : undefined) ?? grids[0] ?? [];
+  const band = partitionByZone(grid, (target) => !isReviewDisplayTargetResolved(stage, target, state)).band;
+  return resetScopeFromTargets("zone", `reset:zone:${section.id}:${band.map(reviewDisplayTargetKey).join("|")}`, "Reset Zone", band, state);
+}
+
+function categoryResetScope(section: SectionedQueueSection, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): ResetScopeDescriptor | null {
+  const targets = sectionDisplayTargets(section);
+  return resetScopeFromTargets("category", `reset:category:${section.id}`, "Reset All in Category", targets, state);
+}
+
+function resetZoneEqualsCategory(
+  stage: "item-check" | "ambiguity-check",
+  section: SectionedQueueSection,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): boolean {
+  const grids = sectionGridSequence(section);
+  if (grids.length !== 1) return false;
+  const partition = partitionByZone(grids[0] ?? [], (target) => !isReviewDisplayTargetResolved(stage, target, state));
+  if (partition.banded) return false;
+  const bandKeys = partition.band.map(reviewDisplayTargetKey).join("|");
+  const categoryKeys = sectionDisplayTargets(section).map(reviewDisplayTargetKey).join("|");
+  return bandKeys === categoryKeys;
+}
+
+function currentResetScopes(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): { zone: ResetScopeDescriptor | null; category: ResetScopeDescriptor | null; collapsed: boolean } {
+  const ctx = currentSectionedQueueContext(state);
+  if (!ctx) return { zone: null, category: null, collapsed: false };
+  const zone = paintedZoneResetScope(ctx.stage, ctx.section, ctx.targetKey, state);
+  const category = categoryResetScope(ctx.section, state);
+  return { zone, category, collapsed: resetZoneEqualsCategory(ctx.stage, ctx.section, state) };
+}
+
+function openResetConfirmation(scope: ResetScopeDescriptor): void {
+  inlineEditor = null;
+  pendingResetConfirmation = {
+    key: scope.key,
+    scope: scope.scope,
+    label: scope.label,
+    candidateIds: scope.candidateIds,
+    landingTarget: scope.landingTarget,
+  };
+  setStatus(`${scope.label}: confirm to clear ${scope.candidateIds.length} decision(s).`);
+  render();
+}
+
+function cancelResetConfirmation(): void {
+  if (!pendingResetConfirmation) return;
+  pendingResetConfirmation = null;
+  setStatus("Reset cancelled.");
+  render();
+}
+
+function confirmReset(): void {
+  const pending = pendingResetConfirmation;
+  if (!pending) return;
+  pendingResetConfirmation = null;
+  const result = dispatcher.dispatchReview({
+    family: "review",
+    type: "resetDecisions",
+    candidateIds: pending.candidateIds,
+    scope: pending.scope,
+  });
+  if (!result.ok) {
+    notifyToast(`Reset failed: ${result.reason}`);
+    render();
+    return;
+  }
+  if (pending.landingTarget) selectReviewDisplayTarget(pending.landingTarget);
+  setStatus(`${pending.label}: cleared ${pending.candidateIds.length} decision(s); those items are unresolved again.`);
+  render();
+}
+
+function renderResetConfirmation(host: HTMLElement, action: QueueSectionAction): void {
+  if (!action.resetScope || pendingResetConfirmation?.key !== action.resetScope.key) return;
+  const prompt = el("span", { class: "reset-confirmation", role: "group", "aria-label": `${action.resetScope.label} confirmation` });
+  prompt.appendChild(
+    el(
+      "span",
+      { class: "reset-confirmation-copy" },
+      `${action.resetScope.label}: clear ${action.resetScope.candidateIds.length} decision(s) and return those items to unresolved review.`
+    )
+  );
+  const confirm = button("Confirm Reset", confirmReset);
+  confirm.classList.add("reset-confirm");
+  prompt.appendChild(confirm);
+  prompt.appendChild(button("Cancel", cancelResetConfirmation));
+  host.appendChild(prompt);
+}
+
+function proposalTargetsInActiveReviewZone(
+  stage: "item-check" | "ambiguity-check",
+  section: SectionedQueueSection,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] {
+  return sectionGridSequence(section).flatMap((gridTargets) =>
+    partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state)).band.filter((target) => target.kind === "proposal")
+  );
+}
+
+function relationshipProposalsInActiveReviewZone(
+  stage: "item-check" | "ambiguity-check",
+  section: SectionedQueueSection,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): RelationshipProposal[] {
+  return proposalTargetsInActiveReviewZone(stage, section, state)
+    .map((target) => state.structuralRelationships?.proposals.find((proposal) => proposal.proposalId === target.id))
+    .filter((proposal): proposal is RelationshipProposal => Boolean(proposal));
+}
+
+function selectReviewDisplayTarget(target: ReviewDisplayTarget): void {
+  if (target.kind === "proposal") {
+    structuralCardFocusPending = target.id;
+    return;
+  }
+  structuralCardFocusPending = null;
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: target.id });
+}
+
 /** UI-side resolved test, delegating to the domain's own isItemResolved()
  *  (stages.ts) -- the exact predicate reconcile() itself advances by, so
  *  the visible-order advance below can never disagree with the domain
@@ -2900,91 +3495,58 @@ function isItemResolvedInState(stage: WorkflowStage, itemId: string, state: Retu
 }
 
 /**
- * ROWS-THEN-CARDS SEAM, half 1 (AG, 2026-08-02, live: "Residency was the
- * last unresolved row; clicking its ② chip applied Ignore but focus stayed
- * put ... while three 'Possible acronym' cards below still needed
- * review"). The first structural card still needing attention, in
- * DISPLAYED order -- the continuation target when the row half of a
- * sectioned-queue stage runs out of unresolved work.
- *
- * Derived from STATE, never from the rendered tree's
- * `relationship-card-addressed` class: the advance runs BEFORE the render
- * that would carry the fresh classes, so a DOM read here would answer from
- * the previous frame (the exact staleness `advanceStructuralCursor` avoids
- * by running AFTER its caller's render()). "Unaddressed" is the same
- * predicate the renderer's own `addressed` flag uses -- every member
- * carries a decision -- so heading counts, card green, and this agree by
- * construction.
- *
- * Two filters mirror the renderer exactly, so this can never point at a
- * card that isn't on screen: dismissed proposals are excluded
- * (relationshipDismissals -- renderStructuralRelationships drops them), and
- * so are proposals whose members are absent from detection (the renderer's
- * `if (members.length === 0) continue`).
+ * UNIFIED REVIEW-TARGET ADVANCEMENT (2026-08-08). Sectioned stages paint
+ * candidates and relationship proposals as one displayed review surface, so
+ * completion must advance across one mixed target list. This stays in the
+ * UI layer because the ordering is display-derived; the domain navigator
+ * still knows only durable stages/items.
  */
-function firstUnaddressedStructuralCardId(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string | null {
-  const dismissals = state.reviewSession?.relationshipDismissals ?? {};
-  const decisions = state.reviewSession?.candidateDecisions ?? {};
-  const candidates = state.detection?.candidates ?? [];
-  const active = (state.structuralRelationships?.proposals ?? []).filter(
-    (proposal) => !dismissals[proposal.proposalId] && proposal.candidateIds.some((id) => candidates.some((c) => c.id === id))
-  );
-  const unaddressed = structuralCardDisplayOrder(active).find((proposal) => !proposal.candidateIds.every((id) => Boolean(decisions[id])));
-  return unaddressed?.proposalId ?? null;
+function advanceWithinDisplayedReviewTargets(
+  stage: "item-check" | "ambiguity-check",
+  currentKey: string | null,
+  targets: readonly ReviewDisplayTarget[],
+  after: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget | null {
+  return advanceWithinReviewTargets(currentKey, targets, (target) => isReviewDisplayTargetResolved(stage, target, after));
 }
 
-/**
- * ROWS-THEN-CARDS SEAM, half 2: the shared continuation. Called by the two
- * row-advance paths (the post-decision choke point below and
- * runSectionAction) at the moment they find NO unresolved row left --
- * previously a dead end, now the boundary the arrow keys already cross
- * (forward past the last row enters the first card; see the sectioned-queue
- * arrows branch of the keydown pipeline). Returns true when the cursor
- * moved onto a card, so callers can skip their row-re-selection.
- *
- * Deliberately inert when a card ALREADY holds the cursor: that means the
- * reviewer is working the card half, where `advanceStructuralCursor` owns
- * the advance (forward-from-current, then backward -- a strictly better
- * answer than "first unaddressed"). Without this guard every card decision
- * would take both advances and briefly expand the wrong card between the
- * two renders. Also inert off the sectioned-queue stages, where no cards
- * render at all.
- *
- * DETERMINISTIC-RENDER: this sets the cursor only. The caller renders
- * afterwards, once, with the cursor already in place -- so the card is
- * born selected+expanded and render()'s pendingCardId tail supplies DOM
- * focus. (Contrast advanceStructuralCursor, which runs after its caller's
- * render and therefore must render a second time.)
+/*
+ * THE ROWS-THEN-CARDS SEAM IS GONE, NOT WRAPPED (2026-08-07 completion-path
+ * audit). `continueIntoStructuralCards` stood here as a compatibility
+ * wrapper after the unified model landed, and by then had no callers at all:
+ * every path that once needed "the rows ran out, continue into the cards"
+ * now advances over one mixed target list where a proposal is simply the
+ * next target, so there is nothing left for a rows-to-cards transition to
+ * mean. It is deleted rather than kept, because a function whose doc comment
+ * describes a superseded architecture is worse than no function -- the next
+ * reader looking for "where does the seam live" would find an answer that
+ * has not been true since. The seam's actual replacement is
+ * `sectionDisplayTargets` + `advanceWithinDisplayedReviewTargets`.
  */
-function continueIntoStructuralCards(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): boolean {
-  if (structuralCardFocusPending !== null) return false;
-  if (!sectionedQueueStage(state.focus?.target.stage)) return false;
-  const proposalId = firstUnaddressedStructuralCardId(state);
-  if (!proposalId) return false;
-  structuralCardFocusPending = proposalId;
-  return true;
-}
 
 /**
  * RX-02b (2026-07-29): the ONE review-dispatch path every decision in this
  * file routes through, wrapping dispatcher.dispatchReview() with the
  * visible-order post-decision advance. Shape, per interception step:
  *
- *   1. BEFORE dispatching, snapshot the focused item and the visible
- *      ordered ids for its stage -- pre-decision, because under
- *      "Unreviewed only" (or Category Check's default "To Review") the
- *      just-decided item vanishes from a post-decision evaluation of the
- *      list, leaving no anchor for "next"; the pre-decision order is also
- *      simply the order the reviewer was looking at when they acted.
+ *   1. BEFORE dispatching, snapshot the focused target and the visible
+ *      ordered targets for sectioned stages (candidates + proposals), or
+ *      visible candidate ids for non-sectioned stages -- pre-decision,
+ *      because under "Unreviewed only" (or Category Check's default "To
+ *      Review") the just-decided item vanishes from a post-decision
+ *      evaluation of the list, leaving no anchor for "next"; the
+ *      pre-decision order is also simply the order the reviewer was
+ *      looking at when they acted.
  *   2. Dispatch as before -- CommandDispatcher still runs
  *      FocusNavigator.reconcile() on success; nothing suppresses it. The
  *      domain's own answer stays authoritative for everything but display
  *      order.
- *   3. If the decision RESOLVED the item the reviewer was on, recompute
- *      the advance over the SNAPSHOT via advanceWithinVisibleList()
- *      (forward, then backward, then stay -- no wrap; see that module's
- *      doc comment) and, when it differs from where reconcile() landed,
- *      re-select it through the ordinary navigation.selectItem command.
+ *   3. If the decision RESOLVED the target the reviewer was on, recompute
+ *      the advance over the SNAPSHOT via advanceWithinReviewTargets() for
+ *      sectioned stages or advanceWithinVisibleList() elsewhere (forward,
+ *      then backward, then stay -- no wrap; see that module's doc comment)
+ *      and, when it differs from where reconcile() landed, select that
+ *      candidate/proposal target.
  *
  * The interception is UNCONDITIONAL over the visible list -- never gated on
  * "did reconcile()'s answer fall off the visible list": under a sort with
@@ -3031,27 +3593,34 @@ function dispatchReviewWithVisibleAdvance(command: ReviewCommand): ReviewTransac
   const preTarget = before.focus?.target ?? null;
   const stage = preTarget?.stage ?? null;
   const preItemId = preTarget?.itemId ?? null;
-  const visibleIds = stage !== null && preItemId !== null ? snapshotVisibleIdsForStage(stage, before) : null;
+  const queueStage = stage !== null ? sectionedQueueStage(stage) : null;
+  const preReviewTargetKey = currentReviewDisplayTargetKey(stage, preItemId, before);
+  const visibleTargets = queueStage !== null ? displayedReviewTargetsForSectionedStage(queueStage, before) : null;
+  const visibleIds = queueStage === null && stage !== null && preItemId !== null ? snapshotVisibleIdsForStage(stage, before) : null;
 
   const result = dispatcher.dispatchReview(command);
-  if (!result.ok || stage === null || preItemId === null || visibleIds === null) return result;
+  if (!result.ok || stage === null || preItemId === null) return result;
 
   const after = dispatcher.getState();
   if (after.focus?.target.panel.kind === "not-quite") return result;
+  if (queueStage !== null && visibleTargets !== null && preReviewTargetKey !== null) {
+    const preReviewTarget = visibleTargets.find((target) => reviewDisplayTargetKey(target) === preReviewTargetKey);
+    if (!preReviewTarget || !isReviewDisplayTargetResolved(queueStage, preReviewTarget, after)) return result;
+    const target = advanceWithinDisplayedReviewTargets(queueStage, preReviewTargetKey, visibleTargets, after);
+    if (target) {
+      const afterKey = currentReviewDisplayTargetKey(after.focus?.target.stage ?? null, after.focus?.target.itemId ?? null, after);
+      if (reviewDisplayTargetKey(target) !== afterKey) selectReviewDisplayTarget(target);
+    }
+    return result;
+  }
+  if (visibleIds === null) return result;
   if (!isItemResolvedInState(stage, preItemId, after)) return result;
 
-  // null = every visible ROW is resolved. ROWS-THEN-CARDS SEAM (AG,
-  // 2026-08-02): before treating that as the end of the queue, continue
-  // into the collection's card half -- rows and cards are one displayed
-  // collection on the sectioned-queue stages, and stopping at the last row
-  // stranded the reviewer with unreviewed cards still on screen. The row
-  // cursor deliberately stays parked on the just-decided item (it is still
-  // a valid, visible selection, and the domain's focus model has no notion
-  // of a card); the CARD cursor becomes the working object, which is what
-  // the detail expansion, the decision letters, ⇧A, and -- since this same
-  // pass -- scrollFocusedRowIntoView all follow.
+  // Non-sectioned stages still advance over candidate ids only. Sectioned
+  // stages have already returned above through the mixed review-target
+  // branch, so null here means every displayed candidate in this particular
+  // non-sectioned list is resolved.
   const target = advanceWithinVisibleList(preItemId, visibleIds, (id) => isItemResolvedInState(stage, id, after));
-  if (target === null && continueIntoStructuralCards(after)) return result;
   // No card to continue into: REMAIN on the item just decided (re-selecting
   // it if reconcile() wandered off to a structurally-adjacent but
   // currently-hidden unresolved item -- focus must never land on a row the
@@ -3314,6 +3883,7 @@ function decideGroupBulkAndRender(command: AnyCommand, groupId: string): void {
   // RX-02b: a subset decision can RESOLVE the whole group (group resolution
   // is derived from member decisions -- groupDisplayDecision), so this path
   // needs the same visible-order advance as the all-selected one above.
+  const before = dispatcher.getState();
   const result = dispatchReviewWithVisibleAdvance(command);
   if (!result.ok) {
     notifyToast(`Action failed: ${result.reason}`); // RX-09: recoverable
@@ -3323,9 +3893,11 @@ function decideGroupBulkAndRender(command: AnyCommand, groupId: string): void {
   // RX-18: subset bulk results narrate like Item Check's (display label,
   // RX-22); the command here is always bulkApplyDecision (see doc comment).
   if (command.type === "bulkApplyDecision") {
+    acknowledgeBulkCandidateFeedback(before, command.candidateIds, "group-check");
     setStatus(`${decisionDisplayLabel(command.decision)} applied to ${command.candidateIds.length} member(s).`);
+  } else {
+    acknowledge({ kind: "group", groupId });
   }
-  acknowledge({ kind: "group", groupId });
   render();
 }
 
@@ -3489,8 +4061,17 @@ function renderPossibleIdentities(candidateId: string, stage: WorkflowStage, sta
       }
       optionButton.appendChild(evidenceList);
     }
+    // DECISION RATIONALE (2026-08-06): the identity's own canonical name --
+    // the exact text on the button the reviewer pressed. Linking is the most
+    // specific claim this app lets anyone make ("this Amy is Amy Miller"), so
+    // a decided row reading "→ Common word" for it, as it did, was the
+    // worst-affected case of the suggestions[0] defect.
     optionButton.addEventListener("click", () =>
-      decideAndAdvance({ family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: option.groupId }, candidateId, stage)
+      decideAndAdvance(
+        { family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: option.groupId, rationale: option.canonicalName },
+        candidateId,
+        stage
+      )
     );
     list.appendChild(optionButton);
   });
@@ -3737,21 +4318,134 @@ function recommendationFactsForCandidate(candidateId: string, state: ReturnType<
   return facts;
 }
 
-/** Accepting a suggestion runs the EXISTING operation -- the identical
- *  paths the Possible-identities buttons, Ignore button, and Redact
- *  editor already use. One click / one keystroke; resolved. */
-function runRecommendationSuggestion(candidateId: string, stage: WorkflowStage, op: SuggestionOp): void {
+/**
+ * THE PAIR TOKEN (AG, 2026-08-06): "I really like this double arrow scheme
+ * ... it shows compactly what the comparison is when there is high
+ * confidence of two values ... you could actually scan the whole list and
+ * decide to press 9 or Opt K without reading all the cards."
+ *
+ * Returns the CONCRETE ALTERNATIVE TEXT a candidate would resolve to, or
+ * null when there isn't one. Purely a lookup over the recommendation the row
+ * already computed -- no new derivation, no new confidence model. "High
+ * confidence" is not re-litigated here: a suggestion only exists at all
+ * because deriveRecommendation produced it, and identity options have
+ * already passed the anchor vetting in recommendationFactsForCandidate. If
+ * the app is confident enough to offer the chip, it is confident enough to
+ * show what the chip means.
+ *
+ * ONLY OPS THAT NAME A VALUE. `link` gives the entity's canonical name and
+ * `change-to` gives the replacement -- both are "this string and that string
+ * denote the same thing," which is exactly what ↔ asserts and exactly what
+ * the relationship rows (renderStructuralProposalRows) already use it for.
+ *
+ * `keep`/`ignore` term claims are deliberately EXCLUDED. "Amy ↔ Common word"
+ * would be a category error: those chips are dispositions, not values, and ↔
+ * would be claiming an equivalence between a token and a classification. The
+ * glyph has one meaning in this app and this must not be the change that
+ * gives it two. Those items keep their bare token and their chips.
+ *
+ * READS THE SUGGESTION'S OWN LABEL for `link` rather than re-resolving the
+ * groupId through `state.grouping`. `identitySuggestions` is the only
+ * producer of link ops and it builds them as
+ * `{ label: option.canonicalName, op: { kind: "link", groupId } }` -- so the
+ * canonical name is already in hand, and a second lookup would only add a
+ * way to MISS (a stale or filtered proposal list yields null, and the row
+ * would quietly render no pair while the chip beside it still named one).
+ * The label is what the reviewer is being shown on the chip, which also
+ * makes it the correct thing to echo: the pair must say what accepting ①
+ * would do, in ①'s own words. `change-to` still reads `op.replacement`,
+ * because there the label is presentational ("________") and not the value.
+ */
+function confidentCounterpartFor(recommendation: ReviewRecommendation | null): string | null {
+  for (const suggestion of recommendation?.suggestions ?? []) {
+    if (suggestion.op.kind === "change-to") return suggestion.op.replacement;
+    if (suggestion.op.kind === "link") return suggestion.label;
+  }
+  return null;
+}
+
+/**
+ * Accepting a suggestion runs the EXISTING operation -- the identical
+ * paths the Possible-identities buttons, Ignore button, and Redact
+ * editor already use. One click / one keystroke; resolved.
+ *
+ * TAKES THE WHOLE SUGGESTION, not just its op (2026-08-06). The op says what
+ * HAPPENS to the document; the label says what the reviewer CLAIMED, and the
+ * two are not recoverable from each other -- a term archetype's ① "Common
+ * word" and an identity option can both be dispositions, and "Person's name"
+ * and a bare `Keep as-is` press produce the identical op from entirely
+ * different reviewer intents. Passing only the op is what left decided rows
+ * with no way to name the accepted claim, so they fell back to displaying
+ * suggestions[0] and misreported every ② the reviewer ever pressed.
+ */
+/**
+ * WHICH ADVANCE APPLIES (AG, 2026-08-06) -- a TACTICAL PATCH, and one that
+ * should not survive long. Flagged for extraction; see the note below.
+ *
+ * THE DEFECT: "completing a cell is not auto-advancing, yet again." In Type
+ * Check, accepting a suggestion chip (by click or by its 1-9 digit) left
+ * the member cursor sitting on the cell it had just completed, while K and
+ * I on the same cell advanced correctly.
+ *
+ * THE CAUSE, which is why Andrew is right that this "gets steamrolled
+ * fairly often": advance-on-decide is a per-CALL-SITE choice rather than a
+ * property of deciding. There are four advance helpers -- decideAndAdvance,
+ * decideTypeMemberAndAdvance, decideGroupMemberAndAdvance, and
+ * dispatchReviewWithVisibleAdvance -- and a decision path picks one by
+ * hand. runRecommendationSuggestion is stage-generic and picked the plain
+ * decideAndAdvance, which advances the STAGE's focus; in Type Check the
+ * focused item is the TYPE, so it advanced the type and left the member
+ * cursor untouched. Nothing failed, nothing warned; the cursor just stopped
+ * moving on one of the four ways to decide a cell.
+ *
+ * THE LADDER BELOW IS A THIRD COPY. confirmInlineEditor already contains
+ * it verbatim (that is the only reason the C/R editor path advances
+ * correctly), and every future decision entry point will need it too. The
+ * durable fix is to make this function the ONLY place the question is
+ * asked and route every path through it -- which is a refactor across every
+ * decision site in this file and is deliberately NOT being done in the same
+ * change as a live defect fix. Until then, a new decision path that does
+ * not call this will reintroduce exactly this bug.
+ *
+ * Group members take the same treatment as type members, deliberately: the
+ * two are the same situation (a cursor inside a container, moving through
+ * members) and confirmInlineEditor already routes both this way. A ladder
+ * that handled only the stage in front of us today would be the fourth
+ * divergent variant rather than a step toward one.
+ */
+function decideThroughOwningCursor(command: AnyCommand, candidateId: string, stage: WorkflowStage): void {
+  const state = dispatcher.getState();
+  const memberGroup =
+    stage === "group-check" ? state.grouping?.entityGroupProposals.find((g) => g.candidateIds.includes(candidateId)) : undefined;
+  const typeGroup = stage === "type-check" ? state.semanticTypes?.find((g) => g.candidateIds.includes(candidateId)) : undefined;
+  if (memberGroup) decideGroupMemberAndAdvance(memberGroup, candidateId, command);
+  else if (typeGroup) decideTypeMemberAndAdvance(typeGroup, candidateId, command);
+  else decideAndAdvance(command, candidateId, stage);
+}
+
+function runRecommendationSuggestion(candidateId: string, stage: WorkflowStage, suggestion: RecommendationSuggestion): void {
+  const { op, label: rationale } = suggestion;
   if (op.kind === "link") {
-    decideAndAdvance({ family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: op.groupId }, candidateId, stage);
+    decideThroughOwningCursor({ family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: op.groupId, rationale }, candidateId, stage);
   } else if (op.kind === "keep") {
     // UNCERTAIN DISPOSITION (AG, 2026-08-02): ① "Person's name" -- the
     // same Keep the People section's accept default applies.
-    decideAndAdvance({ family: "review", type: "keepCandidate", candidateId }, candidateId, stage);
+    decideThroughOwningCursor({ family: "review", type: "keepCandidate", candidateId, rationale }, candidateId, stage);
   } else if (op.kind === "ignore") {
-    decideAndAdvance({ family: "review", type: "ignoreCandidate", candidateId }, candidateId, stage);
+    decideThroughOwningCursor({ family: "review", type: "ignoreCandidate", candidateId, rationale }, candidateId, stage);
   } else if (op.kind === "change-to") {
-    decideAndAdvance({ family: "review", type: "renameCandidate", candidateId, replacement: op.replacement }, candidateId, stage);
+    decideThroughOwningCursor(
+      { family: "review", type: "renameCandidate", candidateId, replacement: op.replacement, rationale },
+      candidateId,
+      stage
+    );
   } else {
+    // NO RATIONALE on the editor path, deliberately. This suggestion does not
+    // decide anything -- it opens the Redact editor, and the decision is
+    // dispatched later by the editor once the reviewer has chosen (or
+    // accepted) a placeholder. That choice is the reviewer's actual act, and
+    // the identifier archetype's label ("________") would be meaningless as
+    // a recorded claim in any case.
     openInlineEditor({ scope: "candidate", stage, candidateId, action: "Redact" });
   }
 }
@@ -3766,7 +4460,7 @@ function runRecommendationSuggestion(candidateId: string, stage: WorkflowStage, 
 function recommendationSuggestionButtons(candidateId: string, stage: WorkflowStage, recommendation: ReviewRecommendation): HTMLElement {
   const wrap = el("span", { class: "recommendation-suggestions header-suggestions" });
   recommendation.suggestions.forEach((suggestion, index) => {
-    wrap.appendChild(keycapButton(index + 1, suggestion.label, () => runRecommendationSuggestion(candidateId, stage, suggestion.op)));
+    wrap.appendChild(keycapButton(index + 1, suggestion.label, () => runRecommendationSuggestion(candidateId, stage, suggestion)));
   });
   return wrap;
 }
@@ -3799,7 +4493,7 @@ function renderCandidateDetailPanel(
   // CASCADE (AG, same day): the panel is a child area of its item and
   // takes the item's containing color -- pending-edit target, committed
   // decision, or nav-blue for a focused unprocessed item.
-  opts?: { showHeader?: boolean; schemeClass?: string }
+  opts?: { showHeader?: boolean; schemeClass?: string; hideRecommendationBadge?: boolean }
 ): void {
   const evidence = quality?.evidenceByCandidate[candidate.id] ?? [];
   const likelihood = quality?.scoreByCandidate[candidate.id] ?? 0;
@@ -3829,20 +4523,49 @@ function renderCandidateDetailPanel(
   // Refinement (2026-07-30): the % pill moved into Why? -- detector
   // confidence is a model internal; the reviewer's task is deciding what
   // to do, and the interface communicates confidence through the presence
-  // and quality of recommendations instead. Type + likelihood pills stay:
-  // they describe the ITEM, not the model.
+  // and quality of recommendations instead. Non-header panels keep the
+  // detector type/recommendation badges from the original detail contract.
+  // Header mode is a tighter focus-panel surface: Andrew's 2026-08-08 audit
+  // found the visible `person` detector pill redundant and actively
+  // confusing when a person-typed detector result is being reviewed as an
+  // institutional/common/calendar term. Header mode also has a far-right
+  // confidence verdict, so a recommendation badge beside the count would be
+  // a second status field. Raw type remains in Expert View, row metadata,
+  // search/sort/filter state, and exports; it no longer sits beside the
+  // reviewer-facing conclusion in the focus header.
   const badges = el("div", { class: "detail-badges" });
-  badges.appendChild(el("span", { class: "badge" }, candidate.detectedType));
-  badges.appendChild(el("span", { class: "badge" }, recommendationLabel(recommendation)));
+  if (!opts?.showHeader) {
+    badges.appendChild(el("span", { class: "badge" }, candidate.detectedType));
+    if (!opts?.hideRecommendationBadge) badges.appendChild(el("span", { class: "badge" }, recommendationLabel(recommendation)));
+  }
 
   if (opts?.showHeader) {
+    /*
+     * "ESC = EXIT" (AG, 2026-08-06), visible in the header. Revised
+     * 2026-08-08: it sits on the action row, not the title row, because the
+     * title row now carries the item name and far-right confidence verdict
+     * only. That keeps the exit hint near the controls it affects without
+     * letting it compete with the item identity.
+     *
+     * Rendered UNCONDITIONALLY, not only while entered: Escape works from the
+     * panel whether the reviewer arrived by Enter or by clicking into it, so
+     * gating it on the entered flag would hide it from exactly the person who
+     * did not use the keyboard to get in and most needs telling how to leave.
+     *
+     * Same keycap + word pair as the command bar's legend, so it reads as
+     * that legend having followed the reviewer in rather than as a new
+     * control.
+     */
+    const escHint = el("span", { class: "detail-esc-hint" });
+    escHint.appendChild(el("kbd", { class: "keycap keycap-chord" }, "Esc"));
+    escHint.appendChild(el("span", {}, "exit"));
+    escHint.title = "Leave the focus panel and return the arrow keys to the item list.";
     // AG response (2026-07-30): "make the pills appear on the same horiz
     // line as the bold name" -- the badges join the title row instead of
     // sitting on their own line beneath it.
     const title = el("div", { class: "detail-title" });
     title.appendChild(el("span", { class: "detail-title-name" }, candidate.displayValue));
     title.appendChild(el("span", { class: "detail-title-count" }, `(${candidate.occurrenceIds.length})`));
-    title.appendChild(badges);
     /*
      * CONFIDENCE AS A BARE FIGURE, TOP RIGHT (AG, 2026-08-04: "make the
      * Detector Confidence be a simple color-temp percentage number without
@@ -3866,7 +4589,9 @@ function renderCandidateDetailPanel(
     // The precise figure survives on hover -- the word is for deciding, the
     // number is for anyone who wants to audit the word.
     figure.title = `Detector confidence: ${likelihood}%`;
-    title.appendChild(figure);
+    const titleStatus = el("span", { class: "detail-title-status" });
+    titleStatus.appendChild(figure);
+    title.appendChild(titleStatus);
     panel.appendChild(title);
     // AG response (2026-07-30): the KCRIQ buttons arrive in the full view
     // ("to be implemented after this current document's revisions") --
@@ -3890,6 +4615,7 @@ function renderCandidateDetailPanel(
       actions.appendChild(recommendationSuggestionButtons(candidate.id, stage, headerRecommendation));
     }
     decisionButtons(candidate.id, stage, actions, existingDecision as CandidateDecisionKind | undefined);
+    actions.appendChild(escHint);
     panel.appendChild(actions);
   } else {
     panel.appendChild(badges);
@@ -3907,7 +4633,7 @@ function renderCandidateDetailPanel(
   if (reviewRecommendation) renderRecommendationConclusion(panel, reviewRecommendation);
 
   // VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01, confirmed via direct
-  // question): Why? AUTO-OPENS on the focused item -- "the details/
+  // question): the evidence disclosure AUTO-OPENS on the focused item -- "the details/
   // justification should always be visible on a highlighted item, at
   // least enough that they have to see some evidence." The panel only
   // ever renders for the focused/expanded item, so default-open here IS
@@ -3917,24 +4643,21 @@ function renderCandidateDetailPanel(
   // candidate's Why? opens fresh under its own key.
   const whyDetails = detailsEl(`why:${candidate.id}`, { class: "why-view" }, true);
   /*
-   * THE VERDICT RIDES THE "Why?" LINE (AG, 2026-08-04: "make the 'This may
-   * be a ..' line directly right of Why? when it's expanded, and much
-   * bigger").
+   * THE VERDICT IS THE EXPANDER (AG, 2026-08-04/2026-08-08). It used to ride
+   * beside a small "Why?" label; Andrew removed the label because the
+   * sentence itself is the meaningful affordance. The caret now sits to the
+   * RIGHT of the sentence and is intentionally larger, so the row still
+   * reads as expandable after the label is gone.
    *
-   * Put INSIDE the <summary> rather than beside it, which is a small
-   * addition to what was asked and the reason to prefer it: a summary is
-   * the one part of a disclosure that renders in BOTH states, so the
+   * Put INSIDE the <summary> rather than beside it: a summary is the one
+   * part of a disclosure that renders in BOTH states, so the
    * verdict survives a reviewer collapsing Why?. Previously collapsing it
    * hid the conclusion along with the evidence -- the reviewer lost the
    * answer to keep the reasoning out of the way, which is backwards.
-   *
-   * The size inversion is deliberate too: "Why?" is now the small muted
-   * affordance and the verdict is the large text, because the verdict is
-   * what the reviewer came for and "Why?" is only the door to the rest.
    */
   const whySummary = el("summary", { class: "why-summary" });
-  whySummary.appendChild(el("span", { class: "why-label" }, "Why?"));
   whySummary.appendChild(el("span", { class: "detail-verdict" }, `${confidenceOpener(likelihood, candidate.detectedType)}.`));
+  whySummary.appendChild(el("span", { class: "why-caret", "aria-hidden": "true" }));
   whyDetails.appendChild(whySummary);
 
   /*
@@ -4749,9 +5472,11 @@ function dispatchBulkDecision(decision: CandidateDecisionKind): void {
   // RX-02b: a bulk decision that includes the focused candidate resolves
   // it, so this path advances in visible order through the same choke
   // point as the per-candidate buttons.
+  const before = dispatcher.getState();
   const result = dispatchReviewWithVisibleAdvance({ family: "review", type: "bulkApplyDecision", candidateIds, decision });
   if (result.ok) {
     selectedCandidateIds.clear();
+    acknowledgeBulkCandidateFeedback(before, candidateIds, "item-check");
     // RX-18: bulk results are exactly the kind of "it worked, this is what
     // happened" message the status region exists for -- display label
     // (RX-22), never the durable kind.
@@ -5013,7 +5738,17 @@ function columnsAcross(cells: readonly HTMLElement[]): number {
  *  container is absent -- every caller falls back to a page-wide
  *  measurement rather than guessing. */
 function gridContainerForItem(itemId: string): HTMLElement | null {
-  return gridContainerFor(`[data-item-id="${cssAttrEscape(itemId)}"]`, ".triage-grid, .results-grid");
+  // EITHER REVIEW-UNIT TYPE (AG, 2026-08-06). A mixed category's grid holds
+  // candidate cells (`data-item-id`) and relationship cells
+  // (`data-proposal-id`) side by side, so an anchor lookup that knew only
+  // the first returned null the moment the cursor sat on a pair -- and the
+  // mover, having no anchor, fell back to the stage-wide list where a
+  // proposal id does not appear at all. The cursor then could not leave the
+  // first proposal in either direction.
+  return (
+    gridContainerFor(`[data-item-id="${cssAttrEscape(itemId)}"]`, ".triage-grid, .results-grid") ??
+    gridContainerFor(`[data-proposal-id="${cssAttrEscape(itemId)}"]`, ".triage-grid, .results-grid")
+  );
 }
 
 /** The member region a given cell sits in. Per-cell rather than per-page:
@@ -5101,10 +5836,18 @@ function memberGridTarget(idx: number, members: readonly string[], key: string):
  *  `data-type-member-id`) resolves its own grid by the same rules rather
  *  than by a second copy of them. */
 function gridContainerFor(cellSelector: string, containerSelector: string): HTMLElement | null {
-  if (typeof document.querySelector !== "function") return null;
-  const cell = document.querySelector<HTMLElement>(cellSelector);
-  if (!cell || typeof cell.closest !== "function") return null;
-  return cell.closest<HTMLElement>(containerSelector);
+  if (typeof document.querySelectorAll !== "function") return null;
+  // A selected proposal is rendered twice: once as the compact grid row and
+  // once as the full focus-pane card. The focus pane is earlier in DOM order,
+  // so a single querySelector can find the non-grid copy and make arrows look
+  // dead. Walk every match and return the first one that actually belongs to
+  // the requested grid/container.
+  for (const cell of Array.from(document.querySelectorAll<HTMLElement>(cellSelector))) {
+    if (typeof cell.closest !== "function") continue;
+    const container = cell.closest<HTMLElement>(containerSelector);
+    if (container) return container;
+  }
+  return null;
 }
 
 /** `CSS.escape` where the browser has it, a quote/backslash escape where it
@@ -5136,14 +5879,54 @@ function cssAttrEscape(value: string): string {
  * Pure: index in, index out, no DOM. `cols` is supplied by the caller
  * (measuredColumnCount), which is the only part that needs layout.
  */
-function gridStep(idx: number, count: number, cols: number, key: string): number | null {
+/**
+ * COLUMN-MAJOR FLOW (AG, 2026-08-06). `columnMajorRows`, when given, says
+ * the grid is laid out with `grid-auto-flow: column` over that many rows --
+ * the zone's 15+ layout, where 23 items read 12 down the left column then
+ * 11 down the right.
+ *
+ * The arithmetic INVERTS, and that is the whole point: under column-major,
+ * the next cell in DOM order sits directly BELOW, and the cell to the right
+ * is `rows` away. Row-major's `+1 = right, +cols = down` becomes
+ * `+1 = down, +rows = right`.
+ *
+ * WHY THIS COULD NOT STAY A MEASUREMENT. `measuredColumnCount` counts cells
+ * sharing the first cell's `offsetTop` **in DOM order**; under column-major
+ * the second DOM cell is below the first, so it returns 1 and every
+ * horizontal move would silently no-op. The flow has to be told, not
+ * measured -- which is also why it is a parameter here rather than another
+ * layout read.
+ *
+ * No wrap at any edge, unchanged: a spreadsheet cursor stays put at the
+ * boundary rather than teleporting to the far side.
+ */
+function gridStep(idx: number, count: number, cols: number, key: string, columnMajorRows?: number): number | null {
   if (count === 0) return null;
   if (idx === -1) return 0;
+  if (columnMajorRows && columnMajorRows > 0) {
+    const rows = columnMajorRows;
+    if (key === "ArrowDown") return idx % rows === rows - 1 || idx + 1 >= count ? null : idx + 1;
+    if (key === "ArrowUp") return idx % rows === 0 ? null : idx - 1;
+    if (key === "ArrowRight") return idx + rows < count ? idx + rows : null;
+    if (key === "ArrowLeft") return idx - rows >= 0 ? idx - rows : null;
+    return null;
+  }
   if (key === "ArrowRight") return Math.min(count - 1, idx + 1);
   if (key === "ArrowLeft") return Math.max(0, idx - 1);
   if (key === "ArrowDown") return idx + cols < count ? idx + cols : null;
   if (key === "ArrowUp") return idx - cols >= 0 ? idx - cols : null;
   return null;
+}
+
+/** The row count of a column-major grid, or undefined for an ordinary
+ *  row-major one. Read from the class + custom property the render-tail
+ *  layout pass publishes, so the keys and the paint agree by construction
+ *  rather than by two independent guesses at the geometry. */
+function columnMajorRowsOf(grid: HTMLElement | null | undefined): number | undefined {
+  if (!grid || typeof grid.classList?.contains !== "function") return undefined;
+  if (!grid.classList.contains("zone-two-col")) return undefined;
+  const raw = Number(grid.style?.getPropertyValue("--zone-rows"));
+  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
 /** Spreadsheet-style arrow movement over the Results grid ("U/D/L/R arrows
@@ -5171,12 +5954,56 @@ function gridStep(idx: number, count: number, cols: number, key: string): number
 // This function keeps what is specific to it: resolving the anchor by
 // `data-item-id`, and dispatching the move as domain focus.
 function moveWithinResultsGrid(visibleIds: string[], currentId: string | null, key: string, cellSelector = ".results-grid .result-cell"): void {
-  if (visibleIds.length === 0) return;
-  const idx = currentId ? visibleIds.indexOf(currentId) : -1;
-  const cols = measuredColumnCount(cellSelector, currentId ? gridContainerForItem(currentId) : null);
-  const target = gridStep(idx, visibleIds.length, cols, key);
+  const anchor = currentId ? gridContainerForItem(currentId) : null;
+  if (visibleIds.length === 0 && !anchor) return;
+  /* ONE COORDINATE SPACE (AG, 2026-08-06 -- "I cannot navigate lower than
+   * this row", reproduced on Other Words at `Grade`).
+   *
+   * THE BUG: `idx` and the list length came from the STAGE-WIDE visible
+   * list, while `cols` and `columnMajorRowsOf` came from the ANCHOR GRID.
+   * The row/column arithmetic was therefore done in full-list coordinates
+   * using a row count that is only meaningful grid-locally. The two agree
+   * exactly when the rendered grid starts at offset 0 of the visible list,
+   * and disagree by that offset otherwise -- so a section rendered partway
+   * down the stage had `(offset + i) % rows` land on a column boundary at
+   * the wrong cell, and "down" was clamped as if it were the bottom edge.
+   * Symptom matched the arithmetic: stuck at the same relative position in
+   * BOTH columns, movable upward, fine near the section start.
+   *
+   * THE FIX: walk the anchor grid's OWN cells. That grid is exactly one
+   * category's review units, in rendered order, which is the list the
+   * reviewer is actually looking at -- so `idx`, the length, the column
+   * count and the row count now all describe the same object. It also
+   * makes the traversal work for MIXED categories for free: relationship
+   * proposals are cells in that grid too, so the cursor crosses between
+   * unit types without the rows-then-cards seam being involved at all.
+   *
+   * Falls back to the stage-wide list when there is no anchor (no cursor
+   * yet, or a surface whose cells are not in a queried grid), which is the
+   * pre-existing behavior for the entry case.
+   */
+  const gridIds = anchor
+    ? Array.from(anchor.querySelectorAll<HTMLElement>("[data-item-id], [data-proposal-id]"))
+        .map((cell) => cell.getAttribute("data-item-id") ?? cell.getAttribute("data-proposal-id") ?? "")
+        .filter((id) => id.length > 0)
+    : [];
+  const list = gridIds.length > 0 ? gridIds : visibleIds;
+  const idx = currentId ? list.indexOf(currentId) : -1;
+  if (currentId && idx === -1) return; // cursor is not in this grid: nothing coherent to step through
+  const cols = measuredColumnCount(cellSelector, anchor);
+  const target = gridStep(idx, list.length, cols, key, columnMajorRowsOf(anchor));
   if (target === null || target === idx) return; // spreadsheet edge: stay put
-  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: visibleIds[target]! });
+  const targetId = list[target]!;
+  // A proposal cell moves the CARD cursor; a candidate cell moves the item
+  // cursor. One list, two cursors -- the same dispatch the row and card
+  // click handlers already make, so nothing new learns about the split.
+  if (anchor?.querySelector(`[data-proposal-id="${cssAttrEscape(targetId)}"]`)) {
+    structuralCardFocusPending = targetId;
+    render();
+    return;
+  }
+  structuralCardFocusPending = null;
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: targetId });
   render();
 }
 
@@ -5416,7 +6243,7 @@ function currentReviewScope(state: ReturnType<WorkspaceCommandDispatcher["getSta
 }
 
 /** The card half of the remaining work, in display order -- the same
- *  active/addressed rules firstUnaddressedStructuralCardId applies. */
+ *  active/addressed rules the unified review-target advance applies. */
 function unaddressedStructuralCardIds(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string[] {
   const dismissals = state.reviewSession?.relationshipDismissals ?? {};
   const decisions = state.reviewSession?.candidateDecisions ?? {};
@@ -5476,7 +6303,7 @@ function ambiguityItemsFor(candidateIds: readonly string[], state: ReturnType<Wo
       const option = options.find((o) => o.groupId === suggestedGroupId) ?? options.find((o) => o.evidence && o.evidence.length > 0);
       aliasFlavor = option?.evidence?.some((line) => line.startsWith("Alias:")) ? "org-alias" : "nickname";
     }
-    return [{ id, archetype: rec?.archetype ?? null, detectedType: candidate.detectedType, aliasFlavor, tier }];
+    return [{ id, archetype: rec?.archetype ?? null, detectedType: candidate.detectedType, aliasFlavor, tier, nameEvidence: facts ? hasKnownNameEvidence(facts) : false }];
   });
 }
 
@@ -5509,7 +6336,9 @@ function renderTriageQueue(container: HTMLElement, state: ReturnType<WorkspaceCo
     container.appendChild(el("p", {}, "Nothing to review in this stage."));
     return;
   }
-  const sections = buildTriageSections(triageItemsFor(candidateIds, state));
+  // Through the model, for the reason renderAmbiguityQueue documents: one
+  // answer to "what are this stage's sections", shared with the pill bar.
+  const { sections } = sectionedQueueModel(state, "item-check");
   // REVIEW SCOPE, Pass 1 (AG, 2026-08-03): the PERMANENT inspector. The
   // side-by-side pane graduates from a per-section split (which existed
   // only while that section held an open panel) to a workspace-level left
@@ -5676,8 +6505,17 @@ function appendForcedPanels(host: HTMLElement, panels: readonly HTMLElement[]): 
  * decision path are the shared implementations.
  */
 function renderAmbiguityQueue(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>, candidateIds: string[]): void {
-  if (candidateIds.length === 0) return; // structural cards may still follow; the caller owns the both-empty message
-  renderSectionedQueue(container, state, buildAmbiguitySections(ambiguityItemsFor(candidateIds, state)), AMBIGUITY_QUEUE_POLICY);
+  // THROUGH sectionedQueueModel, not buildAmbiguitySections directly (AG,
+  // 2026-08-06). That function's doc comment already CLAIMED to be "the
+  // SAME derivation renderTriageQueue/renderAmbiguityQueue paint from" --
+  // it was not, and the gap only became visible when relationship units
+  // were filed into sections: the pill bar (which does read the model)
+  // counted Acronyms (4) while the renderer, building its own sections,
+  // drew one row. A second answer to "what are this stage's sections" is
+  // the same class of bug the keystone invariant forbids for scope.
+  const { sections } = sectionedQueueModel(state, "ambiguity-check");
+  if (candidateIds.length === 0 && sections.every((s) => (s.relationshipProposalIds ?? []).length === 0)) return;
+  renderSectionedQueue(container, state, sections, AMBIGUITY_QUEUE_POLICY);
 }
 
 /** One section of the queue, vocabulary-agnostic -- both section builders
@@ -5697,6 +6535,22 @@ interface SectionedQueueSection {
   label: string;
   candidateIds: string[];
   tiers?: SectionedQueueTierGroup[];
+  /**
+   * RELATIONSHIP PROPOSALS THAT BELONG TO THIS CATEGORY (AG, 2026-08-06) --
+   * the second review-unit type, sitting in the SAME user-facing category
+   * as the candidates beside them (RELATIONSHIP_KIND_SECTION).
+   *
+   * A PARALLEL LIST RATHER THAN A MIXED `candidateIds`, deliberately.
+   * `candidateIds` is read by headingActionScope, reviewZone, row
+   * selection, gridStep's visible-id list and itemDigitCeilingFor, and
+   * every one of them means "candidates" specifically -- a proposal id in
+   * that array would be a decision scope that cannot be decided. The split
+   * Andrew objected to was in the TAXONOMY ("the navigation taxonomy should
+   * reflect the user's work, not the underlying data structures"), and the
+   * taxonomy is the section; the storage staying typed costs the reviewer
+   * nothing because the rendered list is the concatenation.
+   */
+  relationshipProposalIds?: string[];
 }
 
 /** What varies between the two sectioned-queue surfaces: which stage the
@@ -5819,13 +6673,70 @@ function renderSectionedQueue(
     triageExpandedId = null;
   }
   const queue = el("div", { class: "triage-queue" });
-  for (const section of sections) {
-    const sectionEl = el("div", { class: "triage-section" });
+  /* ONLY THE FOCUSED CATEGORY IS IN THE SCROLL (AG, 2026-08-06): "We now
+   * have horizontal category pills. There is no reason to visually still
+   * show the scrolling categories that trail off the bottom ... We can just
+   * hide non-focused categories from the scroll/window."
+   *
+   * A RENDER FILTER, NOT A MODEL FILTER, and the distinction is the whole
+   * safety of this change. `sections` is untouched; every consumer that
+   * asks what the stage contains -- the pill bar, the advance ladder,
+   * headingActionScope, zone membership -- still sees all of it. So "once
+   * you finish/nav past the last item in one category, you go to the next"
+   * needs no new code: navigation was never reading the DOM, and the next
+   * render simply swaps which section is drawn.
+   *
+   * The pill bar is what makes this affordable. It was already "a new
+   * permanent layer" saying what the stage contains; hiding the sibling
+   * sections promotes it from a convenience to the stage's only map, which
+   * is why it stays complete (finished pills mute-then-green rather than
+   * disappearing -- see .section-pill-done in index.html).
+   *
+   * Falls back to rendering everything when no section owns the cursor, so
+   * a stage with no focus is never a blank screen.
+   */
+  // RESOLVES EITHER CURSOR (AG, 2026-08-06). Reading only the item cursor
+  // was a real defect: a category holding ONLY proposals (Numeric) is
+  // entered by setting structuralCardFocusPending, the item cursor stays
+  // parked wherever it was, and this filter then drew that stale section --
+  // Numeric rendered Institutional's rows and Institutional's buttons. The
+  // card cursor is checked first for the same reason currentStageCategoryId
+  // checks it first: it is the more specific claim.
+  const cursorCardId = structuralCardFocusPending as string | null;
+  const cursorItemId = state.focus?.target.itemId ?? null;
+  const cursorSectionId = cursorCardId
+    ? (sections.find((s) => (s.relationshipProposalIds ?? []).includes(cursorCardId))?.id ?? null)
+    : cursorItemId
+      ? (sections.find((s) => s.candidateIds.includes(cursorItemId))?.id ?? null)
+      : null;
+  const visibleSections = cursorSectionId === null ? sections : sections.filter((s) => s.id === cursorSectionId);
+  for (const section of visibleSections) {
+    const sectionEl = el("div", { class: "triage-section", "data-section-id": String(section.id) });
     // `remainingIds` (not just a count) so the section's Decision Reduction
     // figure below is scoped to EXACTLY the set this line calls remaining.
+    // Declared up here because both the select-all and the bulk-action
+    // suppression below read it; see the ruling at `sectionLevel`.
+    const isMixedCategory = (section.relationshipProposalIds ?? []).length > 0 && section.candidateIds.length > 0;
+    /* WHICH REVIEW-UNIT TYPE OWNS THE DETAIL PANE. Declared at SECTION
+     * scope, not inside renderGrid, because both the heading (the
+     * collection's global actions) and the grid (dimming, expansion) read
+     * it, and two derivations of "which unit type is active" is how the
+     * paint and the keystroke come to disagree. */
+    const activeUnitIsProposal = structuralCardFocusPending !== null && (section.relationshipProposalIds ?? []).length > 0;
     const remainingIds = section.candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
-    const done = section.candidateIds.length - remainingIds.length;
-    const remaining = remainingIds.length;
+    /* COUNTED IN REVIEW UNITS, BOTH TYPES (AG, 2026-08-06). The pill and
+     * the heading below it are two renderings of one number, and they
+     * disagreed the moment proposals joined a category: Numeric's pill read
+     * (4) over a heading reading "0 remaining", because the heading counted
+     * only candidates and Numeric has none. Whichever number the reviewer
+     * believed, the other was lying. stageCategories already counts units
+     * for the pill; this is the same sum at the other site. */
+    const sectionProposals = (section.relationshipProposalIds ?? [])
+      .map((id) => state.structuralRelationships?.proposals.find((p) => p.proposalId === id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p));
+    const proposalsDone = sectionProposals.filter((p) => p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]))).length;
+    const done = section.candidateIds.length - remainingIds.length + proposalsDone;
+    const remaining = remainingIds.length + (sectionProposals.length - proposalsDone);
     // CATEGORY-FIRST REVIEW (AG, 2026-07-30): the category is the primary
     // object -- title line (name, progress, Accept All Remaining), then
     // the one-line conclusion beneath; a fully-complete category takes
@@ -5834,6 +6745,7 @@ function renderSectionedQueue(
     if (remaining === 0) sectionEl.classList.add("triage-section-complete");
     const heading = el("div", { class: "triage-section-heading" });
     const titleLine = el("div", { class: "triage-section-titleline" });
+    if (isAcknowledged({ kind: "section", stage, sectionId: String(section.id) })) titleLine.classList.add("completion-acknowledged");
     titleLine.appendChild(el("span", { class: "triage-section-title" }, section.label));
     titleLine.appendChild(el("span", { class: "triage-section-count" }, `${done} complete • ${remaining} remaining`));
     // DECISION REDUCTION (AG, 2026-08-03): scoped to what REMAINS here, so
@@ -5848,7 +6760,7 @@ function renderSectionedQueue(
     // so the section title line claims it only in the 0/1-tier shapes,
     // mirroring the `numbered` argument passed to emitSectionActions below
     // for exactly the same reason.
-    if ((section.tiers ?? []).length <= 1) appendHeadingSelectionControls(titleLine, section.candidateIds, state);
+    if ((section.tiers ?? []).length <= 1) appendHeadingSelectionControls(titleLine, section.candidateIds, state, isMixedCategory);
     // ACCEPT ALL REMAINING: applies the category interpretation to every
     // unresolved VISIBLE item -- per-item recommendations are honored
     // first, everything else takes the section's own conclusion (or, in
@@ -5860,7 +6772,27 @@ function renderSectionedQueue(
     // function the digit handler reads. Tier actions join the SAME
     // titleLine list in the one-tier layout, and are therefore numbered as
     // one list -- never two independent passes that would both mint a ⑨.
-    const sectionLevel = headingSectionActions(policy, section, null, state);
+    /* NO CATEGORY-LEVEL BULK IN A MIXED CATEGORY (AG, 2026-08-06), his
+     * ruling and his reasoning:
+     *
+     * > I don't want to invent polymorphic bulk behavior or separate bulk
+     * > buttons simply because both unit types happen to share a category.
+     * > ... I'd rather have no bulk action than a confusing one.
+     * > Controls should exist because they solve a user problem, not
+     * > because every screen is expected to have the same controls.
+     *
+     * A category holding both singleton candidates and relationship
+     * proposals has two action vocabularies, and one button spanning them
+     * would either lie about its scope (§5's "a button that cannot say 150
+     * cannot do 150") or need a polymorphic meaning invented for it. Each
+     * unit already exposes the actions that make sense for it, on its own
+     * card. So the heading simply offers nothing here.
+     *
+     * NOT A SYMMETRY BUG: it is expected and acceptable that some
+     * categories carry a bulk action and others do not. If a workflow later
+     * shows a genuine need, add one then, on evidence.
+     */
+    const sectionLevel = isMixedCategory ? [] : headingSectionActions(policy, section, null, state);
     heading.appendChild(titleLine);
     // Explanation sentences REMOVED from the body (AG, 2026-08-02, "remove
     // the little clarifier sentences in grey ... entirely") -- the section
@@ -5895,7 +6827,9 @@ function renderSectionedQueue(
       // The card cursor moves the numbered scope to the cards entirely
       // (activeScopeSectionActions), so no row heading claims digits then.
       const active = numbered && structuralCardFocusPending === null && focusedItemId !== null && scopeIds.includes(focusedItemId);
-      for (const { action, digit } of sectionActionDigitAssignments(actions, (a) => a.chord)) {
+      const digitAssignments = new Map(digitAssignableSectionActions(actions).map((action) => [action, null as number | null]));
+      for (const { action, digit } of sectionActionDigitAssignments(digitAssignableSectionActions(actions), (a) => a.chord)) digitAssignments.set(action, digit);
+      for (const action of actions) {
         // CHORD CAPS ARE ALWAYS ADVERTISED (AG, 2026-08-03: "these do not
         // have Opt/Alt shortcuts -- review all panels and let's fix this
         // globally"). Digits keep the active-scope gate they were designed
@@ -5910,21 +6844,193 @@ function renderSectionedQueue(
         // (.action-chord-idle) rather than at full strength: the binding is
         // legible everywhere, the live target is unmistakable, and the
         // button never claims a key it will not answer.
-        const chordCap = action.chord !== null ? groupScopeChordLabel(action.chord) : null;
-        const cap = chordCap ?? (active ? digit : null);
+        const chordCap = action.keycap ?? (action.chord !== null ? groupScopeChordLabel(action.chord) : null);
+        const cap = chordCap ?? (active ? digitAssignments.get(action) ?? null : null);
         const btn = cap !== null ? keycapButton(cap, action.label, action.run) : button(action.label, action.run);
         applyVerboseLabel(btn, action);
         if (chordCap !== null && !active) btn.classList.add("action-chord-idle");
         btn.classList.add("triage-accept-all");
         btn.title = action.hint;
         host.appendChild(btn);
+        renderResetConfirmation(host, action);
       }
     };
+    // The TIER actions take the mixed-category suppression too. They reach
+    // the same title line through a different door, so suppressing only
+    // `sectionLevel` left "Keep abbreviations (1)" sitting above a list of
+    // four -- a count that is correct about candidates and wrong about the
+    // category, which is exactly the confusion the ruling forbids.
     const titleLineActions =
-      tierGroups.length === 1 ? [...sectionLevel, ...headingSectionActions(policy, section, tierGroups[0]!, state)] : sectionLevel;
+      tierGroups.length === 1 && !isMixedCategory ? [...sectionLevel, ...headingSectionActions(policy, section, tierGroups[0]!, state)] : sectionLevel;
     emitSectionActions(titleLineActions, section.candidateIds, titleLine, tierGroups.length <= 1);
-    const renderGrid = (gridIds: readonly string[]): void => {
+    /* THE COLLECTION'S OWN GLOBAL ACTIONS (AG, 2026-08-06: "Can we still
+     * have the 'All are abbreviations' or 'All written out' global
+     * options?" -- the real labels are "Accept as acronyms" / "Accept
+     * written out").
+     *
+     * NOT A CONTRADICTION of the no-bulk-in-a-mixed-category ruling above.
+     * What that forbids is a CATEGORY-level button spanning two action
+     * vocabularies. These are the relationship collection's OWN actions,
+     * over only its own members -- exactly the "those units already expose
+     * the actions that make sense for them" the ruling relies on. The
+     * category still offers nothing of its own.
+     *
+     * Grouped by kind because a category can hold more than one (Numeric
+     * takes both the numeric and alphanumeric kinds), and each kind's
+     * vocabulary is its own.
+     *
+     * RENDERED ONLY WHILE THE COLLECTION IS THE ACTIVE UNIT (AG,
+     * 2026-08-06). This previously read "ALWAYS RENDERED, KEYCAPPED ONLY
+     * WHEN THE COLLECTION IS ACTIVE ... so a reviewer standing on MAY still
+     * learns these exist rather than discovering them by accident."
+     *
+     * Andrew, standing on exactly that MAY: "This is a single item and the
+     * two options are also illogical given what it represents. So, on two
+     * counts these buttons should not appear: 1) It is a single item, so no
+     * global application is appropriate 2) These buttons do not represent
+     * the issue on this particular item, which is that it appears to be an
+     * acronym but could be part of these other May references."
+     *
+     * The discoverability argument was answering the wrong question. What a
+     * reviewer working MAY learns from "Accept as acronyms (3)" is not "this
+     * feature exists" but "there is a bulk action available for what I am
+     * looking at" -- and there is not. MAY is a candidate, not one of the
+     * three pairs; its real question is whether it is an acronym at all or a
+     * reference to the May-session entities in its own identity list. Two
+     * buttons offering to standardize it on an acronym or a written-out form
+     * describe a decision that is not on the table.
+     *
+     * Gated on the SAME condition that already gated their digits, which is
+     * why this also settles the keycap report from earlier today: the caps
+     * were missing precisely because the collection was not the active
+     * scope, so a capless button was a button that should not have been
+     * drawn. Cap and control now appear and disappear together, and no
+     * surface advertises an action whose scope the reviewer is not in. */
+    if (activeUnitIsProposal) {
+      const collectionProposals = relationshipProposalsInActiveReviewZone(stage, section, state);
+      if (collectionProposals.length > 0) {
+        const kinds: RelationshipKind[] = [];
+        for (const proposal of collectionProposals) if (!kinds.includes(proposal.kind)) kinds.push(proposal.kind);
+        for (const kind of kinds) {
+          const ofKind = collectionProposals.filter((p) => p.kind === kind);
+          const undecided = ofKind.filter((p) => !p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id])));
+          // Same single-item rule as the category headings: a "global" over
+          // one pair is the card's own buttons, reworded.
+          if (undecided.length <= 1) continue;
+          for (const { action, digit } of sectionActionDigitAssignments(relationshipKindActions(kind, ofKind, undecided), (a) => a.chord)) {
+            /*
+             * The digit is UNCONDITIONAL here now, and the idle-dimming below
+             * is gone, because the whole block is gated on the collection
+             * being the active unit -- so by the time we reach this line the
+             * scope IS live and there is nothing to dim. Earlier today this
+             * read `activeUnitIsProposal ? digit : null`, which was the source
+             * of the capless-button report ("these buttons do not have the
+             * keyboard shortcut graphics"): the acronym pair declares no chord
+             * by design, so a non-active collection drew no cap at all.
+             *
+             * The fix that stuck was not to draw the cap anyway (tried, and
+             * reversed by AG: "If it's not in live scope please hide it") but
+             * to stop drawing the BUTTON outside its scope -- see the block
+             * comment above. One condition now governs both, so a control and
+             * its shortcut can never again disagree about whether they apply.
+             *
+             * `digit` can still be null if the assigner exhausts 1-9; the
+           * `cap !== null` test below keeps that a plain button, the one
+           * case where there genuinely is no key to name.
+           */
+          const chordCap = action.chord !== null ? groupScopeChordLabel(action.chord) : null;
+          const cap = chordCap ?? digit;
+          // NAMES ITS BLAST RADIUS (§5): the count is the active Review
+          // Zone's proposal subset, not the whole category's, which is the
+          // whole point of it being here --
+          // unless the action reaches fewer than the collection, in which
+          // case IT knows the number and this does not. See
+          // QueueSectionAction.scopeCount for the "(3) and (3) over 4" this
+          // fallback exists to stop repeating.
+          const label = `${action.label} (${action.scopeCount ?? undecided.length})`;
+          const btn = cap !== null ? keycapButton(cap, label, action.run) : button(label, action.run);
+          btn.classList.add("triage-accept-all", "collection-action");
+          btn.title = action.hint;
+          titleLine.appendChild(btn);
+        }
+      }
+      }
+    }
+    const renderGrid = (gridTargets: readonly ReviewDisplayTarget[]): void => {
+    /* THE ZONE BAND, RESTORED (AG, 2026-08-06, second attempt -- verified in
+     * a real browser this time, which is the only reason it is back).
+     *
+     * WHY THE FIRST ATTEMPT FAILED, now actually diagnosed rather than
+     * guessed: both grids were `repeat(auto-fill, minmax(14rem, 1fr))`, so
+     * each one independently chose a column count from ITS OWN width. The
+     * band sat in the split's narrow column and got 2; the rest sat at
+     * section width and got 4. That is what produced "~14 cells" and
+     * "gets bigger, then shrinks back" -- the band's row count was a
+     * function of a width that changed as the panel beside it changed.
+     *
+     * WHY IT WORKS NOW: the column count is COUNTED, not measured
+     * (syncZoneGridLayout: `cells.length >= ZONE_TWO_COLUMN_THRESHOLD`), and
+     * the track is `minmax(0, 34rem)` -- a MAX, so columns shrink to fit
+     * instead of overflowing or re-flowing. A 24-cell band is 2 columns of
+     * 12 wherever it is put, and cannot change shape while the cursor moves,
+     * because nothing about its shape reads layout. Measured live: band
+     * 569px, a stable 12 rows, against a 843px viewport.
+     *
+     * THE REMAINDER IS COLLAPSED, which §4a of the design record did not
+     * specify (it said "below a gap at full width"). That was written before
+     * anyone measured it: on Likely People the remainder is 253 cells =
+     * 6,021px, so a drawn-but-open remainder leaves the 7-screen scroll the
+     * band exists to end. Collapsed, the whole section is 2.1 screens
+     * (18,018px -> 8,933px -> 1,762px across this change and the sibling
+     * hide). The summary NAMES the count, for the §5 reason every bulk
+     * control does: the reviewer is never guessing how much is behind it.
+     *
+     * The escape hatch survives intact -- §8's unbounded explicit selection
+     * is one disclosure click away, not gone. That is the one cost of
+     * collapsing, and it is deliberate: reaching past the bound should be a
+     * gesture, not the resting state. */
+    /* THE ZONE IS BOUNDED IN REVIEW TARGETS, NOT CANDIDATES (2026-08-07).
+     *
+     * Previously this partitioned CANDIDATE ids and the proposal loop below
+     * read `restSet ? [] : section.relationshipProposalIds` -- so the moment
+     * a section's remaining work exceeded ZONE_CAPACITY, its proposals were
+     * not drawn AT ALL, while target derivation kept emitting their
+     * `proposal:*` targets. The cursor could advance onto a cell that
+     * existed nowhere on screen, and a section whose candidates were all
+     * decided never read as complete because undrawn proposals still counted
+     * as remaining work.
+     *
+     * The ruling (AG): proposals are first-class review cells, so zone
+     * capacity and ordering apply to REVIEW TARGETS. `reviewZone` needed no
+     * change to accept them -- it is documented as pure over "(ordered ids,
+     * resolved set, size)" and never interprets an id, so it partitions
+     * review-target KEYS exactly as well as candidate ids, and its
+     * materialized-membership property is unaffected.
+     *
+     * RESOLVED-NESS IS THE UNIFIED PREDICATE: a proposal is remaining work
+     * until every member carries a decision (isReviewDisplayTargetResolved),
+     * which is the same test the heading counts and the card's own green
+     * already use.
+     *
+     * WHAT THIS DOES NOT CHANGE, and why the candidate-facing bulk buttons
+     * stay exactly correct: targets are ordered candidates-then-proposals
+     * within a grid, so a proposal can only enter the band once every
+     * undecided candidate in that grid is already in it. The band's
+     * candidate subset is therefore always identical to
+     * headingActionScope's own `reviewZone(undecided candidates)` -- the
+     * buttons cover precisely the candidate cells the band shows. Pinned by
+     * ui-smoke's zone-agreement case. */
+    // Decided items leave the band, per §4a ("an item leaves the band when
+    // it is decided -- legible cause and effect"): the zone is the next N
+    // UNRESOLVED, so a decision promotes one item out and pulls the next in.
+    // The split itself lives in reviewZone.ts (partitionByZone) so it is
+    // pinned without a browser; see that function for the unresolved-
+    // subsequence invariant the advance depends on.
+    const partition = partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state));
+    const restSet = partition.banded ? new Set(partition.rest.map(reviewDisplayTargetKey)) : null;
+    const inRest = (target: ReviewDisplayTarget): boolean => restSet?.has(reviewDisplayTargetKey(target)) ?? false;
     const grid = el("div", { class: "triage-grid" });
+    const restGrid = el("div", { class: "triage-grid" });
     // SIDE-BY-SIDE FOCUS PANE (AG, 2026-08-03) -- the detail panel moves
     // OUT of the grid flow and into a column beside it.
     //
@@ -5952,7 +7058,85 @@ function renderSectionedQueue(
     // standard grid"), which is also exactly the pre-change markup, so an
     // untouched section is byte-for-byte what it was.
     const focusPanels: HTMLElement[] = [];
-    for (const candidateId of gridIds) {
+    // `activeUnitIsProposal` (section scope) gates `expanded` below: the two
+    // cursors coexist, so without it the pane renders BOTH the candidate's
+    // panel and the card -- "display issues on the focus side when looking
+    // at the trio". One pane, one card, the selected unit's.
+    /* THE BLANK ROW BETWEEN THE TWO UNIT GROUPS (AG, 2026-08-06: "Like a
+     * 'blank' row between the 1 and 3 in this example, so the whole thing
+     * takes up five row").
+     *
+     * The alternating band was doing the opposite of its job here -- it
+     * tints by VISUAL row, so it ran straight across the boundary and the
+     * dimmed singleton merged into the trio below it. An empty row breaks
+     * the run without adding a rule, a heading, or a container, none of
+     * which the list has anywhere else.
+     *
+     * Deliberately NOT a `.triage-row`: syncZoneGridLayout counts children
+     * with that class to pick the column shape and to index the banding, so
+     * a spacer wearing it would both shift the stripe and count toward the
+     * 15-item two-column threshold. It occupies a grid cell and nothing
+     * else -- no focus, no click target, no tab stop.
+     *
+     * PER GRID, now that the zone partitions targets: the band and the rest
+     * can each hold a candidate/proposal boundary, and a spacer belongs at
+     * whichever one actually occurs. Emitted lazily at the first proposal
+     * row a grid receives, and only if that grid already drew something --
+     * a grid that opens with a proposal has no run to break. */
+    const spacerDrawn = new Set<HTMLElement>();
+    const appendCell = (host: HTMLElement, row: HTMLElement, isProposalCell: boolean): void => {
+      if (isProposalCell && !spacerDrawn.has(host)) {
+        spacerDrawn.add(host);
+        if (host.childElementCount > 0) host.appendChild(el("div", { class: "triage-row-spacer", "aria-hidden": "true" }));
+      }
+      host.appendChild(row);
+    };
+    /* ONE WALK OVER THE UNIFIED TARGETS. Candidates and proposals are drawn
+     * by the same loop, in the order `sectionDisplayTargets` derives, into
+     * the same band/rest partition -- so "what is painted" and "what the
+     * cursor can reach" are the same list read once, not two lists that have
+     * to be kept in step. */
+    let proposalCellsPainted = 0;
+    for (const target of gridTargets) {
+      const host = inRest(target) ? restGrid : grid;
+      if (target.kind === "proposal") {
+        const proposalId = target.id;
+        const proposal = state.structuralRelationships?.proposals.find((p) => p.proposalId === proposalId);
+        if (!proposal) continue;
+        const members = proposal.candidateIds
+          .map((id) => state.detection?.candidates.find((c) => c.id === id))
+          .filter((candidate): candidate is Candidate => Boolean(candidate));
+        if (members.length === 0) continue;
+        const addressed = proposal.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]));
+        const pendingProposalAction = pendingDecisionOf(isEditingRelationship(proposal.proposalId, "Rename"), isEditingRelationship(proposal.proposalId, "Redact"));
+        const proposalSummary = decisionSummary(proposal.candidateIds.map((id) => state.reviewSession?.candidateDecisions[id]?.decision));
+        const isSelected = structuralCardFocusPending === proposalId;
+        const row = el("div", { class: "triage-row", "data-proposal-id": proposalId });
+        if (addressed) row.classList.add("triage-row-done");
+        if (pendingProposalAction) row.classList.add(decisionClass(pendingProposalAction), "decision-tinted");
+        else if (addressed && proposalSummary.dominant) row.classList.add(decisionClass(proposalSummary.dominant), "decision-tinted");
+        if (isSelected) row.classList.add("triage-row-focused");
+        if (!activeUnitIsProposal) row.classList.add("triage-row-inactive-unit");
+        row.appendChild(el("span", { class: "triage-check-slot" }));
+        // The pair IS the label -- "A ↔ B" says at a glance what the review
+        // unit is, which a single token never could on this axis.
+        row.appendChild(el("span", { class: "triage-token" }, members.map((m) => m.displayValue).join(" ↔ ")));
+        row.addEventListener("click", () => {
+          scopeWidenedFrom = null;
+          structuralCardFocusPending = proposalId;
+          render();
+        });
+        appendCell(host, row, true);
+        proposalCellsPainted += 1;
+        if (isSelected) {
+          const panelHost = el("div", { class: "triage-expanded" });
+          renderStructuralRelationships(panelHost, state, { only: proposalId, showGroupHeading: false });
+          if (workspacePane) workspacePane.panels.push(panelHost);
+          else focusPanels.push(panelHost);
+        }
+        continue;
+      }
+      const candidateId = target.id;
       const candidate = state.detection?.candidates.find((c) => c.id === candidateId);
       if (!candidate) continue;
       const decided = state.reviewSession?.candidateDecisions[candidateId];
@@ -5977,7 +7161,10 @@ function renderSectionedQueue(
       // requests (hold-open, open editor) always expand. See
       // WorkspacePaneSink's doc comment.
       const focusExpands = workspacePane ? workspacePane.scopeKind === "item-focus" : true;
-      const expanded = (isFocused && focusExpands) || triageExpandedId === candidateId || pendingRowAction !== null;
+      // `&& !activeUnitIsProposal`: a pair owning the pane means no
+      // candidate panel is drawn, including the hold-open and open-editor
+      // cases -- one pane, one card, always the selected unit's.
+      const expanded = ((isFocused && focusExpands) || triageExpandedId === candidateId || pendingRowAction !== null) && !activeUnitIsProposal;
       const parked = isFocused && !focusExpands && triageExpandedId !== candidateId && pendingRowAction === null;
 
       const row = el("div", { class: "triage-row", "data-item-id": candidateId });
@@ -6030,8 +7217,50 @@ function renderSectionedQueue(
       row.appendChild(checkSlot);
       // Parked cursor wears the hollow marker: position without activation.
       row.appendChild(el("span", { class: "triage-state" }, decided ? "✓" : isFocused ? (parked ? "▷" : "▶") : ""));
+      /*
+       * THE PAIR TOKEN (AG, 2026-08-06) -- "A ↔ B" on rows that have a
+       * confident counterpart, so a whole section can be judged by scanning
+       * the column instead of opening each card. See confidentCounterpartFor
+       * for which suggestions qualify and why term claims do not.
+       *
+       * Reuses the relationship rows' own device rather than inventing one:
+       * renderStructuralProposalRows already joins a proposal's members with
+       * " ↔ " inside this same `.triage-token`, so the glyph keeps its single
+       * meaning ("these denote the same thing") across both review-unit types
+       * and a reviewer learns it once.
+       *
+       * UNDECIDED ROWS ONLY. A decided row already carries "→ <what was
+       * chosen>", so a pair beside it would either repeat that or, worse,
+       * contradict it -- a candidate resolved as `Keep as-is` reading
+       * "Andrew ↔ Andrew Goodloe → Keep as-is" asserts an equivalence the
+       * reviewer just declined.
+       *
+       * THE TWO SIDES ARE NOT PEERS HERE, unlike on a relationship row where
+       * the pair IS the review unit. Here the candidate is the unit and the
+       * counterpart is the proposed resolution, so the counterpart takes the
+       * muted supporting treatment: the eye runs down a column of bold
+       * originals and reads the resolutions as an aside. That also buys back
+       * the width the second value costs, which matters in a two-column grid
+       * where `.triage-token` ellipsizes -- the full pair is on the title
+       * either way.
+       *
+       * NOT GATED TO AMBIGUITY CHECK, though that is where it was asked for.
+       * This renderer is shared, the reasoning is identical wherever a row
+       * has a confident counterpart, and a stage check here would make two
+       * surfaces that behave the same reason about it differently -- the
+       * exact split the suggestion-chip rules above were written to avoid.
+       * One condition to gate it if that proves wrong in use.
+       */
+      const counterpart = decided ? null : confidentCounterpartFor(rec);
       const token = el("span", { class: "triage-token" }, candidate.displayValue);
-      token.title = decided ? `Reviewed -- ${decisionDisplayLabel(decided.decision)}` : candidate.detectedType;
+      if (counterpart !== null) {
+        token.appendChild(el("span", { class: "triage-token-pair" }, ` ↔ ${counterpart}`));
+      }
+      token.title = decided
+        ? `Reviewed -- ${decisionDisplayLabel(decided.decision)}`
+        : counterpart !== null
+          ? `${candidate.displayValue} ↔ ${counterpart}`
+          : candidate.detectedType;
       row.appendChild(token);
       // Inline recommendations ARE the primary interaction: the same
       // digit keycap chips as everywhere else (1 accepts the first, 2 the
@@ -6057,13 +7286,80 @@ function renderSectionedQueue(
       // Decided rows are unaffected: their quiet "→ label" record is not a
       // control, and recommendationForCandidate already returns null for a
       // decided item, so the panel header has nothing to duplicate.
-      if (rec && rec.suggestions.length > 0) {
-        if (decided) {
-          row.appendChild(el("span", { class: "triage-arrow triage-arrow-done" }, `→ ${rec.suggestions[0]!.label}`));
-        } else if (!expanded) {
-          row.appendChild(recommendationSuggestionButtons(candidateId, stage, rec));
-        }
+      if (decided) {
+        /*
+         * THE DECIDED ROW NAMES THE DECISION (2026-08-06, from AG's report:
+         * "I swear I selected 'this is a name' and I got this" -- an item he
+         * had resolved as a person's name displaying "→ Common word").
+         *
+         * This line read `rec.suggestions[0]!.label` unconditionally: the
+         * FIRST suggestion, never the accepted one. That was correct while
+         * the term archetypes offered exactly one suggestion, and became
+         * silently wrong on 2026-08-03 when the name escape hatch added ②
+         * "Person's name" beside ① "Common word" -- from the "Amy" case, the
+         * very token that later exposed it. Every ② and every identity
+         * option the reviewer ever pressed reported the ① claim instead.
+         *
+         * `rationale` is now recorded on the decision itself at the moment
+         * the chip is pressed (ReviewSession.ts), so the row reads back what
+         * was actually chosen rather than re-deriving a guess from a
+         * decision-blind recommendation. Two consequences worth knowing:
+         *
+         *  - A decision made with a BARE button (Keep as-is / Change /
+         *    Redact / Ignore), a bulk action, or an import has no rationale
+         *    and falls back to its decision label. That is deliberate, not a
+         *    gap: the reviewer named no claim, and printing one they never
+         *    made is the unearned inference this app refuses elsewhere.
+         *    It does mean two gestures with the same document outcome can
+         *    read differently here -- "→ Person's name" vs "→ Keep as-is" --
+         *    which is the honest reporting of a real difference in what the
+         *    reviewer actually said.
+         *  - Sessions saved before this field existed have no rationale on
+         *    any decision, so they degrade to decision labels wholesale
+         *    rather than to the old wrong text. `rationale` is additive and
+         *    optional precisely so those files still load (no schema bump).
+         *
+         * No longer gated on `rec` at all: a decided row's text now comes
+         * from the decision, and a decided item that derives no recommendation
+         * still deserves to say what happened to it.
+         */
+        row.appendChild(
+          el("span", { class: "triage-arrow triage-arrow-done" }, `→ ${decided.rationale ?? decisionDisplayLabel(decided.decision)}`)
+        );
       }
+      // SUGGESTION CHIPS REMOVED FROM THE CARD ENTIRELY (AG, 2026-08-06:
+      // "those need to go away entirely. they are covered in the focus
+      // panel").
+      //
+      // This completes a move the 2026-08-03 note above had already made
+      // half of. That pass stopped an EXPANDED card from repeating its
+      // chips, on the reasoning that this surface opens its panel with
+      // `showHeader: true` and the header renders the same buttons from the
+      // same recommendation. The remaining case -- collapsed, undecided --
+      // was left drawing them because the chips were then "the primary
+      // interaction". They are not any more: the focused item's panel is
+      // always open (see `acknowledgement`'s doc comment), so the chips for
+      // the item the reviewer is actually working on are always on screen
+      // one place. What the card was still drawing was chips for items the
+      // reviewer is NOT working on -- two stacked buttons per card, on
+      // every card in the grid, for a choice none of them is being asked to
+      // make yet.
+      //
+      // NOTHING IS LOST FROM THE KEYBOARD PATH, which is why this is a
+      // deletion rather than a relocation: the digit accelerators act on
+      // the FOCUSED item, and that item's panel still renders and still
+      // numbers its chips. The command bar's own "1–9 Accept suggestion"
+      // legend is derived from the focused candidate's suggestions
+      // (commandBarLegend), not from anything drawn here.
+      //
+      // What DOES go is the mouse shortcut of clicking a suggestion on an
+      // unfocused card without visiting it first. That is the intended
+      // trade: this surface is a queue of items to be worked one at a time,
+      // and a control that acts on a card the reviewer has not read is not
+      // an affordance this app wants.
+      //
+      // `rec` is still computed above -- the decided branch reads it, and
+      // the collapsed row's other affordances depend on it.
       const chevron = el("button", { class: "triage-expand", title: expanded ? "Collapse (Space)" : "Details (Space)" }, expanded ? "▾" : "▸");
       chevron.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -6084,7 +7380,7 @@ function renderSectionedQueue(
         dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: candidateId });
         render();
       });
-      grid.appendChild(row);
+      appendCell(host, row, false);
 
       if (expanded) {
         // The EXISTING detail panel, unchanged in content and scheme --
@@ -6098,15 +7394,81 @@ function renderSectionedQueue(
           : decided
             ? `${decisionClass(decided.decision)} decision-tinted`
             : "scheme-nav decision-tinted";
-        renderCandidateDetailPanel(panelHost, candidate, state.quality, reviewOccurrences, decided?.decision, stage, state, { showHeader: true, schemeClass: panelScheme });
+        renderCandidateDetailPanel(panelHost, candidate, state.quality, reviewOccurrences, decided?.decision, stage, state, {
+          showHeader: true,
+          schemeClass: panelScheme,
+          hideRecommendationBadge: stage === "ambiguity-check",
+        });
         // REVIEW SCOPE, Pass 1: with a workspace inspector, panels leave
         // the section entirely and land in the inspector column.
         if (workspacePane) workspacePane.panels.push(panelHost);
         else focusPanels.push(panelHost);
       }
     }
+    /* THE SECOND REVIEW-UNIT TYPE, IN THE SAME LIST (AG, 2026-08-06).
+     *
+     * Andrew: "treat them as different review-unit types within the same
+     * category ... the detail pane changes based on the selected review
+     * item, not because the user crossed an implementation boundary."
+     *
+     * So a proposal gets an ordinary row in the ordinary grid, and its card
+     * mounts in the pane exactly where a candidate's panel would. Nothing
+     * about the row markup is special-cased beyond the label, which is the
+     * pair rather than a single token. That row is now drawn by the single
+     * unified walk above rather than by a second loop appended after it --
+     * "in the same list" made literal.
+     *
+     * DIMMING IS BY UNIT TYPE, not by "not focused": with MAY selected all
+     * three pairs dim, and selecting any pair undims all three and dims
+     * MAY. That is Andrew's rule, and the reason it is right is that it
+     * tells the reviewer which vocabulary the visible actions belong to --
+     * the dimmed rows are the ones the current card's buttons cannot act
+     * on. Nothing moves, nothing collapses, nothing disappears.
+     *
+     * A candidate row dims when the CARD cursor owns the category, the
+     * mirror of the rule above -- AND gives up its focus ring.
+     *
+     * The ring has to go explicitly because the two cursors coexist:
+     * `state.focus.target.itemId` still points at MAY while
+     * structuralCardFocusPending points at a pair, so the row would render
+     * dimmed AND selected at once (AG: "MAY retains selected border when
+     * dimmed out of focus"). Two highlights on one screen is the "where am
+     * I" ambiguity the row-click handler already stands the card cursor
+     * down to avoid; this is the same rule from the other direction.
+     *
+     * BOTH GRIDS: with the zone bounding review targets, a candidate cell
+     * can sit in the withheld remainder while a proposal owns the pane, and
+     * a rest row that kept its ring would be a second highlight hiding
+     * inside the disclosure. Gated on cells actually PAINTED, not on the
+     * section declaring proposals -- a proposal the renderer skipped (no
+     * surviving members) dims nothing. */
+    if (activeUnitIsProposal && proposalCellsPainted > 0) {
+      for (const host of [grid, restGrid]) {
+        for (const row of Array.from(host.querySelectorAll<HTMLElement>(".triage-row[data-item-id]"))) {
+          row.classList.add("triage-row-inactive-unit");
+          row.classList.remove("triage-row-focused", "triage-row-parked");
+        }
+      }
+    }
+
+    /* The withheld remainder, behind a disclosure that names its size.
+     *
+     * FORCED OPEN WHEN IT HOLDS THE CURSOR. Focus can legitimately land in
+     * here -- Tab, a click, or an arrow move off the band's edge -- and a
+     * focused row inside a closed <details> is a cursor the reviewer cannot
+     * see, which is the "where am I" failure the row-click handler above
+     * already exists to prevent. The disclosure is a default, not a cage. */
+    const appendRest = (): void => {
+      if (!restSet || restGrid.childElementCount === 0) return;
+      const rest = el("details", { class: "zone-rest" });
+      rest.appendChild(el("summary", {}, `${restGrid.childElementCount} more in ${section.label} — not covered by the buttons above`));
+      rest.appendChild(restGrid);
+      if (restGrid.querySelector(".triage-row-focused")) (rest as HTMLDetailsElement).open = true;
+      sectionEl.appendChild(rest);
+    };
     if (workspacePane || focusPanels.length === 0) {
       sectionEl.appendChild(grid);
+      appendRest();
       return;
     }
     // Pane FIRST in the DOM, items second: the pane renders on the left,
@@ -6122,11 +7484,30 @@ function renderSectionedQueue(
     split.appendChild(focusPane);
     split.appendChild(grid);
     sectionEl.appendChild(split);
+    appendRest();
     };
+    /* WHICH GRIDS THIS SECTION DRAWS -- from the SAME helpers that derive
+     * the cursor's target order (sectionCandidateTargetGroups /
+     * sectionProposalTargets), so paint order and target order are one
+     * statement read twice rather than two statements maintained in step.
+     *
+     * PROPOSALS ARE DRAWN ONCE, STRUCTURALLY. They used to live inside
+     * `renderGrid`, which runs once per tier when a section has 2+ tier
+     * groups -- so a tiered, proposal-bearing section would paint every
+     * proposal once per tier while the derivation emitted it once. No data
+     * reaches that state today (tiers come from `deriveReviewTier` over term
+     * archetypes, proposals from RELATIONSHIP_KIND_SECTION), but the tier
+     * work queued for Other Words would make it reachable, and a duplicate
+     * cell is a cursor landing on one of two identical rows. Hoisting the
+     * proposal grid OUT of the per-tier loop makes single-instance a
+     * property of the call graph rather than of today's data. */
+    const gridSequence = sectionGridSequence(section);
     if (tierGroups.length <= 1) {
       // Zero tiers (pre-tier layout) or one tier (actions already on the
-      // title line): one grid over the section's full displayed order.
-      renderGrid(section.candidateIds);
+      // title line): one grid over the section's full displayed order --
+      // candidates and proposals together, so the zone bounds them jointly
+      // and the blank spacer row still separates the two unit groups.
+      renderGrid(gridSequence[0] ?? []);
     } else {
       for (const tier of tierGroups) {
         const tierRemainingIds = tier.candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
@@ -6147,10 +7528,16 @@ function renderSectionedQueue(
         // Each tier heading is its own numbered scope: the digits follow
         // the tier the focused row actually sits in, matching ⇧A's own
         // tier-scoped rule.
-        emitSectionActions(headingSectionActions(policy, section, tier, state), tier.candidateIds, tierHeading, true);
+        emitSectionActions(isMixedCategory ? [] : headingSectionActions(policy, section, tier, state), tier.candidateIds, tierHeading, true);
         sectionEl.appendChild(tierHeading);
-        renderGrid(tier.candidateIds);
+        renderGrid(gridSequence[tierGroups.indexOf(tier)] ?? []);
       }
+      // The section's proposal grid, ONCE, after the last tier -- entry
+      // `tierGroups.length` of the sequence, present only when the section
+      // actually has proposals. See sectionGridSequence for why it is a peer
+      // of the tier grids rather than a member of any one of them.
+      const proposalGrid = gridSequence[tierGroups.length];
+      if (proposalGrid) renderGrid(proposalGrid);
     }
     queue.appendChild(sectionEl);
   }
@@ -6169,7 +7556,7 @@ function acceptTriageRecommendation(candidateId: string, stage: "item-check" | "
   }
   const primary = recommendationForCandidate(candidateId, state)?.suggestions[0];
   if (!primary) return;
-  runRecommendationSuggestion(candidateId, stage, primary.op);
+  runRecommendationSuggestion(candidateId, stage, primary);
 }
 
 function toggleTriageExpansion(candidateId: string): void {
@@ -6204,10 +7591,11 @@ function acceptAllInSection(config: AcceptAllConfig, label: string, candidateIds
   // COMPLETION-PATH AUDIT (AG, 2026-08-03): this button clears a whole
   // section through raw dispatches, exactly like runSectionAction, and had
   // no advance whatsoever -- the reviewer was left parked above work they
-  // had just finished. Snapshot the displayed order pre-dispatch for the
-  // shared advance below.
-  const visiblePre = _stage === "item-check" ? visibleItemCheckIds(state) : visibleAmbiguityIds(state);
+  // had just finished. Snapshot the displayed review targets and the anchor
+  // pre-dispatch, while this section is still in the list.
+  const completionAnchor = snapshotSectionCompletionAnchor(_stage, candidateIds, state);
   const { viaRecommendation, withoutSuggestion: plain } = applyOwnSuggestions(undecided, state);
+  anchorSuggestionsAccepted(undecided.length, viaRecommendation, plain.length);
   if (fallback && plain.length > 0) {
     dispatcher.dispatchReview({ family: "review", type: "bulkApplyDecision", candidateIds: plain, decision: fallback });
   }
@@ -6218,7 +7606,7 @@ function acceptAllInSection(config: AcceptAllConfig, label: string, candidateIds
   if (viaRecommendation > 0) parts.push(`${viaRecommendation} via their own suggestion`);
   const skipped = !fallback && plain.length > 0 ? ` ${plain.length} item(s) have no suggestion and remain for individual review.` : "";
   setStatus(`${label}: accepted ${accepted} item(s)${parts.length > 0 ? ` -- ${parts.join(", ")}` : ""}.${skipped}`);
-  advanceAfterSectionCompletion(_stage, candidateIds, visiblePre);
+  acknowledgeBulkCandidateFeedback(state, undecided, _stage, completionAnchor);
   render();
 }
 
@@ -6228,7 +7616,18 @@ function acceptAllInSection(config: AcceptAllConfig, label: string, candidateIds
  *  clicking its digit chip); items without an applicable suggestion are
  *  returned untouched for the caller's fallback or narration. Editor-
  *  opening suggestions (identifier blanks) count as "without" -- they
- *  need reviewer input and are never bulk-run. */
+ *  need reviewer input and are never bulk-run.
+ *
+ *  DECISION TRACKER MISCOUNT FIX (2026-08-06, live report: one click on an
+ *  Ambiguity Check "Accept section" over 8 items read as "8 MADE"). Every
+ *  dispatch below is stamped `viaSuggestionAccept: true` so decisionTracker.ts
+ *  recognizes the whole run as one reviewer gesture rather than one per
+ *  candidate -- callers MUST follow up with one `suggestionsAccepted`
+ *  dispatch (see runSectionAction/acceptAllInSection below) when
+ *  `viaRecommendation > 0`, the anchor event that closes the gesture. The
+ *  per-candidate audit trail is otherwise untouched on purpose ("identical
+ *  audit to clicking its digit chip" still holds -- see this function's
+ *  original note above and Commands.ts's viaSuggestionAccept doc comment). */
 function applyOwnSuggestions(
   undecided: readonly string[],
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
@@ -6236,24 +7635,52 @@ function applyOwnSuggestions(
   const withoutSuggestion: string[] = [];
   let viaRecommendation = 0;
   for (const id of undecided) {
-    const op = recommendationForCandidate(id, state)?.suggestions[0]?.op;
+    // DECISION RATIONALE (2026-08-06): the suggestion, not just its op. This
+    // path IS "clicking its digit chip" for every item at once -- the doc
+    // comment above says so -- so it must record the same claim a click
+    // would. Accepting a section of common-word items should leave each row
+    // reading "→ Common word" because that is what was accepted, and it is
+    // suggestions[0]'s label here for the honest reason (this path really
+    // does apply the first suggestion), not as a stand-in for an unknown one.
+    const suggestion = recommendationForCandidate(id, state)?.suggestions[0];
+    const op = suggestion?.op;
+    // Conditional spread rather than `rationale: suggestion?.label`, because
+    // `exactOptionalPropertyTypes` treats an explicit undefined as different
+    // from an absent key -- and absent is what "this decision names no claim"
+    // has to serialize as.
+    const rationale = suggestion !== undefined ? { rationale: suggestion.label } : {};
     if (op?.kind === "link") {
-      dispatcher.dispatchReview({ family: "review", type: "linkAmbiguousCandidate", candidateId: id, groupId: op.groupId });
+      dispatcher.dispatchReview({ family: "review", type: "linkAmbiguousCandidate", candidateId: id, groupId: op.groupId, viaSuggestionAccept: true, ...rationale });
       viaRecommendation += 1;
     } else if (op?.kind === "keep") {
-      dispatcher.dispatchReview({ family: "review", type: "keepCandidate", candidateId: id });
+      dispatcher.dispatchReview({ family: "review", type: "keepCandidate", candidateId: id, viaSuggestionAccept: true, ...rationale });
       viaRecommendation += 1;
     } else if (op?.kind === "ignore") {
-      dispatcher.dispatchReview({ family: "review", type: "ignoreCandidate", candidateId: id });
+      dispatcher.dispatchReview({ family: "review", type: "ignoreCandidate", candidateId: id, viaSuggestionAccept: true, ...rationale });
       viaRecommendation += 1;
     } else if (op?.kind === "change-to") {
-      dispatcher.dispatchReview({ family: "review", type: "renameCandidate", candidateId: id, replacement: op.replacement });
+      dispatcher.dispatchReview({ family: "review", type: "renameCandidate", candidateId: id, replacement: op.replacement, viaSuggestionAccept: true, ...rationale });
       viaRecommendation += 1;
     } else {
       withoutSuggestion.push(id);
     }
   }
   return { viaRecommendation, withoutSuggestion };
+}
+
+/** The anchor dispatch every applyOwnSuggestions caller must follow up
+ *  with -- see that function's own doc comment. A no-op when nothing was
+ *  actually resolved via suggestion (no tagged events exist yet to anchor,
+ *  and an anchor with nothing behind it would be audit noise). */
+function anchorSuggestionsAccepted(requestedCount: number, viaRecommendation: number, withoutSuggestionCount: number): void {
+  if (viaRecommendation === 0) return;
+  dispatcher.dispatchReview({
+    family: "review",
+    type: "suggestionsAccepted",
+    requestedCount,
+    appliedCount: viaRecommendation,
+    skippedCount: withoutSuggestionCount,
+  });
 }
 
 /**
@@ -6290,16 +7717,17 @@ function runSectionAction(action: SectionAction, sectionLabel: string, candidate
   // the thing just completed, so it -- not whatever happened to hold
   // focus -- is the advance anchor), via the same advanceWithinVisibleList
   // + domain isItemResolved pair the choke point uses.
-  const visiblePre = stage === "item-check" ? visibleItemCheckIds(state) : visibleAmbiguityIds(state);
+  const completionAnchor = snapshotSectionCompletionAnchor(stage, candidateIds, state);
   if (action.op.kind === "accept-suggestions") {
     const { viaRecommendation, withoutSuggestion } = applyOwnSuggestions(undecided, state);
+    anchorSuggestionsAccepted(undecided.length, viaRecommendation, withoutSuggestion.length);
     const skipped = withoutSuggestion.length > 0 ? ` ${withoutSuggestion.length} item(s) have no suggestion and remain for individual review.` : "";
     setStatus(`${sectionLabel} — ${action.label}: ${viaRecommendation} item(s).${skipped}`);
   } else {
     dispatcher.dispatchReview({ family: "review", type: "bulkApplyDecision", candidateIds: [...undecided], decision: action.op.decision });
     setStatus(`${sectionLabel} — ${action.label}: ${undecided.length} item(s) as ${decisionDisplayLabel(action.op.decision)}.`);
   }
-  advanceAfterSectionCompletion(stage, candidateIds, visiblePre);
+  acknowledgeBulkCandidateFeedback(state, undecided, stage, completionAnchor);
   render();
 }
 
@@ -6317,27 +7745,111 @@ function runSectionAction(action: SectionAction, sectionLabel: string, candidate
  *
  * The section -- not whatever happens to hold focus -- is the anchor: it is
  * the thing just completed, so the cursor continues from its LAST member in
- * DISPLAYED order. `visiblePre` must be snapshotted before the dispatch,
- * while the section's items are still in the list.
+ * DISPLAYED order.
+ *
+ * SPLIT ACROSS THE DISPATCH, and this is the load-bearing part (2026-08-07
+ * completion-path audit). The anchor AND the target list are both snapshotted
+ * BEFORE the dispatch; only the resolved-predicate is read from `after`.
+ *
+ * It used to snapshot a `visiblePre` array of candidate ids, then advance
+ * within targets recomputed from the POST-decision state -- and the two did
+ * not compose. Once the section is complete, `visibleItemCheckIds` runs the
+ * Item Check query, so under any review-state filter every candidate in that
+ * section is gone from `after`: no target matched, and the surviving fallback
+ * handed `advanceWithinReviewTargets` a bare `"inst-2"` where every key is
+ * namespaced `"candidate:inst-2"`. indexOf missed, the scan restarted at
+ * index 0, and the cursor jumped to the first unresolved target in the STAGE
+ * -- the exact 2026-08-02 NAV-ORDER report ("I clicked 'Leave all as-is' on
+ * Institutional Terminology and then apparently ended up on New... It should
+ * have proceeded to Fall") that this function exists to prevent, reappearing
+ * as a filter-dependent bug that looked fixed.
+ *
+ * Namespacing the fallback alone would not have fixed it: the filtered id is
+ * not in the post-decision list under EITHER spelling. The anchor has to come
+ * from the list that still contains the section -- which is the same
+ * pre-decision-snapshot discipline visibleListAdvance.ts's own doc comment
+ * records as load-bearing ("the caller snapshots the visible list BEFORE
+ * dispatching ... under 'Unreviewed only' the just-decided item vanishes from
+ * a post-decision evaluation, leaving no anchor"), and the same shape
+ * dispatchReviewWithVisibleAdvance already uses. There is now no fallback at
+ * all, because there is no case left for one to cover.
+ *
+ * Landing on a stale target is not possible: a decision can only remove a
+ * target from the displayed list by RESOLVING it (a review-state filter hides
+ * decided work; text search and sort do not move under a decision), and the
+ * advance skips resolved targets by definition.
  */
-function advanceAfterSectionCompletion(
+interface SectionCompletionAnchor {
+  stage: "item-check" | "ambiguity-check";
+  sectionId: string;
+  anchorKey: string;
+  sectionTargetKeys: readonly string[];
+  targets: readonly ReviewDisplayTarget[];
+}
+
+/** Pre-dispatch half: where the cursor should continue FROM, captured while
+ *  the completed section is still in the displayed list. */
+function snapshotSectionCompletionAnchor(
   stage: "item-check" | "ambiguity-check",
   sectionIds: readonly string[],
-  visiblePre: readonly string[]
+  before: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): SectionCompletionAnchor | null {
+  const targets = displayedReviewTargetsForSectionedStage(stage, before);
+  const section = sectionedQueueModel(before, stage).sections.find((candidateSection) => candidateSection.candidateIds.some((id) => sectionIds.includes(id)));
+  if (!section) return null;
+  /* EVERY REVIEW TARGET THE COMPLETED SECTION OWNS, from the one helper that
+   * defines a section's targets -- so "what did I just finish" and "what can
+   * the cursor land on" cannot disagree about a section's membership. A
+   * section's proposals count as part of what was completed for ANCHORING
+   * purposes (the cursor should continue past them, not back into them);
+   * whether they are actually resolved is still the advance's own question. */
+  const sectionTargetKeys = new Set([
+    ...sectionIds.map((id) => reviewDisplayTargetKey(candidateReviewTarget(id))),
+    ...sectionDisplayTargets(section).map(reviewDisplayTargetKey),
+  ]);
+  const anchorTarget = [...targets].reverse().find((target) => sectionTargetKeys.has(reviewDisplayTargetKey(target)));
+  if (!anchorTarget) return null;
+  return { stage, sectionId: String(section.id), anchorKey: reviewDisplayTargetKey(anchorTarget), sectionTargetKeys: [...sectionTargetKeys], targets };
+}
+
+function sectionCompletedByAnchor(anchor: SectionCompletionAnchor, after: ReturnType<WorkspaceCommandDispatcher["getState"]>): boolean {
+  const sectionTargetKeys = new Set(anchor.sectionTargetKeys);
+  return anchor.targets.filter((target) => sectionTargetKeys.has(reviewDisplayTargetKey(target))).every((target) => isReviewDisplayTargetResolved(anchor.stage, target, after));
+}
+
+function keepSectionVisibleForCompletionFeedback(anchor: SectionCompletionAnchor): void {
+  const anchorTarget = anchor.targets.find((target) => reviewDisplayTargetKey(target) === anchor.anchorKey);
+  if (anchorTarget) selectReviewDisplayTarget(anchorTarget);
+}
+
+function acknowledgeBulkCandidateFeedback(
+  before: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  candidateIds: readonly string[],
+  stage: WorkflowStage,
+  completionAnchor?: SectionCompletionAnchor | null
 ): void {
   const after = dispatcher.getState();
-  const anchor = [...visiblePre].reverse().find((id) => sectionIds.includes(id));
-  if (!anchor) return;
-  const target = advanceWithinVisibleList(anchor, visiblePre, (id) => isItemResolvedInState(stage, id, after));
-  if (target && target !== after.focus?.target.itemId) {
-    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: target });
-  } else if (!target) {
-    // ROWS-THEN-CARDS SEAM (AG, 2026-08-02): clearing the last section of
-    // rows is the same dead end the per-item advance had -- continue into
-    // the first unaddressed card rather than leaving the reviewer parked
-    // above unreviewed work. The caller's single render follows.
-    continueIntoStructuralCards(after);
+  const targets = changedCandidateAcknowledgements(before, after, candidateIds, stage);
+  const completionTarget: AcknowledgementTarget | null =
+    completionAnchor && sectionCompletedByAnchor(completionAnchor, after) ? { kind: "section", stage: completionAnchor.stage, sectionId: completionAnchor.sectionId } : null;
+  if (completionTarget) {
+    keepSectionVisibleForCompletionFeedback(completionAnchor!);
+    acknowledge([...targets, completionTarget], () => advanceAfterSectionCompletion(completionAnchor!));
+  } else {
+    if (targets.length > 0) acknowledge(targets);
+    if (completionAnchor) advanceAfterSectionCompletion(completionAnchor);
   }
+}
+
+/** Post-dispatch half: the nearest still-unresolved target after the anchor,
+ *  in the order the reviewer was looking at when they acted. */
+function advanceAfterSectionCompletion(anchor: SectionCompletionAnchor | null): void {
+  if (!anchor) return;
+  const after = dispatcher.getState();
+  const target = advanceWithinDisplayedReviewTargets(anchor.stage, anchor.anchorKey, anchor.targets, after);
+  if (!target) return;
+  const afterKey = currentReviewDisplayTargetKey(after.focus?.target.stage ?? null, after.focus?.target.itemId ?? null, after);
+  if (reviewDisplayTargetKey(target) !== afterKey) selectReviewDisplayTarget(target);
 }
 
 /*
@@ -6373,6 +7885,39 @@ interface QueueSectionAction {
   label: string;
   hint: string;
   run: () => void;
+  /** Non-digit keycap text for actions with dedicated shortcuts that do not
+   *  belong to sectionActionDigitAssignments. Reset uses Opt+Shift chords:
+   *  visible like the other controls, but never consuming 1-9. */
+  keycap?: string;
+  /** Reset controls are review-management controls, not decision commands:
+   *  they may live beside section actions, but they must never consume the
+   *  scarce 1-9 digit space or appear as command-bar recommendation
+   *  actions. */
+  excludeFromDigits?: boolean;
+  resetScope?: ResetScopeDescriptor;
+  /**
+   * HOW MANY THIS ACTION ACTUALLY TOUCHES, when that is fewer than the
+   * scope it is rendered over (AG, 2026-08-06: "well those global button
+   * choices are problematic.. lol both 3!").
+   *
+   * The acronym collection rendered "Accept as acronyms (3)" beside "Accept
+   * written out (3)" over a group of 4 -- two mutually exclusive actions
+   * both claiming the same three items, and neither number reconciling with
+   * the "4 remaining" directly to their left. The count came from the
+   * collection's undecided total while the action's own gate was merely
+   * "does ANY proposal offer this role", so a role offered by one proposal
+   * advertised itself over all of them.
+   *
+   * That is the rule stated one line above the offending template -- "NAMES
+   * ITS BLAST RADIUS (§5)", and elsewhere "a button that cannot say 150
+   * cannot do 150" -- broken by the line beneath it. This field is how an
+   * action whose reach is narrower than its host scope says so.
+   *
+   * Omitted by every action that really does act on its whole scope, which
+   * is most of them; the render sites fall back to the scope count, so
+   * nothing else changes shape.
+   */
+  scopeCount?: number;
   /**
    * The SPELLED-OUT label, used wherever the row has room (AG, 2026-08-03:
    * "let's spell them out if there is space then").
@@ -6402,6 +7947,10 @@ interface QueueSectionAction {
   chord: GroupScopeChord | null;
 }
 
+function digitAssignableSectionActions(actions: readonly QueueSectionAction[]): QueueSectionAction[] {
+  return actions.filter((action) => !action.excludeFromDigits);
+}
+
 /** The sections + policy currently on screen for a sectioned-queue stage
  *  -- the SAME derivation renderTriageQueue/renderAmbiguityQueue paint
  *  from, so the keyboard's idea of "the focused item's section" can never
@@ -6411,10 +7960,139 @@ function sectionedQueueModel(
   queueStage: "item-check" | "ambiguity-check"
 ): { sections: SectionedQueueSection[]; policy: SectionedQueuePolicy } {
   if (queueStage === "item-check") {
-    return { sections: buildTriageSections(triageItemsFor(visibleItemCheckIds(state), state)), policy: TRIAGE_QUEUE_POLICY };
+    const sections = buildTriageSections(triageItemsFor(visibleItemCheckIds(state), state));
+    return { sections: withRelationshipUnits(sections, state, TRIAGE_SECTION_ORDER, TRIAGE_SECTION_LABELS), policy: TRIAGE_QUEUE_POLICY };
   }
   const ids = state.grouping?.ambiguityProposals.map((p) => p.candidateId) ?? [];
-  return { sections: buildAmbiguitySections(ambiguityItemsFor(ids, state)), policy: AMBIGUITY_QUEUE_POLICY };
+  const sections = buildAmbiguitySections(ambiguityItemsFor(ids, state));
+  return { sections: withRelationshipUnits(sections, state, AMBIGUITY_SECTION_ORDER, AMBIGUITY_SECTION_LABELS), policy: AMBIGUITY_QUEUE_POLICY };
+}
+
+/**
+ * Files each active relationship proposal into the category a reviewer
+ * would look for it in, and materialises a category that holds ONLY
+ * proposals (the pure section builders omit empty sections, and "empty"
+ * there means no candidates -- which is not empty to the reviewer).
+ *
+ * The active/visible filters mirror the card renderer's exactly, the same
+ * discipline the unified review-target advance documents: a proposal listed
+ * here that the renderer drops would be a row the cursor could land on and
+ * nothing would draw.
+ */
+function withRelationshipUnits(
+  sections: SectionedQueueSection[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  order: readonly string[],
+  labels: Record<string, string>
+): SectionedQueueSection[] {
+  const dismissals = state.reviewSession?.relationshipDismissals ?? {};
+  const candidates = state.detection?.candidates ?? [];
+  const active = structuralCardDisplayOrder(
+    (state.structuralRelationships?.proposals ?? []).filter(
+      (proposal) => !dismissals[proposal.proposalId] && proposal.candidateIds.some((id) => candidates.some((c) => c.id === id))
+    )
+  );
+  if (active.length === 0) return sections;
+  const bySection = new Map<string, string[]>();
+  for (const proposal of active) {
+    const sectionId = RELATIONSHIP_KIND_SECTION[proposal.kind] ?? "other";
+    const list = bySection.get(sectionId);
+    if (list) list.push(proposal.proposalId);
+    else bySection.set(sectionId, [proposal.proposalId]);
+  }
+  const merged = sections.map((section) => {
+    const proposals = bySection.get(section.id);
+    if (!proposals) return section;
+    bySection.delete(section.id);
+    return { ...section, relationshipProposalIds: proposals };
+  });
+  // Categories with proposals but no candidates, inserted at their declared
+  // position so the bar's order never depends on what a document happens to
+  // contain.
+  for (const [sectionId, proposals] of bySection) {
+    const at = order.indexOf(sectionId);
+    const created: SectionedQueueSection = { id: sectionId, label: labels[sectionId] ?? sectionId, candidateIds: [], relationshipProposalIds: proposals };
+    const before = merged.findIndex((s) => order.indexOf(s.id) > at);
+    if (before === -1) merged.push(created);
+    else merged.splice(before, 0, created);
+  }
+  return merged;
+}
+
+/**
+ * THE STAGE'S CATEGORIES, ACROSS BOTH AXES (AG, 2026-08-06).
+ *
+ * Andrew, on finding "Possible acronym" rendered below the queue while
+ * viewing Shortened Person Names: "Only the selected category should show
+ * up" -- and, separately, "why do they not show up under Acronyms?"
+ *
+ * THE ANSWER TO THE SECOND QUESTION IS WHY THIS EXISTS. They cannot nest
+ * under Acronyms: a row section holds CANDIDATES keyed by recommendation
+ * archetype, a kind group holds RELATIONSHIP PROPOSALS keyed by
+ * RelationshipKind. A proposal has two sides and its own decision
+ * vocabulary (Accept as acronyms / Accept written out / Unrelated) that a
+ * candidate row has no way to express. The shared word "acronym" names two
+ * different objects -- the item axis and the artifact axis of §12.
+ *
+ * So they are made PEERS rather than merged: one map over two renderers.
+ * The pill bar spans both, ⌥←→ walks both, and exactly one category is on
+ * screen at a time whichever axis it belongs to. That is the smallest
+ * change that makes the screen honest, and it is why this returns a
+ * discriminated union rather than coercing proposals into a
+ * candidateIds-shaped section -- which would have been the merge the
+ * paragraph above says is wrong.
+ *
+ * ORDER: row sections first, kind groups last, matching the arrangement
+ * both stage renderers already used when the groups were appended after the
+ * queue ("the collection's FINAL sections, exactly the triage
+ * arrangement"). Kind order is first appearance, so cards never reorder.
+ */
+interface StageCategory {
+  id: string;
+  label: string;
+  /** REMAINING REVIEW UNITS, both types. The count a pill shows has to be
+   *  the count of things the reviewer still has to look at, and after
+   *  2026-08-06 a category's work is candidates AND proposals. Counting
+   *  only candidates would have shown "Acronyms (1)" over a list of four. */
+  remaining: number;
+  candidateIds: readonly string[];
+  relationshipProposalIds: readonly string[];
+}
+
+function stageCategories(
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  queueStage: "item-check" | "ambiguity-check"
+): StageCategory[] {
+  const decisions = state.reviewSession?.candidateDecisions ?? {};
+  const { sections } = sectionedQueueModel(state, queueStage);
+  const proposals = state.structuralRelationships?.proposals ?? [];
+  return sections.map((section) => {
+    const proposalIds = section.relationshipProposalIds ?? [];
+    const unaddressedProposals = proposalIds.filter((proposalId) => {
+      const proposal = proposals.find((p) => p.proposalId === proposalId);
+      return proposal ? !proposal.candidateIds.every((id) => Boolean(decisions[id])) : false;
+    }).length;
+    return {
+      id: section.id,
+      label: section.label,
+      remaining: section.candidateIds.filter((id) => !decisions[id]).length + unaddressedProposals,
+      candidateIds: section.candidateIds,
+      relationshipProposalIds: proposalIds,
+    };
+  });
+}
+
+/** Which category is on screen. Resolves EITHER cursor -- the card cursor
+ *  is checked first because it is the more specific claim -- so a reviewer
+ *  standing on a relationship proposal lights the same pill as one standing
+ *  on a candidate beside it. That single fact is what makes the two review-
+ *  unit types one category rather than two. */
+function currentStageCategoryId(state: ReturnType<WorkspaceCommandDispatcher["getState"]>, categories: readonly StageCategory[]): string | null {
+  const cardId = structuralCardFocusPending as string | null;
+  if (cardId) return categories.find((c) => c.relationshipProposalIds.includes(cardId))?.id ?? null;
+  const itemId = state.focus?.target.itemId ?? null;
+  if (itemId === null) return null;
+  return categories.find((c) => c.candidateIds.includes(itemId))?.id ?? null;
 }
 
 /**
@@ -6437,15 +8115,41 @@ function headingSectionActions(
   tier: SectionedQueueTierGroup | null,
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
 ): QueueSectionAction[] {
+  /* NO GLOBAL BUTTON OVER A SINGLE ITEM (AG, 2026-08-06: "hide any global
+   * buttons.. anywhere. if there is only 1 option").
+   *
+   * A bulk control whose scope is one item is not a shortcut -- it is a
+   * second, differently-worded copy of the controls already on that item's
+   * own card, one row away. It costs heading width, it costs a digit out of
+   * the scarce 1-9 space, and it makes the reviewer decide which of two
+   * paths to take for a decision that has only one.
+   *
+   * DELIBERATELY AT THIS CHOKE POINT rather than in the Ambiguity renderer:
+   * headingSectionActions is what both stages' headings and the digit
+   * assigner read, so the rule lands on Item Check's categories the moment
+   * they adopt this pass -- which is the stated plan. It is the same shape
+   * as the existing "buttons appear only while their scope still has
+   * undecided work" rule directly below, one step further: a scope of one
+   * has work, but not work a BULK control is for.
+   */
   const remaining = (ids: readonly string[]): boolean => ids.some((id) => !state.reviewSession?.candidateDecisions[id]);
+  const bulkWorthwhile = (ids: readonly string[]): boolean => headingActionScope(ids, state).ids.length > 1;
   const actions: QueueSectionAction[] = [];
   const acceptConfig = policy.acceptFor(section.id);
-  if (acceptConfig && remaining(section.candidateIds)) {
+  if (acceptConfig && remaining(section.candidateIds) && bulkWorthwhile(section.candidateIds)) {
     const scope = headingActionScope(section.candidateIds, state);
     actions.push({
       // "Accept All Remaining" names its scope in the label, exactly like
       // "Ignore all" does, so it takes the same selected form.
-      label: scope.selected ? "Accept Selected" : "Accept All Remaining",
+      //
+      // REVIEW ZONE (2026-08-06): the unselected wording had to CHANGE, not
+      // just gain a number. This button no longer accepts all remaining, so
+      // "Accept All Remaining" was about to become a label that lies about
+      // its own scope -- and a bulk control whose name overstates what it
+      // does is worse under the zone bound than it was without it, because
+      // the reviewer has been given a reason to trust the wording. "Next"
+      // carries the paging sense the zone actually has: more will follow.
+      label: scope.selected ? "Accept Selected" : `Accept Next ${scope.ids.length}`,
       hint: policy.acceptTitleFor(section.id, acceptConfig),
       chord: null, // a named conclusion, not a decision kind -- digits are for exactly this
       run: () => {
@@ -6457,11 +8161,21 @@ function headingSectionActions(
   // Section-level declared actions sit beside Accept All, on the section's
   // OWN scope -- the triage view has no tiers, so the tier path below never
   // reaches them.
-  if (remaining(section.candidateIds)) {
+  if (remaining(section.candidateIds) && bulkWorthwhile(section.candidateIds)) {
     const scope = headingActionScope(section.candidateIds, state);
     for (const declared of policy.sectionActionsFor?.(section.id) ?? []) {
       actions.push({
-        label: scope.selected && declared.selectedLabel ? declared.selectedLabel : declared.label,
+        // REVIEW ZONE (2026-08-06): the count rides on the UNSELECTED form
+        // only. A selected scope is unbounded and already announces itself
+        // through the heading's "N selected" indicator, so numbering it
+        // here would say the same thing twice, in two places that could
+        // then disagree.
+        label:
+          scope.selected && declared.selectedLabel
+            ? declared.selectedLabel
+            : scope.selected
+              ? declared.label
+              : zoneActionLabel(declared.label, scope.ids.length),
         hint: declared.hint,
         chord: sectionActionChord(declared),
         run: () => {
@@ -6471,14 +8185,22 @@ function headingSectionActions(
       });
     }
   }
-  if (tier && remaining(tier.candidateIds)) {
+  if (tier && remaining(tier.candidateIds) && bulkWorthwhile(tier.candidateIds)) {
     const scope = headingActionScope(tier.candidateIds, state);
     for (const declared of policy.tierActionsFor?.(section.id, tier.id) ?? []) {
       actions.push({
         // A conclusion-naming label ("These are people's names") has no
         // selected form and correctly keeps its wording -- the heading's
         // "N selected" indicator is what tells the reviewer the scope.
-        label: scope.selected && declared.selectedLabel ? declared.selectedLabel : declared.label,
+        // REVIEW ZONE (2026-08-06): under a zone scope it gains the count,
+        // for the same reason every other bulk control does -- a button
+        // that cannot say 150 cannot do 150.
+        label:
+          scope.selected && declared.selectedLabel
+            ? declared.selectedLabel
+            : scope.selected
+              ? declared.label
+              : zoneActionLabel(declared.label, scope.ids.length),
         hint: declared.hint,
         chord: sectionActionChord(declared),
         run: () => {
@@ -6487,6 +8209,30 @@ function headingSectionActions(
         },
       });
     }
+  }
+  const resetContext = currentSectionedQueueContext(state);
+  if (resetContext?.section.id === section.id) {
+    const { zone, category, collapsed } = currentResetScopes(state);
+    const targetKey = resetContext.targetKey;
+    const targetInTier = Boolean(tier && targetKey && tier.candidateIds.some((id) => reviewDisplayTargetKey(candidateReviewTarget(id)) === targetKey));
+    const targetInProposalGrid = Boolean(targetKey && (section.relationshipProposalIds ?? []).includes(targetKey.replace(/^proposal:/, "")));
+    const sectionHostsZone = tier === null && ((section.tiers ?? []).length <= 1 || targetInProposalGrid);
+    const addResetAction = (scope: ResetScopeDescriptor): void => {
+      actions.push({
+        label: scope.scope === "category" ? `Reset All in Category · ${scope.candidateIds.length} items` : `Reset Zone · ${scope.candidateIds.length} items`,
+        hint:
+          scope.scope === "category"
+            ? "Clear every current decision in this category and return those items to unresolved review. Requires confirmation."
+            : "Clear current decisions in the painted Review Zone and return those items to unresolved review. Requires confirmation.",
+        chord: null,
+        keycap: `${OPTION_KEY_LABEL} Shift ${scope.scope === "zone" || collapsed ? "R" : "A"}`,
+        excludeFromDigits: true,
+        resetScope: scope,
+        run: () => openResetConfirmation(scope),
+      });
+    };
+    if (tier === null && category) addResetAction(category);
+    if (!collapsed && zone && (targetInTier || sectionHostsZone)) addResetAction(zone);
   }
   return actions;
 }
@@ -6518,13 +8264,104 @@ function headingSectionActions(
 interface HeadingActionScope {
   ids: string[];
   selected: boolean;
+  /** How many undecided items this heading holds in total. Equal to
+   *  `ids.length` unless the zone bound is holding some back. */
+  available: number;
+  /** True while the zone bound is limiting this scope -- what a label
+   *  keys off to say "4 of 37" rather than just "4". */
+  bounded: boolean;
 }
 
+/**
+ * REVIEW ZONE (AG, 2026-08-06) -- the bound lands HERE, in the one place
+ * that already answered "what does this heading's button act on."
+ *
+ * That is the whole reason this change is small. The doc comment above
+ * already establishes that this function's answer IS what `runSectionAction`
+ * will change, so bounding it bounds the buttons, the numbered digits, and
+ * the heading counts together, and they cannot disagree. Three properties
+ * the design asked for fall out of the existing structure rather than
+ * needing to be built:
+ *
+ *  - ZONES DO NOT STRADDLE A SECTION (design doc §7, resolution (a)). This
+ *    function is already called per section and per tier with that group's
+ *    own ids, so a zone is section-local by construction. That matters
+ *    because these actions are CLAIMS about their members ("These are all
+ *    calendar terms") -- a zone spanning two tiers could make one of them
+ *    false, and a scope that can make a claim false is worse than a scope
+ *    that is sometimes small. Cost, accepted: the last zone of a section
+ *    can be a short one.
+ *  - SKIPPED ITEMS ROLL FORWARD. `undecided` is recomputed every render, so
+ *    anything passed over is still at the front of the next zone. No new
+ *    state (see reviewZone.ts).
+ *  - EXPLICIT SELECTION STAYS UNBOUNDED -- the checked branch returns
+ *    early, deliberately. A reviewer who wants to process 150 items can
+ *    check 150 boxes; that is not a loophole, checking 150 boxes IS the
+ *    review. It also means the "process the whole thing" escape hatch
+ *    never has to be built later -- it was never removed, it just stopped
+ *    being the default gesture.
+ */
 function headingActionScope(ids: readonly string[], state: ReturnType<WorkspaceCommandDispatcher["getState"]>): HeadingActionScope {
   const undecided = ids.filter((id) => !state.reviewSession?.candidateDecisions[id]);
   const checked = undecided.filter((id) => selectedCandidateIds.has(id));
-  return checked.length > 0 ? { ids: checked, selected: true } : { ids: undecided, selected: false };
+  if (checked.length > 0) return { ids: checked, selected: true, available: checked.length, bounded: false };
+  const zone = reviewZone(undecided, ZONE_CAPACITY);
+  return { ids: zone.ids, selected: false, available: zone.available, bounded: zone.bounded };
 }
+
+/**
+ * ZONE GRID LAYOUT (AG, 2026-08-06) -- the render-tail pass that decides a
+ * queue grid's shape and bands its rows.
+ *
+ * THE RULE, Andrew's: "If 1-14, one column, if 15+, split to two columns,
+ * which allows for 8+7, eminently readable." Two columns are filled
+ * COLUMN-MAJOR, so 23 items read 12 down the left then 11 down the right --
+ * two short lists, not twelve interleaved pairs. A dozen-ish is the
+ * scannable unit; reading across a pair is not scanning.
+ *
+ * COUNTING, NOT MEASURING, and the distinction matters after this file's
+ * history with layout reads: the only input is `children.length`, which is
+ * deterministic and available before layout. Nothing here asks the browser
+ * where anything IS -- except the banding below, which genuinely has to.
+ *
+ * BANDING (the alternating tint Type Check established) reads `offsetTop`
+ * because "every other VISUAL row" cannot be expressed in CSS when the row
+ * count is a layout result. That is a presentation-only read: at worst a
+ * tint lands on the wrong row, which no decision depends on.
+ */
+function syncZoneGridLayout(root: ParentNode | null): void {
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  for (const grid of Array.from(root.querySelectorAll<HTMLElement>(".triage-grid"))) {
+    const cells = Array.from(grid.children).filter((n): n is HTMLElement => (n as HTMLElement).classList?.contains("triage-row"));
+    const twoColumn = cells.length >= ZONE_TWO_COLUMN_THRESHOLD;
+    grid.classList.toggle("zone-two-col", twoColumn);
+    // ceil(n/2) puts the extra item in the LEFT column (12+11, not 11+12),
+    // so the columns fill top-down in reading order.
+    if (twoColumn) grid.style.setProperty("--zone-rows", String(Math.ceil(cells.length / 2)));
+    else grid.style.removeProperty("--zone-rows");
+    let rowIndex = -1;
+    let lastTop: number | null = null;
+    for (const cell of [...cells].sort((a, b) => a.offsetTop - b.offsetTop || a.offsetLeft - b.offsetLeft)) {
+      const top = cell.offsetTop;
+      if (lastTop === null || Math.abs(top - lastTop) > 2) {
+        rowIndex += 1;
+        lastTop = top;
+      }
+      cell.classList.toggle("triage-row-band", rowIndex % 2 === 1);
+    }
+  }
+}
+
+/** 15 is where one column stops being scannable, per Andrew's own test:
+ *  fifteen splits 8+7, and "a dozen is a nice scannable unit." */
+const ZONE_TWO_COLUMN_THRESHOLD = 15;
+
+/* THE MEASURED ZONE SIZE IS GONE (AG, 2026-08-06). `zoneColumnCount` and
+ * `syncZoneColumnCount()` lived here to publish the queue grid's column
+ * count once per render, because the zone was `columns x 2 rows`. The zone
+ * is a hard 24 now (see reviewZone.ts's ZONE_CAPACITY), so there is
+ * nothing to measure: the last impure input to a decision path is
+ * deleted rather than defended. */
 
 /** Clear the acted-on rows from the selection, BEFORE dispatching: the ids
  *  are already captured in `scope`, and the dispatch paths end in their own
@@ -6560,10 +8397,30 @@ function releaseSelection(scope: HeadingActionScope): void {
 function appendHeadingSelectionControls(
   host: HTMLElement,
   scopeIds: readonly string[],
-  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  mixedCategory = false
 ): void {
   const remaining = scopeIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
   if (remaining.length === 0) return; // a finished scope has no work to select
+  /* NO SELECT-ALL IN A MIXED CATEGORY (AG, 2026-08-06: "let's just lose
+   * select all then for now").
+   *
+   * "Select Active" was offered and considered first, and it would have
+   * been an honest name -- in a category holding both review-unit types
+   * this can only ever take the non-dimmed group, so a box labelled "select
+   * all" beside four rows that takes three is §5's lie in checkbox form.
+   * What sank it is that selection is a CANDIDATE mechanism:
+   * `selectedCandidateIds` has no representation for a proposal, so with a
+   * pair selected the control would have had nothing to take and would have
+   * had to vanish. A control that appears and disappears as the cursor
+   * moves between two rows in one list teaches nothing.
+   *
+   * So: absent here, on the same rule as the bulk buttons above -- controls
+   * exist because they solve a user problem, not because every heading is
+   * expected to have the same ones. Unmixed categories keep it unchanged.
+   * If relationship selection is ever built, this is where it lands.
+   */
+  if (mixedCategory) return;
   const checked = remaining.filter((id) => selectedCandidateIds.has(id));
   const box = el("input", { class: "triage-select-all", type: "checkbox", title: "Select every remaining item in this group" });
   const input = box as HTMLInputElement;
@@ -6609,7 +8466,58 @@ function appendHeadingSelectionControls(
  * acronyms". Alternative considered and rejected: render all three and
  * live with the duplicate. Flagged for Andrew in the findings.
  */
-function relationshipKindActions(kind: RelationshipKind, ofKind: readonly RelationshipProposal[]): QueueSectionAction[] {
+/**
+ * `ofKind` is the action scope the caller chose. On sectioned Review Zone
+ * surfaces that must already be the active-zone proposal subset, not the
+ * whole structural kind. `countable` is the subset the COUNTS are taken over
+ * -- usually the unresolved proposals in that same scope -- while the action
+ * still delegates final per-card applicability to acceptAllInRelationshipKind
+ * / remainingIdsInRelationshipKind so member checkboxes and role availability
+ * stay single-sourced.
+ */
+function relationshipKindActions(
+  kind: RelationshipKind,
+  ofKind: readonly RelationshipProposal[],
+  countable: readonly RelationshipProposal[] = ofKind
+): QueueSectionAction[] {
+  /* AN ACTION ONLY EXISTS IF ITS OPTION DOES (AG, 2026-08-06: "remove
+   * Written out unless there is a written out option").
+   *
+   * The pair of acronym accepts used to render unconditionally, with the
+   * mismatch pushed into the hint ("Proposals without one are left for
+   * individual review") and, at run time, into narration. That is a button
+   * describing a capability the data does not have -- the reviewer reads
+   * "Accept written out" over a group with no written-out side and has to
+   * press it to find out it does nothing. Derived from the SAME
+   * preferredActionsForRelationship the cards' own digits come from, so the
+   * group's buttons and its cards can never disagree about what is on
+   * offer. */
+  /*
+   * COUNTS, NOT JUST A BOOLEAN (AG, 2026-08-06: "both 3!"). This was
+   * `.some()` -- enough to answer "should the button exist" but not "what
+   * will it do", and the render site had nothing better to print than the
+   * whole collection's total, so both accepts claimed every proposal.
+   *
+   * Counted over the UNDECIDED proposals only, matching what the buttons
+   * say they act on ("Every REMAINING proposal in this group...") and what
+   * the "N remaining" beside them counts. A decided proposal is not in
+   * either action's reach, so including it would restate the same lie in a
+   * smaller way.
+   *
+   * Still derived from preferredActionsForRelationship, the same source the
+   * cards' own digits come from -- so a group's buttons and its cards
+   * cannot disagree about what is on offer, only now they agree about how
+   * MUCH is on offer too.
+   */
+  const groupOfferCount = (role: PreferredActionRole): number => {
+    const current = dispatcher.getState();
+    return countable.filter((proposal) => {
+      const members = proposal.candidateIds
+        .map((id) => current.detection?.candidates.find((c) => c.id === id))
+        .filter((candidate): candidate is Candidate => Boolean(candidate));
+      return preferredActionsForRelationship(proposal, members).some((a) => a.role === role);
+    }).length;
+  };
   if (kind === "acronym") {
     // The acronym group's two accepts ARE its change vocabulary -- each
     // standardizes every proposal on one side of the pair -- so it declares
@@ -6617,20 +8525,28 @@ function relationshipKindActions(kind: RelationshipKind, ofKind: readonly Relati
     // DocScrub moves), which means the second is unnumbered under the
     // Both are named conclusions rather than decision kinds, so both stay
     // in the digit space (⑧ ⑨) and neither takes a chord.
-    return [
-      {
+    const acronymActions: QueueSectionAction[] = [];
+    const acronymCount = groupOfferCount("acronym");
+    const writtenOutCount = groupOfferCount("written-out");
+    if (acronymCount > 0) {
+      acronymActions.push({
         label: "Accept as acronyms",
-        hint: "Every remaining proposal in this group standardizes on its acronym (e.g. ITS). Proposals without one are left for individual review.",
+        hint: "Every remaining proposal in this Review Zone group that HAS an acronym standardizes on it (e.g. ITS). The count is exactly how many that is.",
         chord: null,
+        scopeCount: acronymCount,
         run: () => acceptAllInRelationshipKind(ofKind, "acronym"),
-      },
-      {
+      });
+    }
+    if (writtenOutCount > 0) {
+      acronymActions.push({
         label: "Accept written out",
-        hint: "Every remaining proposal in this group standardizes on its written-out form (e.g. Information Technology Services). Proposals without one are left for individual review.",
+        hint: "Every remaining proposal in this Review Zone group that HAS a written-out form standardizes on it (e.g. Information Technology Services). The count is exactly how many that is.",
         chord: null,
+        scopeCount: writtenOutCount,
         run: () => acceptAllInRelationshipKind(ofKind, "written-out"),
-      },
-    ];
+      });
+    }
+    return acronymActions;
   }
   // KIND-GROUP TEXT-ENTRY ACTIONS (AG, 2026-08-03, on "Possible numeric
   // pattern"): "for items with a clear Redaction choice as the likely
@@ -6655,21 +8571,21 @@ function relationshipKindActions(kind: RelationshipKind, ofKind: readonly Relati
   return [
     {
       label: "Accept All Remaining",
-      hint: "Apply each remaining proposal's suggested action (identifier patterns redact with the default placeholder)",
+      hint: "Apply each remaining proposal's suggested action in this Review Zone group (identifier patterns redact with the default placeholder)",
       chord: null,
       run: () => acceptAllInRelationshipKind(ofKind),
     },
     {
       label: `${decisionBulkLabel("Rename", "all")}…`,
       verboseLabel: `${decisionBulkLabel("Rename", "all")} — enter replacement`,
-      hint: "Replace every remaining member of every proposal in this group with one shared replacement text.",
+      hint: "Replace every remaining member of every proposal in this Review Zone group with one shared replacement text.",
       chord: "C",
       run: () => openRelationshipKindEditor(kind, remaining(), "Rename"),
     },
     {
       label: `${decisionBulkLabel("Redact", "all")}…`,
       verboseLabel: `${decisionBulkLabel("Redact", "all")} — choose placeholder`,
-      hint: "Redact every remaining member of every proposal in this group; blank keeps the default placeholder.",
+      hint: "Redact every remaining member of every proposal in this Review Zone group; blank keeps the default placeholder.",
       chord: "R",
       run: () => openRelationshipKindEditor(kind, remaining(), "Redact"),
     },
@@ -6723,19 +8639,23 @@ function openRelationshipKindEditor(kind: RelationshipKind, candidateIds: string
  * digits keep their existing item meaning untouched.
  */
 function activeScopeSectionActions(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): QueueSectionAction[] {
-  const queueStage = sectionedQueueStage(state.focus?.target.stage);
+  const queueStage = activeSectionedQueueStage(state);
   if (!queueStage) return [];
-  // A structural card holds the cursor: its KIND GROUP is the scope --
-  // the same object ⇧A already accepts and K/C/R/I already decide.
+  // A structural card holds the cursor: its active Review Zone KIND GROUP
+  // is the scope -- the same object ⇧A already accepts and K/C/R/I already
+  // decide, bounded to the proposal cells the reviewer can act on now.
   const cardId = structuralCardFocusPending as string | null;
   if (cardId) {
     const active = (state.structuralRelationships?.proposals ?? []).filter((p) => !state.reviewSession?.relationshipDismissals?.[p.proposalId]);
     const current = active.find((p) => p.proposalId === cardId);
     if (!current) return [];
-    const ofKind = active.filter((p) => p.kind === current.kind);
+    const section = sectionedQueueModel(state, queueStage).sections.find((s) => (s.relationshipProposalIds ?? []).includes(cardId));
+    if (!section) return [];
+    const ofKind = relationshipProposalsInActiveReviewZone(queueStage, section, state).filter((p) => p.kind === current.kind);
     const decisions = state.reviewSession?.candidateDecisions ?? {};
     if (ofKind.every((p) => p.candidateIds.every((id) => Boolean(decisions[id])))) return []; // group finished: no buttons render
-    return relationshipKindActions(current.kind, ofKind);
+    const undecidedOfKind = ofKind.filter((p) => !p.candidateIds.every((id) => Boolean(decisions[id])));
+    return relationshipKindActions(current.kind, ofKind, undecidedOfKind);
   }
   const itemId = state.focus?.target.itemId;
   if (!itemId) return [];
@@ -6759,14 +8679,14 @@ function activeScopeSectionActions(state: ReturnType<WorkspaceCommandDispatcher[
  * worse than a number you cannot press.
  */
 function itemDigitCeilingFor(candidateId: string, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): number {
-  const queueStage = sectionedQueueStage(state.focus?.target.stage);
+  const queueStage = activeSectionedQueueStage(state);
   if (!queueStage) return 9;
   const { sections, policy } = sectionedQueueModel(state, queueStage);
   const section = sections.find((s) => s.candidateIds.includes(candidateId));
   if (!section) return 9;
   const tier = section.tiers?.find((t) => t.candidateIds.includes(candidateId)) ?? null;
   return itemDigitCeilingBeside(
-    sectionActionDigitAssignments(headingSectionActions(policy, section, tier, state), (a) => a.chord).map((a) => a.digit)
+    sectionActionDigitAssignments(digitAssignableSectionActions(headingSectionActions(policy, section, tier, state)), (a) => a.chord).map((a) => a.digit)
   );
 }
 
@@ -6792,7 +8712,7 @@ function handleSectionActionDigitKey(event: KeyboardEvent): boolean {
   if (state.focus?.target.panel.kind === "not-quite") return false;
   const actions = activeScopeSectionActions(state);
   if (actions.length === 0) return false;
-  const hit = sectionActionDigitAssignments(actions, (a) => a.chord).find((a) => a.digit === Number(match[1]));
+  const hit = sectionActionDigitAssignments(digitAssignableSectionActions(actions), (a) => a.chord).find((a) => a.digit === Number(match[1]));
   if (!hit) return false; // a lower digit: the item's own numbering owns it
   hit.action.run();
   return true;
@@ -6809,43 +8729,25 @@ function handleSectionActionDigitKey(event: KeyboardEvent): boolean {
  * traversal in this app.
  */
 function moveStructuralCardFocus(current: HTMLElement, delta: number): void {
-  const cards = Array.from(document.querySelectorAll<HTMLElement>(".relationship-section .relationship-card"));
-  const idx = cards.indexOf(current);
+  const currentProposalId = current.getAttribute("data-proposal-id");
+  if (!currentProposalId) return;
+  const section = typeof current.closest === "function" ? current.closest<HTMLElement>(".triage-section") : null;
+  const cells = section
+    ? Array.from(section.querySelectorAll<HTMLElement>(".triage-grid .triage-row[data-item-id], .triage-grid .triage-row[data-proposal-id]"))
+    : Array.from(document.querySelectorAll<HTMLElement>(".triage-grid .triage-row[data-item-id], .triage-grid .triage-row[data-proposal-id]"));
+  const targets = cells
+    .map((cell): ReviewDisplayTarget | null => {
+      const proposalId = cell.getAttribute("data-proposal-id");
+      if (proposalId) return proposalReviewTarget(proposalId);
+      const itemId = cell.getAttribute("data-item-id");
+      return itemId ? candidateReviewTarget(itemId) : null;
+    })
+    .filter((target): target is ReviewDisplayTarget => target !== null);
+  const idx = targets.findIndex((target) => target.kind === "proposal" && target.id === currentProposalId);
   if (idx === -1) return;
   const next = idx + delta;
-  const leaveToRow = (rowId: string | undefined): void => {
-    if (!rowId) return;
-    structuralCardFocusPending = null; // leaving the cards: the row cursor takes over
-    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: rowId });
-    render();
-  };
-  // Boundaries follow DISPLAY ORDER. AMBIGUITY CATEGORY-FIRST (AG,
-  // 2026-08-02): BOTH sectioned-queue stages now place the structural
-  // kind-groups LAST in the collection (the triage arrangement), so the
-  // geometry is uniform: backing out of the first card returns to the
-  // stage's last visible row; forward past the last card stays put (the
-  // bottom edge, like every no-wrap traversal in this app).
-  const state = dispatcher.getState();
-  const focusStage = state.focus?.target.stage;
-  if (next < 0) {
-    if (focusStage === "item-check" && itemCheckViewMode === "triage") {
-      const ids = visibleItemCheckIds(state);
-      leaveToRow(ids[ids.length - 1]);
-    } else if (focusStage === "ambiguity-check") {
-      const ids = visibleAmbiguityIds(state);
-      leaveToRow(ids[ids.length - 1]);
-    }
-    return;
-  }
-  if (next >= cards.length) {
-    return; // bottom edge: stay put
-  }
-  const target = cards[next]!;
-  // HIGHLIGHT IMPLIES DETAIL (AG, 2026-08-02): cursor first, then a
-  // deterministic render -- see the sectioned-queue boundary branch for
-  // why focus()-then-set left highlighted-but-compact cards. The
-  // render-tail pendingCardId restore re-focuses the fresh card.
-  structuralCardFocusPending = target.getAttribute("data-proposal-id");
+  if (next < 0 || next >= targets.length) return;
+  selectReviewDisplayTarget(targets[next]!);
   render();
 }
 
@@ -6965,6 +8867,14 @@ function handleTriageKey(event: KeyboardEvent): boolean {
   // Space-details grammar on both.
   const queueStage = sectionedQueueStage(target.stage);
   if (!queueStage) return false;
+  // STRUCTURAL CARD CURSOR OWNS ITS OWN KEYS (2026-08-08, Numeric bug).
+  // Proposal-only categories (Numeric) keep the domain item cursor parked on
+  // the last candidate item because FocusNavigator has no proposal cursor.
+  // Letting candidate-triage Enter/Space run while a structural card is
+  // selected therefore acts on that stale candidate -- observed live as
+  // Enter/Digit 1 jumping to Other Words instead of working the Numeric
+  // card. Card-specific handlers below own proposal keys.
+  if (structuralCardFocusPending !== null) return false;
   // BOTH property accesses guarded (2026-08-02, found live): a keydown
   // can target a tagName-LESS node (the document itself) -- the old
   // `?.tagName.toLowerCase()` threw there, and an exception here aborts
@@ -6975,17 +8885,105 @@ function handleTriageKey(event: KeyboardEvent): boolean {
   if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || tag === "a") return false;
   if (event.key === "Enter") {
     structuralCardFocusPending = null; // working the rows now
+    /*
+     * ENTER NO LONGER ACCEPTS (AG, 2026-08-06: "Enter means Accept. That's
+     * bad if we want to allow it to enter the focus panel ... So I think we
+     * can retire it").
+     *
+     * This branch used to run `acceptTriageRecommendation` whenever the item
+     * had a suggestion, and only fall through to `enterItem` when it did
+     * not -- so Enter's meaning depended on data the reviewer could not see
+     * from the cell. On a row with a suggestion it decided; on a row without
+     * one it navigated. A key that sometimes commits a decision and
+     * sometimes moves the cursor is not learnable, and it is the wrong half
+     * to keep now that Enter/Escape are the level grammar for both cell
+     * types.
+     *
+     * NOTHING IS LOST. What it ran was `suggestions[0]` -- precisely what
+     * digit ① is bound to, on the same item, in the same panel. So this
+     * retires a duplicate accelerator, not a capability. (Worth recording
+     * that it was NOT a duplicate of `Keep as-is`, as it first appeared:
+     * suggestion[0] is the identity link on a shortened name and the term
+     * claim on a common word, and only coincidentally a Keep.)
+     *
+     * Falling through to the resolver's `enterItem` keeps ONE implementation
+     * of "go deeper" -- the same reason the note below already gives for not
+     * handling Enter here.
+     */
+    // ENTER ENTERS (AG, 2026-08-06): with arrows demoted to pure movement,
+    // Enter is the key that goes into the focus panel. Falling THROUGH
+    // (return false) rather than handling it here is deliberate -- the
+    // global resolver's `enterItem` already dispatches the domain command
+    // and sets detailPanelFocusPending, so routing Enter to it keeps ONE
+    // implementation of "go deeper" instead of a second copy on this
+    // surface. Esc is the symmetric exit, unchanged.
+    //
+    // ACCEPT STILL WINS when there is something to accept: that is the
+    // sectioned queue's core single action and the reason Enter was
+    // overloaded here in the first place ("Enter = go deeper, overridden
+    // only when there IS something to accept"). Unchanged by this pass.
     const primary = recommendationForCandidate(target.itemId, state)?.suggestions[0];
-    if (primary) acceptTriageRecommendation(target.itemId, queueStage);
-    else toggleTriageExpansion(target.itemId);
+    if (!primary) return false;
+    acceptTriageRecommendation(target.itemId, queueStage);
     return true;
   }
+  // SPACE SELECTS, D DISCLOSES (AG, 2026-08-06): "space bar should select
+  // the checkbox, not scroll down the page. this should be a global rule in
+  // cell areas" -- and, on the surfaces that have a permanent panel,
+  // "Details spacebar can go away with this new paradigm ... since the
+  // panel is now permanent. Can we go back to using 'D' for Details then?"
+  //
+  // THIS REVERSES A RECORDED DECISION and should be read as one. The
+  // checkbox render site (renderSectionedQueue) carries a "NO NEW KEY
+  // BINDING, deliberately" note: the checkbox is a real <input>, so Tab
+  // reaches it and native Space toggles it, and adding a binding was judged
+  // a second grammar for a working affordance. That reasoning held while
+  // Space meant something else here. What it missed is that native Space
+  // only works once focus is ON the box -- from the cell (where the
+  // reviewer actually is) Space scrolled the page, and a grid of checkboxes
+  // that needs a Tab before it can be checked is not a grid of checkboxes.
+  // The native path is untouched and still works; this adds the cell-level
+  // one Andrew is describing.
+  //
+  // D IS A RESTORATION, not a new letter: "D/./Space Detail" was the
+  // original vocabulary (see STAGE_SHORTCUT_LEGEND's note) and D was freed
+  // when the detail toggle was retired. Nothing else binds it.
   if (event.key === " ") {
+    event.preventDefault(); // the whole point: never scroll the page from a cell
     structuralCardFocusPending = null; // working the rows now
+    toggleCandidateSelection(target.itemId);
+    return true;
+  }
+  if (event.key.toLowerCase() === "d") {
+    structuralCardFocusPending = null;
     toggleTriageExpansion(target.itemId);
     return true;
   }
   return false;
+}
+
+/**
+ * The one place a candidate's bulk-action selection is toggled from the
+ * KEYBOARD, shared by every cell area (AG, 2026-08-06: "this should be a
+ * global rule in cell areas"). Written as a function rather than repeated
+ * inline in each key handler precisely because "global rule" is the
+ * requirement -- a second surface adopts it by calling this, and cannot
+ * quietly implement a slightly different toggle.
+ *
+ * SILENT NO-OP ON A DECIDED CANDIDATE, matching what the surfaces PAINT:
+ * both cell areas omit the checkbox entirely on a decided row (selection
+ * scopes bulk actions over REMAINING work, and a settled row in the
+ * selection would let the count overstate what any button changes). Acting
+ * on a box that is not drawn would make the selection count disagree with
+ * the boxes the reviewer can see. The keystroke is still consumed by the
+ * caller, so it never falls through to a page scroll -- refusing loudly on
+ * a row whose checkbox is simply absent would be noise, not information.
+ */
+function toggleCandidateSelection(candidateId: string): void {
+  if (isItemResolvedInState("item-check", candidateId, dispatcher.getState())) return;
+  if (selectedCandidateIds.has(candidateId)) selectedCandidateIds.delete(candidateId);
+  else selectedCandidateIds.add(candidateId);
+  render();
 }
 
 /** Which stages currently present the sectioned queue: Ambiguity always
@@ -6995,6 +8993,20 @@ function sectionedQueueStage(stage: WorkflowStage | undefined): "item-check" | "
   if (stage === "ambiguity-check") return "ambiguity-check";
   if (stage === "item-check" && itemCheckViewMode === "triage") return "item-check";
   return null;
+}
+
+function activeSectionedQueueStage(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): "item-check" | "ambiguity-check" | null {
+  const focused = sectionedQueueStage(state.focus?.target.stage);
+  if (focused) return focused;
+  // PROPOSAL-ONLY SHORTCUTS (AG, 2026-08-08 live report: "arrows were not
+  // working" and "so are Opt C and Opt R on Numeric"). A proposal/card
+  // cursor is UI state: the domain item cursor can be parked on a stale row
+  // while the rendered stage is the one the reviewer is actually standing
+  // in. Shortcuts that act on visible section scope must therefore have one
+  // UI-layer fallback: the stage last used to render the workspace. This
+  // stays out of FocusNavigator on purpose; the domain still knows nothing
+  // about category pills or proposal-card cursors.
+  return structuralCardFocusPending !== null ? sectionedQueueStage(lastRenderedActiveStage ?? undefined) : null;
 }
 
 /** "Jump to search result": moves focus straight to the FIRST candidate in
@@ -7091,6 +9103,7 @@ function toggleRelationshipMemberChecked(proposalId: string, candidateId: string
  *  events, same decisions.json, same undo posture -- by construction, not
  *  by promise. */
 function applyRelationshipBulk(proposalId: string, candidateIds: string[], decision: CandidateDecisionKind, replacement?: string): void {
+  const before = dispatcher.getState();
   const result = dispatchReviewWithVisibleAdvance({
     family: "review",
     type: "bulkApplyDecision",
@@ -7098,14 +9111,14 @@ function applyRelationshipBulk(proposalId: string, candidateIds: string[], decis
     decision,
     ...(replacement !== undefined ? { replacement } : {}),
   });
-  if (result.ok) setStatus(`${decisionDisplayLabel(decision)} applied to ${candidateIds.length} related candidate(s).`); // RX-18 + RX-22
-  else notifyToast(`Action failed: ${result.reason}`); // RX-09: recoverable
-  acknowledge({ kind: "group", groupId: proposalId });
+  if (result.ok) {
+    acknowledgeBulkCandidateFeedback(before, candidateIds, "ambiguity-check");
+    setStatus(`${decisionDisplayLabel(decision)} applied to ${candidateIds.length} related candidate(s).`); // RX-18 + RX-22
+  } else {
+    notifyToast(`Action failed: ${result.reason}`); // RX-09: recoverable
+    acknowledge({ kind: "group", groupId: proposalId });
+  }
   render();
-  // AUTO-ADVANCE (AG, 2026-08-01): completing a card moves the cursor to
-  // the next card needing attention -- same grammar as every other
-  // decision path. After render(), so the addressed state is fresh.
-  if (result.ok) advanceStructuralCursor(proposalId);
 }
 
 /** The kind group that currently holds the card cursor, or null -- the one
@@ -7138,12 +9151,11 @@ function kindOfSelectedCard(state: ReturnType<WorkspaceCommandDispatcher["getSta
  * index, is what makes a card missing one side skip-and-narrate instead of
  * silently taking the other one (see preferredActions.ts).
  *
- * ADVANCE: each applyRelationshipBulk carries the structural cursor
- * forward (advanceStructuralCursor), so after the loop the cursor sits
- * where the LAST processed card's advance left it -- the displayed-order
- * anchor pattern runSectionAction uses for rows, applied to cards, and it
- * continues into the stage's first undecided ROW when the whole group is
- * finished.
+ * ADVANCE: each applyRelationshipBulk goes through
+ * dispatchReviewWithVisibleAdvance, whose sectioned-stage branch advances
+ * over mixed review targets. A bulk kind action is therefore just repeated
+ * card decisions, with the final decision landing on the nearest remaining
+ * unresolved candidate or proposal in displayed order.
  */
 function acceptAllInRelationshipKind(
   proposals: readonly RelationshipProposal[],
@@ -7184,75 +9196,7 @@ function acceptAllInRelationshipKind(
         ? "have no acronym value"
         : "have no written-out value";
   setStatus(`Accepted ${accepted} proposal(s).${skipped > 0 ? ` ${skipped} proposal(s) ${skipReason} and remain for individual review.` : ""}`);
-  // COMPLETION-PATH AUDIT (AG, 2026-08-03, from the live report "when I
-  // complete a global update it doesn't auto-nav me to the next item").
-  //
-  // This is the kind group's ⑨ -- Accept All Remaining / Accept as acronyms
-  // / Accept written out -- and it was the ONE bulk path on the structural
-  // surface that never moved the cursor. Its own neighbours already did:
-  // the per-card bulk routes through the advance choke point, and Unrelated
-  // calls advanceStructuralCursor directly. Reuse the latter, anchored on
-  // the LAST proposal in the group, so the cursor continues past everything
-  // just accepted rather than from wherever it happened to sit; that
-  // function already handles "every card is addressed" by continuing into
-  // the stage's rows, which is the dead end this leaves otherwise.
-  //
-  // `render()` is advanceStructuralCursor's own responsibility when it
-  // moves (it renders twice by design -- see its note on deterministic
-  // expansion), so the bare render here only runs when it declined to.
-  const last = proposals[proposals.length - 1];
-  if (accepted > 0 && last) {
-    advanceStructuralCursor(last.proposalId);
-    return;
-  }
   render();
-}
-
-/**
- * AUTO-ADVANCE for structural cards (AG, 2026-08-01, "just like other
- * fields"): after a card's decision lands, move the keyboard cursor to
- * the NEXT card still needing attention -- forward first, then backward
- * (the stage-list advance grammar), and onward into the stage's first
- * undecided row when no card remains. Call AFTER render(): it reads the
- * fresh DOM's addressed classes and focuses a live element.
- */
-function advanceStructuralCursor(fromProposalId: string): void {
-  const cards = Array.from(document.querySelectorAll<HTMLElement>(".relationship-section .relationship-card"));
-  const unaddressed = cards.filter((c) => !c.classList.contains("relationship-card-addressed"));
-  if (unaddressed.length > 0) {
-    const order = cards.map((c) => c.getAttribute("data-proposal-id"));
-    const fromIdx = order.indexOf(fromProposalId);
-    const forward = unaddressed.find((c) => order.indexOf(c.getAttribute("data-proposal-id")) > fromIdx);
-    const target = forward ?? unaddressed[unaddressed.length - 1]!;
-    // HIGHLIGHT IMPLIES DETAIL (AG, 2026-08-02): the caller's render()
-    // ran with the OLD cursor, so the card this advances TO was just
-    // rendered compact -- setting the cursor and focusing it left a
-    // highlighted-but-compact card (the focus listener's guard sees the
-    // cursor already equal and skips its render). One more render with
-    // the new cursor expands it; the render-tail restore then focuses
-    // the fresh element. Two renders per completed card is the cost of
-    // deterministic expansion here -- callers would otherwise each need
-    // to know the next cursor before their own render.
-    structuralCardFocusPending = target.getAttribute("data-proposal-id");
-    render();
-    return;
-  }
-  // Every card is addressed: continue into the stage's rows, landing on
-  // the first still-undecided one.
-  const state = dispatcher.getState();
-  const focusStage = state.focus?.target.stage;
-  let nextRowId: string | undefined;
-  if (focusStage === "ambiguity-check") {
-    const proposals = state.grouping?.ambiguityProposals ?? [];
-    nextRowId = (proposals.find((p) => !state.reviewSession?.candidateDecisions[p.candidateId]) ?? proposals[0])?.candidateId;
-  } else if (focusStage === "item-check" && itemCheckViewMode === "triage") {
-    nextRowId = visibleItemCheckIds(state).find((id) => !state.reviewSession?.candidateDecisions[id]);
-  }
-  if (nextRowId) {
-    structuralCardFocusPending = null; // leaving the cards: the row cursor takes over
-    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: nextRowId });
-    render();
-  }
 }
 
 /**
@@ -7297,6 +9241,48 @@ function handleCardDecisionKey(key: string): boolean {
   return true;
 }
 
+function selectedRelationshipProposal(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): RelationshipProposal | null {
+  const proposalId = structuralCardFocusPending as string | null;
+  if (!proposalId) return null;
+  return (state.structuralRelationships?.proposals ?? []).find((p) => p.proposalId === proposalId) ?? null;
+}
+
+function selectedRelationshipMemberIds(proposal: RelationshipProposal): string[] {
+  const unchecked = relationshipUncheckedIds.get(proposal.proposalId);
+  return proposal.candidateIds.filter((id) => !(unchecked?.has(id) ?? false));
+}
+
+function runRelationshipPreferredAction(proposal: RelationshipProposal, op: PreferredActionOp, candidateIds: string[]): void {
+  structuralCardFocusPending = proposal.proposalId; // survive the re-render/editor open
+  if (op.kind === "bulk-change") {
+    applyRelationshipBulk(proposal.proposalId, candidateIds, "Rename", op.replacement);
+  } else {
+    openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds, action: "Redact" });
+  }
+}
+
+function handleCardPreferredDigitKey(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  const match = /^Digit([1-9])$/.exec(event.code ?? "");
+  if (!match) return false;
+  const state = dispatcher.getState();
+  if (!sectionedQueueStage(state.focus?.target.stage)) return false;
+  const proposal = selectedRelationshipProposal(state);
+  if (!proposal) return false;
+  const members = proposal.candidateIds
+    .map((id) => state.detection?.candidates.find((c) => c.id === id))
+    .filter((candidate): candidate is Candidate => Boolean(candidate));
+  const selectedIds = selectedRelationshipMemberIds(proposal);
+  if (selectedIds.length === 0) {
+    refuse("No members of this proposal are checked.");
+    return true;
+  }
+  const action = preferredActionsForRelationship(proposal, members)[Number(match[1]) - 1];
+  if (!action) return false;
+  runRelationshipPreferredAction(proposal, action.op, selectedIds);
+  return true;
+}
+
 // TRIMMED (2026-07-30, Andrew): drop words that don't serve the narrative
 // -- "relationship"/"identifier" restate what the card already shows.
 // "Possible acronym" / "Possible numeric pattern" carry the same meaning
@@ -7312,11 +9298,29 @@ const RELATIONSHIP_KIND_LABEL: Record<RelationshipKind, string> = {
   "inserted-word-name": "Probable Name with Inserted Word",
 };
 
-function renderStructuralRelationships(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): void {
+/**
+ * `only` renders exactly ONE proposal's card, and `showGroupHeading: false`
+ * suppresses the kind-group heading around it (AG, 2026-08-06).
+ *
+ * That pair is what lets a relationship card render into the DETAIL PANE as
+ * the selected review unit's card, rather than as a group appended below
+ * the queue. The card markup, its actions, its decision paths and its audit
+ * are untouched -- only where it is mounted changed. Reusing this function
+ * rather than extracting the card builder was deliberate: the builder is
+ * ~250 lines with six decision paths through it, and a second copy of that
+ * is exactly the kind of duplicate the app.ts render layer has spent this
+ * whole pass removing.
+ */
+function renderStructuralRelationships(
+  container: HTMLElement,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  options: { only?: string | null; showGroupHeading?: boolean } = {}
+): void {
+  const { only = null, showGroupHeading = true } = options;
   const proposals = state.structuralRelationships?.proposals ?? [];
   if (proposals.length === 0) return;
   const dismissals = state.reviewSession?.relationshipDismissals ?? {};
-  const active = proposals.filter((p) => !dismissals[p.proposalId]);
+  const active = proposals.filter((p) => !dismissals[p.proposalId] && (only === null || p.proposalId === only));
   if (active.length === 0) return;
   const decisions = state.reviewSession?.candidateDecisions ?? {};
 
@@ -7362,7 +9366,13 @@ function renderStructuralRelationships(container: HTMLElement, state: ReturnType
     if (addressedCount < ofKind.length) {
       const cursorKind = kindOfSelectedCard(state);
       const active = cursorKind === kind;
-      for (const { action, digit } of sectionActionDigitAssignments(relationshipKindActions(kind, ofKind), (a) => a.chord)) {
+      // Counts taken over the UNDECIDED proposals, same as the collection's
+      // own buttons -- this heading renders the identical action list, so a
+      // reviewer must not find the two disagreeing about how many an accept
+      // reaches. (This site prints no count today; passing it keeps the two
+      // callers honest if that changes.)
+      const undecidedOfKind = ofKind.filter((p) => !p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id])));
+      for (const { action, digit } of sectionActionDigitAssignments(relationshipKindActions(kind, ofKind, undecidedOfKind), (a) => a.chord)) {
         // Same rule as the row headings: chords always advertised, digits
         // gated to the active scope, inactive chords dimmed.
         const chordCap = action.chord !== null ? groupScopeChordLabel(action.chord) : null;
@@ -7409,7 +9419,10 @@ function renderStructuralRelationships(container: HTMLElement, state: ReturnType
       );
     }
     heading.appendChild(titleLine);
-    section.appendChild(heading);
+    // Suppressed when this card is mounted in the detail pane: the category
+    // heading above it already names the group, and two headings for one
+    // card is the duplication the kind-group super-title was removed for.
+    if (showGroupHeading) section.appendChild(heading);
     const group = el("div", { class: "relationship-kind-group" });
     section.appendChild(group);
     groupHosts.set(kind, group);
@@ -7474,14 +9487,12 @@ function renderStructuralRelationships(container: HTMLElement, state: ReturnType
     // preferred actions renders exactly as before.
     const preferred = preferredActionsForRelationship(proposal, members);
     const runPreferredAction = (op: PreferredActionOp): void => {
-      if (op.kind === "bulk-change") {
-        applyRelationshipBulk(proposal.proposalId, selectedIds, "Rename", op.replacement);
-      } else {
-        // "The cursor appears in the blank": the existing editor's own
-        // render-tail focus does exactly this -- typing + Enter is then
-        // exactly Redact All -> replacement -> Apply.
-        openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Redact" });
-      }
+      // "The cursor appears in the blank": the existing editor's own
+      // render-tail focus does exactly this -- typing + Enter is then
+      // exactly Redact All -> replacement -> Apply. Routed through the
+      // same helper as the document-level selected-card digit fallback, so
+      // a focused DOM card and a visually-selected card cannot diverge.
+      runRelationshipPreferredAction(proposal, op, selectedIds);
     };
     if (preferred.length > 0) {
       // The chips are the protected side: their text is the proposal's
@@ -7509,28 +9520,15 @@ function renderStructuralRelationships(container: HTMLElement, state: ReturnType
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       const focusTag = (event.target as HTMLElement | null)?.tagName?.toLowerCase() ?? ""; // both accesses guarded -- see handleTriageKey's note
       if (focusTag === "input" || focusTag === "textarea" || focusTag === "select") return;
-      if (event.key === "ArrowDown") {
+      if (event.key === "ArrowDown" || event.key === "ArrowRight") {
         event.preventDefault();
         event.stopPropagation();
-        // DOWN ENTERS (AG, 2026-08-02): from the card itself, ArrowDown
-        // goes INTO the card -- first inner control (member checkbox /
-        // preferred action / bulk button), matching the row grammar and
-        // Group Check's Down-enters-the-group. From an inner control (or
-        // on a collapsed/addressed card with nothing to enter), Down
-        // falls back to next-card movement, unchanged.
-        if (event.target === card) {
-          const inner = card.querySelector<HTMLElement>("input:not([disabled]), button:not([disabled]), select, a[href]");
-          if (inner) {
-            inner.focus();
-            return;
-          }
-        }
-        moveStructuralCardFocus(card, 1);
-        return;
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        event.stopPropagation();
+        // ARROWS STAY ON THE REVIEW-UNIT AXIS (AG, 2026-08-08, Numeric
+        // proposal-only live report). The old Down-enters-card rule made
+        // a one-column proposal category feel like two nested cursors:
+        // first Down highlighted an inner control, second Down finally
+        // moved out to the next card. Enter is the deliberate "go deeper"
+        // gesture now, so arrows remain pure movement between review units.
         moveStructuralCardFocus(card, 1);
         return;
       }
@@ -7584,8 +9582,6 @@ function renderStructuralRelationships(container: HTMLElement, state: ReturnType
         if (result.ok) setStatus("Relationship dissolved -- its candidates continue through review individually.");
         else notifyToast(`Could not dismiss the relationship: ${result.reason}`); // RX-09: recoverable
         render();
-        // AUTO-ADVANCE (AG, 2026-08-01): dismissing is also "done here."
-        if (result.ok) advanceStructuralCursor(proposal.proposalId);
       })
     );
     headerRow.appendChild(actions);
@@ -7687,8 +9683,10 @@ function renderCandidateStage(container: HTMLElement, state: ReturnType<Workspac
       return;
     }
     const collection = el("div", { class: "triage-collection" });
+    // ONE CATEGORY, BOTH REVIEW-UNIT TYPES (AG, 2026-08-06). The category
+    // renderer now draws its proposals inline beside its candidates, so
+    // there is no second render tree to append and no separate call here.
     renderAmbiguityQueue(collection, state, candidateIds);
-    renderStructuralRelationships(collection, state);
     container.appendChild(collection);
     return;
   }
@@ -7727,8 +9725,8 @@ function renderCandidateStage(container: HTMLElement, state: ReturnType<Workspac
       // continues into the cards; backing out of the first card returns
       // to the last row (see moveStructuralCardFocus).
       const collection = el("div", { class: "triage-collection" });
+      // Same one-category rule as the Ambiguity arm above.
       renderTriageQueue(collection, state, candidateIds);
-      renderStructuralRelationships(collection, state);
       container.appendChild(collection);
       return;
     }
@@ -8924,8 +10922,10 @@ function applyTypeBulk(
     refuse("Nothing remaining in this type.");
     return;
   }
+  const before = dispatcher.getState();
   const result = dispatchReviewWithVisibleAdvance({ family: "review", type: "bulkApplyDecision", candidateIds: remaining, decision });
   if (result.ok) {
+    acknowledgeBulkCandidateFeedback(before, remaining, "type-check");
     setStatus(`${decisionDisplayLabel(decision)} applied to ${remaining.length} ${SEMANTIC_TYPE_LABELS[group.typeId]} item(s).`); // RX-18
   } else {
     notifyToast(`Bulk action failed: ${result.reason}`); // RX-09
@@ -9143,7 +11143,7 @@ function groupScopeActions(state: ReturnType<WorkspaceCommandDispatcher["getStat
     if (remaining.length === 0) return []; // a finished type offers nothing, exactly like a finished section
     return typeBulkActions(group.typeId, group, remaining, state);
   }
-  return activeScopeSectionActions(state);
+  return activeScopeSectionActions(state).filter((action) => !action.excludeFromDigits);
 }
 
 /** The focused type's review surface -- "selecting a type opens a
@@ -9473,6 +11473,17 @@ function handleTypeCheckKey(event: KeyboardEvent): boolean {
       }
       return true;
     }
+    // SPACE SELECTS IN A CELL AREA (AG, 2026-08-06) -- the same binding
+    // handleTriageKey takes, through the same shared toggle, because this
+    // was asked for as a global rule rather than a Type Check feature.
+    // This grid is where it was reported: Space was unbound here, so it
+    // fell through to the browser and scrolled the page out from under the
+    // cursor.
+    if (key === " ") {
+      event.preventDefault();
+      toggleCandidateSelection(current);
+      return true;
+    }
     if (letter === "k" || letter === "i") {
       decideTypeMemberAndAdvance(
         group,
@@ -9579,10 +11590,10 @@ function renderOutputStage(container: HTMLElement, state: ReturnType<WorkspaceCo
       button("Download Audit Report (JSON)", () => downloadText(`audit-report-${idPrefix}.json`, artifacts.auditReport, "application/json"))
     );
     auditSection.appendChild(
-      button("Download Redaction Log (CSV)", () => downloadText(`audit-log-${idPrefix}.csv`, artifacts.csv, "text/csv"))
+      button("Download Redaction Log (CSV)", () => downloadText(`audit-log-${idPrefix}.csv`, artifacts.csv, "text/csv", "csv_audit"))
     );
     auditSection.appendChild(
-      button("Download Decisions (JSON)", () => downloadText(`audit-decisions-${idPrefix}.json`, artifacts.decisionsJson, "application/json"))
+      button("Download Decisions (JSON)", () => downloadText(`audit-decisions-${idPrefix}.json`, artifacts.decisionsJson, "application/json", "json_decisions"))
     );
     auditSection.appendChild(
       button("Download QA Metrics (JSON)", () => downloadText(`audit-qa-metrics-${idPrefix}.json`, artifacts.qaMetricsJson, "application/json"))
@@ -9608,13 +11619,79 @@ function renderOutputStage(container: HTMLElement, state: ReturnType<WorkspaceCo
 // as wider rectangles, per Andrew's explicit direction; chords keep the
 // modifier glyph inside the cap ("⇧K"). A `text` segment is plain prose
 // with no key at all (QA's no-model note).
-type LegendSegment = { keys: string[]; label: string } | { text: string };
+type LegendGroup = "decide" | "move" | "scope";
+type LegendSegment = { keys: string[]; label: string; group?: LegendGroup } | { text: string; group?: LegendGroup };
 
 /** Shorthand segment builder -- one key or several alternative keys
  *  (rendered as adjacent caps, e.g. F6 and "," both cycling regions),
  *  then the muted label. */
 function kseg(keys: string | string[], label: string): LegendSegment {
   return { keys: Array.isArray(keys) ? keys : [keys], label };
+}
+
+/** Same, tagged as acting on the surrounding SCOPE rather than on the
+ *  focused item -- see segmentGroup() for why only this group is tagged
+ *  by hand. */
+function sseg(keys: string | string[], label: string): LegendSegment {
+  return { keys: Array.isArray(keys) ? keys : [keys], label, group: "scope" };
+}
+
+/**
+ * ROW GROUPING (AG, 2026-08-06). The command card is a 3-4 row grid now,
+ * and this is what decides which row a segment lands in -- by WHAT THE KEY
+ * ACTS ON, which is a distinction this app already makes everywhere else
+ * (it is why the legend says "Keep member" rather than "Keep") and was the
+ * one thing the flat, right-packed row made invisible.
+ *
+ *   decide -- the focused item: K/C/R/I, Enter, digits that accept ITS
+ *             suggestions, F, S.
+ *   move   -- the cursor: arrows, Tab, Esc, [ ], /, and the two
+ *             Next-undecided / Previous-decision buttons.
+ *   scope  -- the surrounding section, selection, or group: ⇧A, the
+ *             section-action digits, ⌥K/C/R/N, ⇧K/⇧C/⇧R/⇧I.
+ *
+ * DERIVED FROM THE KEYS, NOT RE-DECLARED AT EVERY CONSTRUCTION SITE.
+ * commandBarLegend() builds its legend at roughly a dozen places, several
+ * of them conditional; tagging each segment by hand would have been ~40
+ * edits in a function under concurrent development, and every future site
+ * would be one more place to forget. Movement keys are the same glyphs
+ * everywhere in this app -- they are the region model's own vocabulary --
+ * so a key table classifies them exactly and cheaply.
+ *
+ * SCOPE IS THE EXCEPTION and is tagged explicitly (see sseg), because it
+ * cannot be read off the key: `1–9` is "accept the focused item's
+ * suggestions" in one place and "section actions" in another, and no
+ * amount of key inspection can tell those apart. There are four such
+ * segments and they are all pushed from known sites.
+ *
+ * THE DEFAULT IS `decide`, and the failure mode of a wrong default is
+ * deliberately mild: an unclassified key appears in the first row instead
+ * of the second. It is never dropped, never duplicated, and the card never
+ * loses a shortcut -- which is the property that makes a derived
+ * classification safe to run ahead of an exhaustive one.
+ */
+const MOVEMENT_KEYS = new Set<string>([
+  "↓",
+  "↑↓",
+  "←→",
+  "←→↑",
+  "↑↓←→",
+  "⌥↑↓←→",
+  "Tab",
+  "Esc",
+  "/",
+  "[",
+  "]",
+]);
+
+function segmentGroup(segment: LegendSegment): LegendGroup {
+  if (segment.group) return segment.group;
+  if ("text" in segment) return "decide";
+  // `every`, not `some`: a segment offering several alternative keys is
+  // only movement if all of them are. Nothing in the current vocabulary
+  // mixes the two, and a mixed segment belonging to `decide` is the safe
+  // direction per this function's note above.
+  return segment.keys.length > 0 && segment.keys.every((key) => MOVEMENT_KEYS.has(key)) ? "move" : "decide";
 }
 
 const STAGE_SHORTCUT_LEGEND: Record<WorkflowStage, LegendSegment[]> = {
@@ -9634,11 +11711,10 @@ const STAGE_SHORTCUT_LEGEND: Record<WorkflowStage, LegendSegment[]> = {
     kseg("R", "Redact"),
     kseg("I", "Ignore"),
     kseg("1–9", "Accept suggestion"),
-    kseg("Enter", "Details"),
-    // DOWN ENTERS (AG, 2026-08-02): ↓ goes INTO the focused item's
-    // panel; ←→↑ and Tab move between items (sectioned-queue grammar).
-    kseg("↓", "Enter item"),
-    kseg("←→↑", "Move"),
+    kseg("Enter", "Open panel"),
+    // ARROWS ARE MOVEMENT (AG, 2026-08-06): "DOWN ENTERS" is retired --
+    // see the ArrowDown branch in the nav interception for why.
+    kseg("↑↓←→", "Move"),
     kseg("Tab", "Next item"),
   ],
   "group-check": [
@@ -9672,8 +11748,8 @@ const STAGE_SHORTCUT_LEGEND: Record<WorkflowStage, LegendSegment[]> = {
     kseg("C", "Change"),
     kseg("R", "Redact"),
     kseg("I", "Ignore"),
-    kseg("X", "Select"),
-    kseg("Enter", "Details"),
+    sseg(["Space", "X"], "Select"),
+    kseg("Enter", "Open panel"),
     kseg("/", "Search"),
     kseg("[", "Prev"),
     kseg("]", "Next undecided"),
@@ -9783,6 +11859,11 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
         // leave the other half undocumented on the surface that changed.
         kseg("←→", "Member"),
         kseg("↑↓", "Row"),
+        // 2026-08-06: Space selects here too -- the cell-area rule. It was
+        // the stage that reported the defect, so leaving it unadvertised
+        // would be the exact "painted but not pressable" inverse this file
+        // already has a scar from.
+        sseg("Space", "Select"),
         kseg("Esc", "Back to types"),
         kseg("Tab", "Next type"),
       ];
@@ -9799,9 +11880,10 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
       const scopeKind = currentReviewScope(state)?.source.kind;
       if (scopeKind === "selection") {
         return [
-          kseg("1–9", "Section actions (checked)"),
-          kseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
-          kseg("Space", "Hold details open"),
+          sseg("1–9", "Zone actions (checked)"),
+          sseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
+          kseg("D", "Hold details open"),
+          sseg("Space", "Select"),
           kseg("←→↑", "Move cursor"),
           kseg("Tab", "Next item"),
         ];
@@ -9809,10 +11891,11 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
       if (scopeKind === "stage-remainder") {
         return [
         kseg("Enter", "Return to item"),
-        kseg("1–9", "Section actions"),
-        kseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
+        sseg("1–9", "Zone actions"),
+        sseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
         kseg("←→↑", "Move & return"),
-        kseg("Space", "Hold details open"),
+        kseg("D", "Hold details open"),
+        sseg("Space", "Select"),
       ];
       }
     }
@@ -9830,8 +11913,8 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
             kseg("C", "Change"),
             kseg("R", "Redact"),
             kseg("I", "Ignore"),
-            kseg("X", "Select"),
-            kseg("Enter", "Details"),
+            sseg(["Space", "X"], "Select"),
+            kseg("Enter", "Open panel"),
             kseg("↑↓←→", "Results"),
             // PHASE 2: the narrowing column moved to ⌥ when ⇧←/→ became
             // stage movement -- see handleFilterColumnKey.
@@ -9847,21 +11930,57 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
             // when nothing is acceptable), Space discloses, Shift+A
             // accepts the focused item's whole section; K/C/R/I still
             // decide the focused row.
+            /* THE CARD IS SEVEN ENTRIES (AG, 2026-08-06: "Only leave the
+             * items in the screenshot. Everything else is unnecessary").
+             *
+             * ⏎ Accept · D Details / ←↑↓→ Move · ⌥←→ Categories · ⇧←→ Stages
+             * / Space Select · Esc Back.
+             *
+             * WHAT LEFT, AND WHY EACH ONE COULD:
+             *  - K/C/R/I now carry their keys on the panel buttons
+             *    themselves (see decisionButtons), which is where the rest
+             *    of this app has always put a binding.
+             *  - 1-9 Accept suggestion is already printed ON each numbered
+             *    suggestion button.
+             *  - Section-action digits are printed on the green buttons.
+             *  - ⇧A was a second key for the action those digits already
+             *    fire, and after the single-item and mixed-category rules it
+             *    could fire where no button was drawn -- a keystroke acting
+             *    on nothing painted. Retired rather than taught to re-check
+             *    guards it should not have bypassed.
+             *  - ] / Tab / F6 / Regions are application plumbing, not the
+             *    review vocabulary this card exists to teach.
+             *
+             * The card now advertises exactly the keys that have NO on-screen
+             * control of their own: movement, disclosure, and escape. That
+             * is a rule rather than a taste, and it is what should decide
+             * whether a future binding belongs here.
+             *
+             * "Categories", not "Sections": the pill bar has called them
+             * categories since the labels pass, and the card should speak
+             * the screen's language rather than the model's. */
             [
-              kseg("Enter", "Accept"),
-              kseg("Space", "Details"),
-              kseg("⇧A", "Accept section"),
-              // DOWN ENTERS (AG, 2026-08-02): ↓ goes INTO the focused
-              // item; ←→↑ and Tab move between items.
-              kseg("↓", "Enter item"),
-              kseg("←→↑", "Move"),
-              kseg("K", "Keep"),
-              kseg("C", "Change"),
-              kseg("R", "Redact"),
-              kseg("I", "Ignore"),
-              // "]"/"[" remain Item Check bindings (goToAdjacentInVisible-
-              // List's own scope) -- not advertised where they are inert.
-              ...(activeStage === "item-check" ? [kseg("]", "Next undecided")] : []),
+              // ENTER ENTERS, FULL STOP (AG, 2026-08-06). This read "Accept"
+              // while Enter's meaning depended on whether the item happened
+              // to carry a suggestion -- accept when it did, go deeper when
+              // it did not -- so the legend was accurate for some rows and
+              // wrong for others, which is worse than saying nothing. With
+              // the accept retired (see handleTriageKey) the key has one
+              // meaning on every row and the card can state it plainly.
+              // Accepting is unchanged and still one keystroke: digit ①,
+              // which is what Enter was firing anyway.
+              kseg("Enter", "Open panel"),
+              kseg("D", "Details"),
+              sseg("Space", "Select"),
+              // ARROWS ARE MOVEMENT, ENTER ENTERS (AG, 2026-08-06). All
+              // four arrows move in the grid; Enter goes into the focus
+              // panel, Esc backs out.
+              // ARROWS ARE NOT ADVERTISED (AG, 2026-08-06: "users know what
+              // arrows do"). The one entry on this card that taught nothing
+              // -- every other key here is an app-specific binding a
+              // reviewer could not guess, which is precisely why they are
+              // the ones that stayed.
+              kseg("Esc", "Back"),
             ]
           : [...STAGE_SHORTCUT_LEGEND[activeStage]];
     // REVIEWER RECOMMENDATION UX (2026-07-30): digits accept the focused
@@ -9874,25 +11993,21 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
         ((recommendationForCandidate(focusedId, state)?.suggestions.length ?? 0) > 0 ||
           state.grouping?.ambiguityProposals.some((p) => p.candidateId === focusedId && p.candidateGroupOptions.length > 0))
     );
-    if (hasSuggestions) legend.push(kseg("1–9", "Accept suggestion"));
-    // SECTION-ACTION DIGITS (AG, 2026-08-02): advertised only when the
-    // active scope actually declares actions, and labelled with the exact
-    // digits it reserves -- derive, don't clutter (the same rule the
-    // suggestion segment above follows). The range is stated from the
-    // reserved floor up to ⑨ so it always names real, pressable keys:
-    // one action reads "9", two read "8–9", three "7–9".
-    const scopeActions = activeScopeSectionActions(state);
-    if (scopeActions.length > 0) {
-      const digits = sectionActionDigitAssignments(scopeActions, (a) => a.chord)
-        .map((a) => a.digit)
-        .filter((d): d is number => d !== null);
-      const lowest = Math.min(...digits);
-      legend.push(kseg(lowest === 9 ? "9" : `${lowest}–9`, "Section actions"));
-    }
-    if (activeStage === "item-check" && selectedCandidateIds.size > 0) {
-      legend.push(kseg(["⇧K", "⇧C", "⇧R", "⇧I"], "Apply to selected"));
-      legend.push(kseg("⇧X", "Clear visible"));
-    }
+    /* EVERY DERIVED SEGMENT IS GONE (AG, 2026-08-06). The suggestion
+     * range, the section-action digit range, and the selection chords all
+     * described keys that are ALREADY PRINTED on the controls they fire --
+     * the numbered suggestion buttons, the green heading buttons, and the
+     * selection toolbar respectively. Three blocks of derivation existed to
+     * restate, in a card across the screen, what the button under the
+     * reviewer's cursor already said.
+     *
+     * That is also why the Infinity-9 bug was possible at all: a segment
+     * computing a key range from a scope it does not own has to re-derive
+     * what the renderer knows, and re-derivation is where the two drift.
+     * Deleting the segment deletes the class of bug with it.
+     *
+     * `hasSuggestions` and the digit assignment stay live elsewhere -- the
+     * BUTTONS still number themselves; only the legend's echo is gone. */
     return legend;
   }
   return STAGE_SHORTCUT_LEGEND[activeStage];
@@ -9907,6 +12022,153 @@ function legendSegmentEl(segment: LegendSegment): HTMLElement {
   for (const key of segment.keys) entry.appendChild(el("kbd", { class: "keycap" }, key));
   entry.appendChild(el("span", { class: "legend-label" }, segment.label));
   return entry;
+}
+
+/**
+ * SECTION PILLS (AG, 2026-08-06): a sticky map of the stage's sections --
+ * "Let's limit to the category title and the count in more subdued grey on
+ * right e.g. (140) as they are in many other places like on cells."
+ *
+ * WHAT MAKES THIS WORTH A PERMANENT LAYER, in Andrew's own framing of the
+ * design it came from: "it makes the nav so great. Now it is a continuous
+ * editing experience and categories simply appear in the same place." The
+ * pills are the MAP; the section snap is the ARRIVAL. Neither is much on
+ * its own.
+ *
+ * A DISPLAY, NOT A REGION. The pills are clickable and they show where you
+ * are, but they are not a keyboard destination: ⌥←/→ moves between sections
+ * from wherever the reviewer already is (see handleSectionArrowKey). That
+ * was a deliberate choice over making the bar a focusable region -- it keeps
+ * the pills from being able to trap focus, and it gives the app a single
+ * legible hierarchy where modifier strength maps to unit size:
+ *
+ *     ←→      cells        ⌥←→   sections        ⇧←→   stages
+ *
+ * The count is REMAINING work, not total: the queue is about what is left,
+ * and it is the number every heading beside it already shows. A finished
+ * section mutes -- the same resting-figure idea metrics/percentDisplay.ts
+ * applies to the Decision Tracker, so "grey means nothing here" stays one
+ * idea across the app rather than two coincidences.
+ */
+function renderSectionPills(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>, activeStage: WorkflowStage): void {
+  const queueStage = sectionedQueueStage(activeStage);
+  if (!queueStage) return;
+  const categories = stageCategories(state, queueStage);
+  if (categories.length === 0) return;
+  const currentId = currentStageCategoryId(state, categories);
+  const bar = el("div", { class: "section-pills", role: "list", "aria-label": "Sections in this stage" });
+  for (const category of categories) {
+    const current = category.id === currentId;
+    const pill = button("", () => jumpToStageCategory(category));
+    pill.className = `section-pill${current ? " section-pill-current" : ""}${category.remaining === 0 ? " section-pill-done" : ""}`;
+    if (isAcknowledged({ kind: "section", stage: queueStage, sectionId: String(category.id) })) pill.classList.add("completion-acknowledged");
+    pill.setAttribute("role", "listitem");
+    if (current) pill.setAttribute("aria-current", "true");
+    pill.appendChild(el("span", {}, category.label));
+    pill.appendChild(el("span", { class: "section-pill-count" }, `(${category.remaining})`));
+    bar.appendChild(pill);
+  }
+  container.appendChild(bar);
+}
+
+/** Move focus to a section's first REMAINING item (its first item if the
+ *  section is finished) -- the one definition of "go to this section",
+ *  shared by a pill click and ⌥←/→ so the mouse and the keyboard cannot
+ *  land in different places. The section snap in scrollFocusedRowIntoView
+ *  does the scrolling; this only moves the cursor. */
+function jumpToSection(section: { label: string; candidateIds: readonly string[] }): void {
+  const state = dispatcher.getState();
+  const target = section.candidateIds.find((id) => !state.reviewSession?.candidateDecisions[id]) ?? section.candidateIds[0];
+  if (!target) return;
+  structuralCardFocusPending = null;
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: target });
+  render();
+}
+
+/** Select a category's cursor without rendering. Used by both live jumps
+ *  and refresh restore so the same "which unit represents this pill?"
+ *  rule controls mouse, keyboard and page reload. */
+function selectStageCategoryCursor(category: StageCategory, state = dispatcher.getState()): boolean {
+  const firstCandidate = category.candidateIds.find((id) => !state.reviewSession?.candidateDecisions[id]) ?? category.candidateIds[0];
+  if (firstCandidate) {
+    structuralCardFocusPending = null;
+    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: firstCandidate });
+    return true;
+  }
+  const proposals = state.structuralRelationships?.proposals ?? [];
+  const decisions = state.reviewSession?.candidateDecisions ?? {};
+  const unaddressed = category.relationshipProposalIds.find((proposalId) => {
+    const proposal = proposals.find((p) => p.proposalId === proposalId);
+    return proposal ? !proposal.candidateIds.every((id) => Boolean(decisions[id])) : false;
+  });
+  const target = unaddressed ?? category.relationshipProposalIds[0];
+  if (!target) return false;
+  structuralCardFocusPending = target;
+  return true;
+}
+
+/** Enter a category, landing on its first unreviewed unit of EITHER type.
+ *  Candidates are preferred when both are present only because they lead
+ *  the rendered list; a category holding nothing but proposals lands on a
+ *  proposal, which is the case that made the old rows-only jump wrong. */
+function jumpToStageCategory(category: StageCategory): void {
+  if (selectStageCategoryCursor(category)) render();
+}
+
+/**
+ * ⌥←/→ MOVES A SECTION (AG, 2026-08-06): "option/alt plus arrows might be
+ * good. it's a similar psychological nav as both sections and grid nav."
+ *
+ * It completes the hierarchy -- plain arrows move a cell, ⌥ moves a
+ * section, ⇧ moves a stage -- so the modifier says how far you travel. That
+ * is learnable in a way "press F6 to reach the pill bar, then arrow within
+ * it" is not, which is why this won over making the bar a region.
+ *
+ * NO COLLISION WITH BY-CATEGORY'S FILTERS, which also bind ⌥ arrows: this
+ * declines unless `sectionedQueueStage` returns a stage, and that is null
+ * in By Category (item-check answers only in the Triage view). The two are
+ * mutually exclusive by view, not by luck -- but a future surface adding
+ * ⌥ arrows must check that guard rather than assume the key is free.
+ *
+ * No wrap, matching every other cursor in this app: at the first or last
+ * section the key is consumed and nothing moves.
+ */
+function handleSectionArrowKey(event: KeyboardEvent): boolean {
+  if (!event.altKey || event.shiftKey || event.metaKey || event.ctrlKey) return false;
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+  if (inlineEditor) return false; // an open editor owns every key
+  if (isTextEntryElement(document.activeElement as HTMLElement | null)) return false;
+  const state = dispatcher.getState();
+  if (!state.documentLoaded) return false;
+  const queueStage = activeSectionedQueueStage(state);
+  if (!queueStage) return false;
+  // BOTH AXES (AG, 2026-08-06): the kind groups became peer categories, so
+  // ⌥←→ walks them too. Without this the pill bar would advertise a
+  // destination the keyboard could not reach -- the paint/keystroke
+  // disagreement the Review Scope invariant exists to forbid.
+  const categories = stageCategories(state, queueStage);
+  if (categories.length === 0) return false;
+  const currentId = currentStageCategoryId(state, categories);
+  const index = currentId === null ? -1 : categories.findIndex((c) => c.id === currentId);
+  // SECTION JUMP RETURNS TO REVIEW MODE (AG, 2026-08-08, live report:
+  // "I just used Opt + > to get here. Pressed a down arrow. Nothing.").
+  // The pills are a display, not a keyboard region; after a section-level
+  // jump the next plain arrow must move the review-unit cursor, not sit in
+  // the chrome gate because the triggering button/pill still owns DOM
+  // focus. Blur before rendering so both moved and boundary presses hand
+  // the keyboard back to the review surface.
+  const active = document.activeElement as HTMLElement | null;
+  if (active && typeof active.blur === "function") active.blur();
+  if (index === -1) {
+    jumpToStageCategory(categories[0]!);
+    return true;
+  }
+  const next = event.key === "ArrowRight" ? index + 1 : index - 1;
+  if (next < 0 || next >= categories.length) return true; // boundary: consumed, no wrap
+  const target = categories[next]!;
+  jumpToStageCategory(target);
+  setStatus(`Section: ${target.label} — ${next + 1} of ${categories.length}.`); // RX-18
+  return true;
 }
 
 /**
@@ -9944,52 +12206,111 @@ function renderCommandBar(container: HTMLElement, state: ReturnType<WorkspaceCom
   // active tab terminating into the workspace surface -- is unchanged.
   const card = el("div", { class: "command-card" });
 
-  // --- Section 1: Current Review (the focused item's own vocabulary) ---
-  const legend = commandBarLegend(state, activeStage);
-  // SECTION LABELS REMOVED (AG, 2026-08-03): "Current Review" and
-  // "Navigation" were pinned to the card's far left by
-  // `.command-card-label`'s `margin-right: auto` while the keycaps packed
-  // right, so as the shortcut list grew the labels ended up stranded
-  // across an ever-widening gutter -- and they were never carrying
-  // information: "Enter Accept · Space Details" says what it is. Cutting
-  // them lets the card hug the keycaps, which is where the border belongs.
+  // FOUR ROWS, GROUPED BY WHAT THE KEYS ACT ON (AG, 2026-08-06), per "can
+  // it be made into 3-4 rows and presented cleaner? ... maybe by global vs
+  // local or something." The card already had global vs local as its two
+  // sections; this splits the local half by object -- the focused item,
+  // the cursor, the surrounding scope -- which is a distinction the legend
+  // text was already making in words ("Keep member" vs "Keep") while the
+  // layout hid it. See segmentGroup() for the classification.
   //
-  // The naming survives as `aria-label` on each row: the grouping is still
-  // real and still useful non-visually, it just does not need to be drawn.
-  const reviewRow = el("div", { class: "command-card-row", "aria-label": "Current review shortcuts" });
-  for (const segment of legend) reviewRow.appendChild(legendSegmentEl(segment));
+  // LABELS ARE BACK, and this is a reversal of the 2026-08-03 removal, so
+  // it needs to answer that removal directly. They were cut because
+  // `.command-card-label`'s `margin-right: auto` pinned each label to the
+  // card's far left while the caps packed right, stranding it across a
+  // gutter that widened as the shortcut list grew. The card is a two-
+  // column GRID now: the label column is sized to its own content and the
+  // caps start immediately after it, at the same x on every row. The
+  // mechanism that made labels bad is gone, and with four rows instead of
+  // two the labels are now carrying real information -- "Enter Accept ·
+  // Space Details" explained itself, but "which of these eleven keys acts
+  // on the section rather than the item" does not.
+  const rows: { group: LegendGroup; label: string; aria: string }[] = [
+    { group: "decide", label: "Decide", aria: "Shortcuts that act on the focused item" },
+    { group: "move", label: "Move", aria: "Shortcuts that move the cursor" },
+    { group: "scope", label: "Scope", aria: "Shortcuts that act on the surrounding section or selection" },
+  ];
+  const legend = commandBarLegend(state, activeStage);
+  const rowEls = new Map<LegendGroup, HTMLElement>();
+  for (const row of rows) rowEls.set(row.group, el("div", { class: "command-card-row", "aria-label": row.aria }));
+  for (const segment of legend) rowEls.get(segmentGroup(segment))!.appendChild(legendSegmentEl(segment));
+
   if (activeStage === "item-check") {
     if (selectedCandidateIds.size > 0) {
-      reviewRow.appendChild(el("span", { class: "command-bar-selection" }, `${selectedCandidateIds.size} selected`));
+      // The selection chip belongs with Scope: it is the subject those
+      // ⇧-chords act on, and reading "3 selected" beside "⇧K Apply to
+      // selected" is the whole sentence.
+      rowEls.get("scope")!.appendChild(el("span", { class: "command-bar-selection" }, `${selectedCandidateIds.size} selected`));
     }
     // WAVE 2 CLOSEOUT (2026-07-29): visibleItemCheckIds(), not an inline
     // queryItemCheck() -- this button pair previously ignored Category
     // Check's narrowing, so "Next undecided" could select a candidate the
     // reviewer couldn't see while By Category was active. One source of
     // "what is the visible list," same as arrow keys and the post-decision
-    // advance. These live in Current Review: they move through the
-    // review's own items, not around the application.
+    // advance. These are MOVE: they move through the review's own items,
+    // not around the application (which is why they are not in App).
     const visible = visibleItemCheckIds(state);
-    reviewRow.appendChild(button("Next undecided", () => goToAdjacentInVisibleList(visible, state, false, "forward")));
-    reviewRow.appendChild(button("Previous decision", () => goToAdjacentInVisibleList(visible, state, true, "backward")));
+    const moveRow = rowEls.get("move")!;
+    moveRow.appendChild(button("Next undecided", () => goToAdjacentInVisibleList(visible, state, false, "forward")));
+    moveRow.appendChild(button("Previous decision", () => goToAdjacentInVisibleList(visible, state, true, "backward")));
   }
-  // A stage with no per-item vocabulary (Output; QA's text-only note
-  // still renders) shows only the Navigation section -- no empty row.
-  // `> 0`, not `> 1`: this guard used to allow for the always-present
-  // label sitting at child zero. With the label gone, `> 1` would have
-  // silently dropped a row carrying exactly one shortcut.
-  if (reviewRow.childNodes.length > 0) card.appendChild(reviewRow);
+
+  // EMPTY ROWS ARE OMITTED ENTIRELY, label included -- which is what makes
+  // this "3-4 rows" rather than always four. Scope is absent on stages and
+  // contexts that have no scope vocabulary; Decide and Move are absent on
+  // Output (no per-item model at all), leaving the App row alone. A drawn
+  // label above an empty row would be the card asserting a capability that
+  // is not currently there.
+  /* THE ROW LABELS ARE RETIRED (AG, 2026-08-06, condensing the card to his
+   * Excel sketch: key+label pairs in an aligned grid, no DECIDE / MOVE /
+   * SCOPE / APP column).
+   *
+   * The grouping they named is still there -- it is carried by ROW
+   * POSITION, which is what the labels were describing rather than
+   * creating. What they cost was a whole grid column of uppercase text
+   * repeated on every stage, permanently, to name four categories a
+   * reviewer learns once. The `rows` array keeps its order and its
+   * empty-row omission, so which segment lands on which line is unchanged;
+   * only the caption is gone.
+   *
+   * Each row keeps its `aria-label` (set where rowEls is built), so the
+   * grouping the sighted reader gets from position is still announced --
+   * dropping a visual caption should not drop the information. */
+  /* THREE ROWS, IN ANDREW'S ORDER (AG, 2026-08-06): decide, then App, then
+   * everything else. Requested as "move these to the second row ... and
+   * this to the third row. Then lose the 4th row."
+   *
+   * Scope merges INTO Move rather than being dropped -- losing a row means
+   * losing a line, not losing the keys on it. `1-9 Accept suggestion` moves
+   * out of Decide for the same reason it looked wrong there: it is the only
+   * Decide entry that needs a target chosen first, so it reads better
+   * beside the movement keys than between Enter and D.
+   *
+   * Done by moving the built elements rather than by re-grouping
+   * `segmentGroup`, deliberately: that function is the one place that says
+   * which vocabulary a shortcut belongs to, and it is read by more than
+   * this card. This is a LAYOUT change, so it stays in the layout. */
+  const decideRow = rowEls.get("decide")!;
+  const restRow = rowEls.get("move")!;
+  const scopeRow = rowEls.get("scope")!;
+  while (scopeRow.firstChild) restRow.appendChild(scopeRow.firstChild);
+  const suggestionEntry = Array.from(decideRow.children).find((child) => (child.textContent ?? "").includes("Accept suggestion"));
+  if (suggestionEntry) restRow.insertBefore(suggestionEntry, restRow.firstChild);
+  if (decideRow.childNodes.length > 0) card.appendChild(decideRow);
 
   // --- Section 2: Navigation (application-wide movement) ---
   // PHASE 2 (AG, 2026-08-02): relative workflow navigation -- ⇧←/→ over
   // the ACTIVE stage list -- replaces the ⇧1–5 stage digits entirely.
   const navCard = el("div", {
-    class: "command-card-row",
+    class: "command-card-row command-card-row-app",
     "aria-label": "Navigation shortcuts",
     title: "Shift+← previous stage · Shift+→ next stage (through the stages that currently contain work) · F6 or , cycles interface regions (Esc returns to review)",
   });
+  // "Categories", matching the pill bar. F6/Regions retired from the card:
+  // it is application plumbing rather than review vocabulary, and the card
+  // now holds only keys with no on-screen control of their own.
+  navCard.appendChild(legendSegmentEl(kseg(`${OPTION_KEY_LABEL}← ${OPTION_KEY_LABEL}→`, "Categories")));
   navCard.appendChild(legendSegmentEl(kseg("⇧← ⇧→", "Stages")));
-  navCard.appendChild(legendSegmentEl(kseg(["F6", ","], "Regions")));
   // "Next ambiguity" REMOVED (AG, 2026-08-01, "vestigial ... confirm that
   // before removing" -- confirmed): it was Milestone 2's cross-stage
   // quick-jump (focusStage + moveItem/nextUnresolved), built before stage
@@ -10025,7 +12346,31 @@ function renderCommandBar(container: HTMLElement, state: ReturnType<WorkspaceCom
     }
   }
 
+  // The one drawn boundary in the card: local (everything above) vs global
+  // (this row). A full-width grid item rather than a border on the row --
+  // see index.html's .command-card-rule for why that distinction matters
+  // here. `aria-hidden`: it is a visual grouping cue, and the rows already
+  // carry their grouping as aria-labels.
+  // The "App" caption goes with the other four (AG, 2026-08-06): it is
+  // emitted here rather than by the rows loop above, which is why it
+  // survived that pass and left one lone uppercase word in an otherwise
+  // caption-less card. The RULE stays -- local-vs-global is the one grouping
+  // the card still draws, and it costs a hairline rather than a text row.
+  card.appendChild(el("span", { class: "command-card-rule", "aria-hidden": "true" }));
+  /* MOVE LEADS THE APP ROW (AG, 2026-08-06: "I thought the ones in the 2nd
+   * shot were on row 2. They should start that row ... on the left").
+   *
+   * Which restores his original spreadsheet sketch exactly -- "↑↓←→ Items |
+   * Opt←→ Sections | Shft←→ Stages | F6 , Regions" was one row there. It
+   * also reads better than it sorts: that row is now every MOVEMENT key in
+   * the app, ordered by how far each one travels -- cell, section, stage,
+   * region -- which is the modifier-strength hierarchy the keyboard grammar
+   * is built on, finally drawn in one line. */
+  const moveEntry = Array.from(restRow.children).find((child) => (child.textContent ?? "").includes("Move"));
+  if (moveEntry) navCard.insertBefore(moveEntry, navCard.firstChild);
   card.appendChild(navCard);
+  // Row 3 last, so the App row lands second as asked.
+  if (restRow.childNodes.length > 0) card.appendChild(restRow);
   container.appendChild(card);
 }
 
@@ -10232,6 +12577,37 @@ function scrollFocusedRowIntoView(container: HTMLElement, state: ReturnType<Work
   if (typeof container.querySelector !== "function") return;
   const escape = (value: string): string =>
     typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
+
+  /*
+   * A PENDING DECISION OWNS THE VIEWPORT (AG, 2026-08-06, live report: "If I
+   * open a new file, this needs to snap to focus. It appeared but the page
+   * had somehow scrolled far lower and it was hidden").
+   *
+   * The reopen prompt renders at the TOP of the workspace, but opening a file
+   * while another document is loaded does not clear that document's focus --
+   * `handleLoadFile` sets `reopenPrompt` and re-renders with the old state
+   * intact. So this function ran in the same frame and dutifully scrolled to
+   * the old document's focused row, hundreds of items down, leaving the
+   * prompt off-screen above. The reviewer opened a file and, as far as they
+   * could tell, nothing happened.
+   *
+   * The rule, rather than a patch for this one prompt: while a blocking
+   * question is on screen, the reviewer has exactly one thing to answer and
+   * nothing else may move the viewport. That is the same precedence the
+   * global keydown handler already gives this prompt -- it is checked FIRST,
+   * before every other key gate -- so the scroll layer now agrees with the
+   * keyboard layer instead of contradicting it.
+   *
+   * The anchors are reset on the way out: the prompt's own resolution loads a
+   * different document (or none), and a section anchor carried across that
+   * boundary describes a page that no longer exists.
+   */
+  if (reopenPrompt) {
+    resetViewportSnapAnchors();
+    const panel = container.querySelector<HTMLElement>(".reopen-prompt");
+    if (panel && typeof panel.scrollIntoView === "function") panel.scrollIntoView({ block: "start" });
+    return;
+  }
   // ROWS-THEN-CARDS SEAM, half 3 (AG, 2026-08-02, live: "Confirm on a
   // numeric-pattern card's Redact All editor scrolled the view up to
   // Residency"). While the structural-card cursor is set, THE CARD is the
@@ -10288,7 +12664,95 @@ function scrollFocusedRowIntoView(container: HTMLElement, state: ReturnType<Work
   const itemId = state.focus?.target.itemId;
   if (!itemId) return;
   const row = container.querySelector<HTMLElement>(`[data-item-id="${escape(itemId)}"]`);
-  if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "nearest" });
+  if (!row || typeof row.scrollIntoView !== "function") return;
+
+  /*
+   * SECTION SNAP (AG, 2026-08-06): "If someone selects into a category, can
+   * we have that region snap-to visible with the focus panel at the top...
+   * That prevents it from being cut off. Not sure if that will feel weird."
+   * And: "once you move to a new section through nav, it also snaps."
+   *
+   * IT SNAPS ON ARRIVAL, NOT ON MOVEMENT, which is what stops it feeling
+   * weird. Crossing INTO a section is a change of context -- a new heading,
+   * new bulk actions, a new claim being made about a new group -- and
+   * putting that heading at the top says "you are here." Moving WITHIN a
+   * section is not a change of context, so the least-motion `block:
+   * "nearest"` row scroll below still governs and the page holds still.
+   * A snap on every move would be the jumpiness this whole pass has been
+   * removing.
+   *
+   * `block: "start"` (not "nearest") because the point is the top edge
+   * specifically: it is what keeps the focus panel from being cut off by
+   * the sticky chrome. `.triage-section` was added to RX-04's
+   * scroll-margin-top rule for the same reason `.type-member-row` was --
+   * it had never been a scroll target, so nothing cleared the header for
+   * it and the heading would arrive underneath.
+   *
+   * KEYBOARD ARRIVALS ONLY (AG, 2026-08-06 follow-up: "there are certain
+   * other unrelated elements now snapping on certain actions"). The clause
+   * this was built from is "once you move to a new section through NAV" --
+   * and a click is not nav. A reviewer who clicked a row they could see has
+   * already answered "where is it"; scrolling afterwards only takes away the
+   * place they were looking at, and it reads as the page fighting them. See
+   * `lastInputWasPointer` for why this is tracked as modality rather than
+   * flagged at each of the several click handlers that move the cursor.
+   *
+   * A pointer arrival still updates the anchor below, so the section counts
+   * as "arrived in" -- a later keyboard move WITHIN it correctly does not
+   * re-snap, and only genuinely leaving and re-entering will.
+   */
+  const section = typeof row.closest === "function" ? row.closest<HTMLElement>(".triage-section") : null;
+  const sectionId = section?.getAttribute?.("data-section-id") ?? null;
+  if (section && sectionId !== null && sectionId !== lastSnappedSectionId && !lastInputWasPointer) {
+    lastSnappedSectionId = sectionId;
+    if (typeof section.scrollIntoView === "function") {
+      section.scrollIntoView({ block: "start" });
+      return;
+    }
+  }
+  if (sectionId !== null) lastSnappedSectionId = sectionId;
+  row.scrollIntoView({ block: "nearest" });
+}
+
+/** Which section the viewport was last snapped to. UI-presentation memory
+ *  of the same kind as `lastRenderedFocusedItemId` -- NOT domain state: it
+ *  exists only so consecutive renders can tell "still in this section"
+ *  from "just arrived in a new one." */
+let lastSnappedSectionId: string | null = null;
+
+/**
+ * INPUT MODALITY (AG, 2026-08-06: "there are certain other unrelated
+ * elements now snapping on certain actions").
+ *
+ * The section snap was written for the keyboard case it was asked for --
+ * "once you move to a new section through nav, it also snaps" -- but it
+ * fires on any focus change, and a MOUSE CLICK is a focus change too. So
+ * clicking a row you can already see, in a section you are not currently
+ * in, scrolls the page out from under the click. That is the precise
+ * inverse of helpful: a reviewer who clicked a visible target has already
+ * solved the "where is it" problem the snap exists to solve, and moving the
+ * page afterwards only costs them their place.
+ *
+ * Keyboard navigation is different in exactly the way that matters -- the
+ * reviewer cannot see where the cursor went, so the app has to show them.
+ *
+ * Tracked as modality rather than patched per click handler: there are many
+ * places that move the cursor on click (triage rows, item rows, member
+ * cells, section pills, structural cards) and a flag threaded through each
+ * one would be a rule that has to be remembered every time a new clickable
+ * row is added. This is the same mechanism `:focus-visible` uses, for the
+ * same reason.
+ */
+let lastInputWasPointer = false;
+
+/** Cleared whenever a document or a blocking prompt changes what the
+ *  viewport should be showing. Without this the anchor survives across
+ *  documents, so the first render of a NEWLY opened file compares its
+ *  section against the PREVIOUS file's and either snaps spuriously or
+ *  (worse) suppresses the snap that should have happened. */
+function resetViewportSnapAnchors(): void {
+  lastSnappedSectionId = null;
+  lastInputWasPointer = false;
 }
 
 /**
@@ -10469,21 +12933,23 @@ function render(): void {
     if (file) void handleLoadFile(file);
   });
   topBar.appendChild(fileInput);
-  const newDocButton = button("New Document", () => fileInput.click());
+  // "+ New" (AG, 2026-08-06). Shorter because it now shares one line with
+  // the brand and the document status: "Document" was doing no work that
+  // the file picker it opens does not immediately say.
+  const newDocButton = button("+ New", () => fileInput.click());
   newDocButton.classList.add("primary-action");
   topBar.appendChild(newDocButton);
   if (recentSessions.length > 0) {
-    const docSelect = el("select", { class: "doc-select" }) as HTMLSelectElement;
-    docSelect.appendChild(el("option", { value: "" }, "Choose an existing document…"));
-    for (const summary of recentSessions) {
-      const option = el("option", { value: summary.documentId }, summary.fileName);
-      if (summary.documentId === state.documentId) option.setAttribute("disabled", "disabled");
-      docSelect.appendChild(option);
-    }
+    /* THE PICKER IS RETIRED (AG, 2026-08-06: "Keep resume, retire picker").
+     * It was a second, wider door to the room Documents already opens, and
+     * it cost the top line more width than every button beside it combined.
+     * Resume keeps its meaning unchanged -- the most recent OTHER document
+     * -- which was already what it did whenever the select was left on its
+     * placeholder, i.e. almost always. The explicit-choice path it also
+     * served now lives in Documents, which lists every session with its
+     * progress rather than as bare filenames in a dropdown. */
     const resumeButton = button("Resume", () => {
-      // Explicit selection wins; otherwise the most recent OTHER document
-      // (resuming the one already open would just re-parse it).
-      const target = docSelect.value || recentSessions.find((s) => s.documentId !== state.documentId)?.documentId || "";
+      const target = recentSessions.find((s) => s.documentId !== state.documentId)?.documentId ?? "";
       if (!target) {
         refuse("No other document to resume."); // RX-09: refusal, status region only
         return;
@@ -10492,7 +12958,6 @@ function render(): void {
     });
     resumeButton.classList.add("primary-action");
     topBar.appendChild(resumeButton);
-    topBar.appendChild(docSelect);
   }
   if (state.documentLoaded && !showingLanding) {
     topBar.appendChild(
@@ -10522,7 +12987,24 @@ function render(): void {
       })
     );
   }
-  container.appendChild(topBar);
+  /* THE TOOLBAR MOUNTS INTO THE HEADER'S LEFT SLOT (AG, 2026-08-06) --
+   * "Everything on one line. Clean."
+   *
+   * Falls back to the page flow when that slot is absent, which is the
+   * fake-DOM path verify/ui-smoke.ts renders through: the suite asserts the
+   * toolbar's buttons exist, and a header-only mount would have made it
+   * fail for a reason that has nothing to do with the toolbar.
+   *
+   * Emptied first because render() rebuilds `topBar` every pass while the
+   * header itself is permanent markup -- without the clear, one button per
+   * render would accumulate in a node nothing else owns. */
+  const headerLeft = typeof document.querySelector === "function" ? document.querySelector<HTMLElement>(".app-header-left") : null;
+  if (headerLeft) {
+    headerLeft.innerHTML = "";
+    headerLeft.appendChild(topBar);
+  } else {
+    container.appendChild(topBar);
+  }
   // REOPEN PROMPT (AG, 2026-08-03): rendered immediately BELOW the toolbar
   // buttons and ABOVE everything else, full width, pushing the rest of the
   // workspace down -- AG's own placement ("inline is good, it can push the
@@ -10533,6 +13015,7 @@ function render(): void {
   renderReopenPrompt(container);
 
   if (!state.documentLoaded || showingLanding) {
+    lastRenderedActiveStage = null;
     // RX-09: load/resume failures fire from THIS branch -- the banner must
     // render here, not only inside the workspace chrome (which doesn't
     // exist yet at that moment).
@@ -10576,11 +13059,49 @@ function render(): void {
   // card on the right -- filling the previously empty right half of this
   // band, above the stage tabs. Both halves are inside the sticky chrome,
   // so nothing lost its always-visible behavior.
+  /* THE COMMAND CARD ALIGNS WITH THE TOOLBAR (AG, 2026-08-06: "The Command
+   * Bar ... should move up so the top of it is aligned with the top of the
+   * New Document et al buttons").
+   *
+   * That alignment costs one recorded decision, so it is written down: the
+   * toolbar used to sit OUTSIDE the sticky chrome and scroll away ("its
+   * actions are rare" -- 2026-08-01 frame refinement), while the command
+   * card sits inside it and is deliberately always visible. Two bands with
+   * different scroll behaviour cannot have aligned tops. Re-parenting the
+   * toolbar into the chrome is the smaller change: the card keeps the
+   * always-visible property it exists for, and the toolbar gains it.
+   *
+   * The cost is roughly one toolbar's worth of permanent chrome. It is paid
+   * automatically rather than tuned -- syncWorkspaceChromeHeight MEASURES
+   * the rendered chrome and publishes --workspace-chrome-height, so the
+   * section snap and every scroll-margin follow without a second number to
+   * keep in step.
+   *
+   * `appendChild` MOVES the node, so the landing branch above (which
+   * returns before this point and needs the toolbar in `container`) is
+   * untouched.
+   */
   const activeStage = state.focus?.target.stage ?? "ambiguity-check";
+  lastRenderedActiveStage = activeStage;
   const statusRow = el("div", { class: "chrome-status-row" });
   const statusLeft = el("div", { class: "chrome-status-left" });
+  /* THE STATISTICS LINE IS GONE (AG, 2026-08-06: "get rid of all of this
+   * please. leave the space").
+   *
+   * "1% complete (9/607) · Keep 1 · Change 0 · Redact 0 · Ignore 8 · 41
+   * ambiguous · ~114.9 hr remaining · By type" was six readouts of the same
+   * fact the three Review Status scores above it already give, plus a view
+   * toggle that had drifted into a status line. Every number in it is still
+   * derivable and still rendered somewhere it means something -- the stage
+   * tabs carry their own counts, the category pills carry theirs, and the
+   * Decision Tracker carries the decision totals.
+   *
+   * "Leave the space": the row keeps its height rather than collapsing, so
+   * the chrome does not jump and the Decision Tracker has room to sit in
+   * the middle of it. renderReviewStatistics itself is untouched and still
+   * exported to its own tests -- this removes a CALL, not a capability, so
+   * restoring the line is one line. */
   renderReviewStatus(statusLeft, state);
-  renderReviewStatistics(statusLeft, state);
   statusRow.appendChild(statusLeft);
   renderCommandBar(statusRow, state, activeStage);
   chrome.appendChild(statusRow);
@@ -10593,6 +13114,14 @@ function render(): void {
   }
 
   renderStageTabs(chrome, activeStage, state.stageStatuses);
+  // SECTION PILLS (AG, 2026-08-06) -- "a new permanent layer." Rendered
+  // INSIDE the sticky chrome deliberately: syncWorkspaceChromeHeight
+  // already measures the chrome, so the pills join
+  // `--workspace-chrome-height` for free and the section snap's
+  // scroll-margin stays correct without a second measurement. Putting them
+  // in the stage body instead would have needed their own published height
+  // and a second thing to keep in step.
+  renderSectionPills(chrome, state, activeStage);
   // STAGE ENCAPSULATION (AG, 2026-08-01, revised 2026-08-02): the band no
   // longer hosts the command card, but it remains the workspace surface's
   // sticky TOP EDGE -- the thing the active tab visually terminates into.
@@ -10620,6 +13149,11 @@ function render(): void {
   // then keeps it current between renders.
   syncWorkspaceChromeHeight(chrome);
   observeWorkspaceChromeHeight(chrome);
+  // Shape and band the queue grids on the attached tree, BEFORE the row
+  // scroll below reads geometry -- a grid that is about to become two
+  // column-major columns must already be that shape when the focused cell
+  // is scrolled into view.
+  syncZoneGridLayout(container);
 
   // VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): both measurement passes
   // run on the attached tree BEFORE the row scroll below -- spanning a
@@ -10665,9 +13199,39 @@ function render(): void {
     );
     if (!cardEl) {
       structuralCardFocusPending = null; // card gone (e.g. dismissed): cursor dies with it
-    } else if ((document.activeElement === document.body || document.activeElement === null) && typeof cardEl.focus === "function") {
+      focusPanelEntered = false; // and so does the level the reviewer was on inside it
+    } else if (
+      // DOM FOCUS ONLY ONCE ENTERED (AG, 2026-08-06). Handing the card
+      // keyboard focus is what routes arrows to its own listener, which moves
+      // between CARDS -- correct when the reviewer asked to be in the card,
+      // wrong when the grid cursor merely landed on its cell. Gating the
+      // focus call is the whole mechanism: while not entered the card is
+      // never the activeElement, so the global handler keeps the arrows and
+      // no second key grammar is needed to hold them back.
+      focusPanelEntered &&
+      (document.activeElement === document.body || document.activeElement === null) &&
+      typeof cardEl.focus === "function"
+    ) {
       cardEl.focus();
     }
+  }
+  /*
+   * THE RING GOES ROUND THE WHOLE PANEL (AG, 2026-08-06: "add a blue ring
+   * around the focus panel entirely when active").
+   *
+   * Applied to the PANE, not to the card inside it, and set here rather than
+   * at the pane's own render site because "entered" is presentation state
+   * this tail already owns -- the same place that decides whether the card
+   * gets DOM focus decides what the reviewer sees, so the ring and the
+   * keyboard can never disagree about which level is live.
+   *
+   * Every inspector column is covered, not just Ambiguity's: the level
+   * grammar is meant to read the same on each surface, and a ring that
+   * appeared on one of the three would teach that the others behave
+   * differently.
+   */
+  for (const pane of Array.from(container.querySelectorAll<HTMLElement>(".triage-focus-pane, .type-focus-pane, .scope-inspector"))) {
+    pane.classList.toggle("focus-pane-entered", focusPanelEntered);
   }
 
   // INTERACTION LANGUAGE (2026-07-30): hand DOM focus to the expanded
@@ -10686,6 +13250,10 @@ function render(): void {
     if (firstPanelControl && typeof firstPanelControl.focus === "function") firstPanelControl.focus();
   }
   lastRenderedFocusedItemId = state.focus?.target.itemId ?? null;
+  // Per-stage position memory, recorded at the one point every focus change
+  // passes through -- keyboard, click, and the post-decision advance alike --
+  // so no mover needs to know this exists. See lastFocusedItemByStage.
+  rememberStageFocus(state);
 
   // MILESTONE 2 -- restore focus/cursor position to the just-rebuilt search
   // <input> if it had focus before this render() call (see
@@ -10735,6 +13303,7 @@ function render(): void {
   // with every re-render (decisions, bulk actions, loads, resumes) --
   // constant-time no-op while it's closed.
   syncWorkspaceMetricsWindow(state);
+  submitCurrentUsageMetric(state);
   try {
     if (state.documentLoaded && state.documentId) sessionStorage.setItem(LAST_OPEN_DOC_KEY, state.documentId);
     else sessionStorage.removeItem(LAST_OPEN_DOC_KEY);
@@ -10870,12 +13439,46 @@ function handleInlineEditorOpenKey(event: KeyboardEvent): boolean {
  *     mid-transaction would be a lie; narrated rather than silent;
  *   - no document loaded: nothing to navigate.
  */
+/** Does this element own a text caret? Only then does native Shift+Arrow
+ *  (and native typing) outrank the app's own bindings. A checkbox, radio or
+ *  button is an `<input>` that owns no caret -- treating it as one is what
+ *  broke stage movement on 2026-08-06. Kept as one predicate so a future
+ *  caret-sensitive binding asks the question the same way. */
+const NON_TEXT_INPUT_TYPES = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
+
+function isTextEntryElement(el: HTMLElement | null | undefined): boolean {
+  const tag = el?.tagName?.toLowerCase() ?? "";
+  if (tag === "textarea" || tag === "select") return true;
+  if (tag !== "input") return Boolean(el?.isContentEditable);
+  const type = ((el as HTMLInputElement).type || "text").toLowerCase();
+  return !NON_TEXT_INPUT_TYPES.has(type);
+}
+
 function handleStageArrowKey(event: KeyboardEvent): boolean {
   if (!event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
   const activeEl = document.activeElement as HTMLElement | null;
-  const tag = activeEl?.tagName.toLowerCase() ?? "";
-  if (tag === "input" || tag === "textarea" || tag === "select") return false; // native Shift+Arrow selection
+  // TEXT ENTRY ONLY (AG, 2026-08-06, live report: "shift + side arrows no
+  // longer works all the way across stages ... got me from Ambiguity to
+  // Group then stalled").
+  //
+  // THE BUG WAS THIS GUARD, and the symptom was misleading -- nothing was
+  // wrong with the stage traversal itself. Clicking a row puts DOM focus on
+  // its CHECKBOX, and a blanket `tag === "input"` refusal then killed
+  // Shift+Arrow for the rest of the session: it looked like "stage movement
+  // stops working after a while" because it stopped the moment the reviewer
+  // touched a row. Verified in the browser by blurring first, after which
+  // all six stages traverse correctly.
+  //
+  // The refusal exists for CARET OWNERSHIP -- a text field needs native
+  // Shift+Arrow for selection (keymap.ts's textInputActive expresses the
+  // same rule). A checkbox has no caret and no native Shift+Arrow meaning,
+  // so it was never what this guard was protecting. Narrowed to the input
+  // types that actually take text, which is what the comment always claimed
+  // it did. Checkboxes are far more reachable now than when this was
+  // written -- Space selects the focused cell as of today, so a checkbox
+  // holding focus is the NORMAL state mid-review, not an edge case.
+  if (isTextEntryElement(activeEl)) return false; // native Shift+Arrow selection
   const state = dispatcher.getState();
   if (!state.documentLoaded) return false;
   if (state.focus?.target.panel.kind === "not-quite") {
@@ -10883,6 +13486,14 @@ function handleStageArrowKey(event: KeyboardEvent): boolean {
     return true;
   }
   dispatcher.dispatchNavigation({ family: "navigation", type: "moveStage", direction: event.key === "ArrowRight" ? "next" : "previous" });
+  // Same return-vs-arrival rule as the tab click. Read the destination from
+  // the landed state rather than computing it here: moveStage resolves
+  // "next active stage" itself and can legitimately no-op at a boundary, so
+  // the state is the only honest answer to which stage we are now in.
+  {
+    const arrivedAt = dispatcher.getState().focus?.target.stage;
+    if (arrivedAt) restoreStageFocus(arrivedAt);
+  }
   const landed = dispatcher.getState();
   const stage = landed.focus?.target.stage;
   if (stage) {
@@ -11119,6 +13730,21 @@ function cycleChromeRegion(from: HTMLElement | null): void {
 function exitDetailPanel(): void {
   const active = document.activeElement as HTMLElement | null;
   if (active && typeof active.blur === "function") active.blur();
+  // THE LEVEL FLAG CLEARS HERE (AG, 2026-08-06: "ESC does not exit").
+  //
+  // Escape WAS reaching the app -- just not my handler. Once DOM focus is
+  // inside the panel, `isDetailPanelElement(activeEl)` matches several
+  // hundred lines earlier in the keydown listener and routes Escape straight
+  // to this function, which returned before the new handler was ever
+  // consulted. So the panel closed but `focusPanelEntered` stayed true, the
+  // ring stayed on, and the exit looked like it had done nothing.
+  //
+  // Clearing it HERE rather than adding a second escape hatch is the point:
+  // this is the app's existing "leave the panel" choke point, so every route
+  // out of the panel -- Escape from inside, ArrowUp past the first control,
+  // any future one -- now clears the level with it, and the flag cannot
+  // survive its own subject.
+  focusPanelEntered = false;
   dispatcher.dispatchNavigation({ family: "navigation", type: "closeItem" });
   setStatus("Review mode.");
   render();
@@ -11142,10 +13768,12 @@ function movePanelFocus(activeEl: HTMLElement | null, delta: number): void {
     return;
   }
   const next = idx + delta;
-  if (next < 0) {
-    exitDetailPanel(); // Up past the top: out one level, Review mode
-    return;
-  }
+  // 2026-08-06: Up past the first control NO LONGER exits. It mirrored
+  // ArrowDown-enters, and that rule is gone -- leaving it would make Up the
+  // only arrow in the app that changes region, which is exactly the
+  // arrows-are-movement rule this pass establishes. Esc is now the single
+  // way out, matching the region model's universal escape rung.
+  if (next < 0) return;
   if (next >= controls.length) return; // bottom edge: stay put
   controls[next]!.focus();
 }
@@ -11197,14 +13825,21 @@ function handleAcceptAllKey(event: KeyboardEvent): boolean {
   if (event.key.toLowerCase() !== "a") return false;
   if (inlineEditor) return false;
   const state = dispatcher.getState();
-  const queueStage = sectionedQueueStage(state.focus?.target.stage);
+  const queueStage = activeSectionedQueueStage(state);
   if (!queueStage) return false;
-  // A structural card holds the cursor: accept its whole kind group.
+  // A structural card holds the cursor: accept its active Review Zone kind
+  // group, not withheld proposal cells from the same section.
   if (structuralCardFocusPending) {
     const proposals = (state.structuralRelationships?.proposals ?? []).filter((p) => !state.reviewSession?.relationshipDismissals?.[p.proposalId]);
     const current = proposals.find((p) => p.proposalId === structuralCardFocusPending);
     if (current) {
-      acceptAllInRelationshipKind(proposals.filter((p) => p.kind === current.kind));
+      const section = sectionedQueueModel(state, queueStage).sections.find((s) => (s.relationshipProposalIds ?? []).includes(current.proposalId));
+      const activeZoneProposals = section ? relationshipProposalsInActiveReviewZone(queueStage, section, state).filter((p) => p.kind === current.kind) : [];
+      if (activeZoneProposals.length === 0) {
+        refuse("No proposals of this kind are in the active Review Zone.");
+        return true;
+      }
+      acceptAllInRelationshipKind(activeZoneProposals);
       return true;
     }
   }
@@ -11219,7 +13854,18 @@ function handleAcceptAllKey(event: KeyboardEvent): boolean {
       refuse(`${section.label} has no Accept All -- these items are reviewed individually.`);
       return true;
     }
-    acceptAllInSection(config, section.label, section.candidateIds, queueStage);
+    // REVIEW ZONE (2026-08-06): ⇧A was the one bulk path that bypassed
+    // `headingActionScope` -- it handed `section.candidateIds` straight to
+    // acceptAllInSection, so it cleared the WHOLE section while the button
+    // beside it, reading from the choke point, cleared a zone. That is the
+    // paint/keystroke disagreement the ONE-DIGIT-SPACE and Review Scope
+    // invariants both exist to forbid, and it was also the fastest route to
+    // exactly the "wipe out 150 items" outcome this feature exists to
+    // prevent. Same function, same scope, same count as the button now.
+    const scope = headingActionScope(section.candidateIds, state);
+    if (scope.ids.length === 0) return true;
+    acceptAllInSection(config, section.label, scope.ids, queueStage);
+    releaseSelection(scope);
     return true;
   }
   // TIERS (2026-08-02): in the Ambiguity queue, Shift+A runs the FIRST
@@ -11235,6 +13881,24 @@ function handleAcceptAllKey(event: KeyboardEvent): boolean {
     return true;
   }
   runSectionAction(primary, section.label, tier!.candidateIds, queueStage);
+  return true;
+}
+
+function handleResetScopeKey(event: KeyboardEvent): boolean {
+  if (!event.altKey || !event.shiftKey || event.metaKey || event.ctrlKey) return false;
+  const match = /^Key([RA])$/.exec(event.code ?? "");
+  if (!match) return false;
+  if (inlineEditor || splitReview) return false;
+  const state = dispatcher.getState();
+  const queueStage = activeSectionedQueueStage(state);
+  if (!queueStage) return false;
+  const { zone, category, collapsed } = currentResetScopes(state);
+  const scope = match[1] === "A" || collapsed ? category : zone;
+  if (!scope) {
+    refuse(match[1] === "A" ? "No decisions in this category can be reset." : "No decisions in this Review Zone can be reset.");
+    return true;
+  }
+  openResetConfirmation(scope);
   return true;
 }
 
@@ -11501,7 +14165,7 @@ function handleIdentityLinkKey(event: KeyboardEvent): boolean {
   const recommendation = recommendationForCandidate(candidateId, state);
   const suggestions = recommendation?.suggestions ?? [];
   if (digit <= suggestions.length && suggestions.length > 0) {
-    runRecommendationSuggestion(candidateId, target.stage, suggestions[digit - 1]!.op);
+    runRecommendationSuggestion(candidateId, target.stage, suggestions[digit - 1]!);
     return true;
   }
 
@@ -11519,7 +14183,17 @@ function handleIdentityLinkKey(event: KeyboardEvent): boolean {
     refuse(`Only ${total} numbered option${total === 1 ? "" : "s"} for this item.`);
     return true;
   }
-  decideAndAdvance({ family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: hit.option.groupId }, candidateId, target.stage);
+  // Same claim the clicked button records (see renderPossibleIdentities) --
+  // the digit and the click are one gesture with two input devices, so they
+  // must not write different provenance.
+  // 2026-08-06: and the same ADVANCE, for the same reason -- an identity
+  // link taken from a Type Check member cell must move the member cursor,
+  // not the type focus (see decideThroughOwningCursor).
+  decideThroughOwningCursor(
+    { family: "review", type: "linkAmbiguousCandidate", candidateId, groupId: hit.option.groupId, rationale: hit.option.canonicalName },
+    candidateId,
+    target.stage
+  );
   return true;
 }
 
@@ -11541,6 +14215,24 @@ if (typeof document.addEventListener === "function") {
       if (document.activeElement === btn && typeof btn.blur === "function") btn.blur();
     });
   });
+}
+
+/*
+ * INPUT MODALITY, the two listeners that maintain it (2026-08-06). Capture
+ * phase on both so the flag is already correct by the time any handler that
+ * moves the cursor runs -- a row's own click listener calls render()
+ * synchronously, and a bubble-phase update would arrive after the scroll pass
+ * it is supposed to govern.
+ *
+ * `pointerdown` rather than `click`: it fires before focus moves, which is
+ * the ordering the flag needs. Keyboard sets it false on any key, not only
+ * navigation keys -- a reviewer pressing a decision letter is working from
+ * the keyboard, and the advance that follows should snap for exactly the same
+ * reason an arrow key should.
+ */
+if (typeof document.addEventListener === "function") {
+  document.addEventListener("pointerdown", () => { lastInputWasPointer = true; }, true);
+  document.addEventListener("keydown", () => { lastInputWasPointer = false; }, true);
 }
 
 document.addEventListener("keydown", (event) => {
@@ -11606,6 +14298,17 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault(); // stage switch re-renders; focus drops to <body> = Review mode
       return;
     }
+    // The pills live in the chrome, so ⌥←/→ has to work from here too --
+    // otherwise tabbing to a pill would disable the key that moves between
+    // the very things the pills show.
+    if (handleSectionArrowKey(event)) {
+      event.preventDefault();
+      return;
+    }
+    if (handleGroupScopeChordKey(event)) {
+      event.preventDefault();
+      return;
+    }
     return;
   }
 
@@ -11616,6 +14319,14 @@ document.addEventListener("keydown", (event) => {
   // hierarchy and must never be shadowed by a local arrow grammar. See
   // handleStageArrowKey's doc comment for its own deliberate refusals.
   if (handleStageArrowKey(event)) {
+    event.preventDefault();
+    return;
+  }
+
+  // ⌥←/→ = previous/next SECTION, one rung below stage movement in the
+  // same hierarchy and checked in the same place for the same reason: a
+  // local arrow grammar must not shadow it. See handleSectionArrowKey.
+  if (handleSectionArrowKey(event)) {
     event.preventDefault();
     return;
   }
@@ -11721,6 +14432,17 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (pendingResetConfirmation && event.key === "Escape") {
+    event.preventDefault();
+    cancelResetConfirmation();
+    return;
+  }
+
+  if (handleResetScopeKey(event)) {
+    event.preventDefault();
+    return;
+  }
+
   // SPLIT REVIEW MODE (AG, 2026-08-02): most specific context first --
   // while the focused group's split session is active, K/C/R/I review the
   // active MEMBER (into the buffer) and Escape cancels the session. Must
@@ -11752,6 +14474,42 @@ document.addEventListener("keydown", (event) => {
   if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && handleCardDecisionKey(event.key)) {
     event.preventDefault();
     return;
+  }
+
+  // ENTERED FOCUS PANE ESCAPE (AG, 2026-08-08, Numeric one-column live
+  // report). This has to run before the domain keymap: Escape resolves to
+  // an item-level close command there, which can silently consume the key
+  // while the visible state the reviewer is trying to leave is the focus
+  // pane itself. Keep it cell-type agnostic -- proposal cards and ordinary
+  // rows share the same Enter/Escape depth grammar.
+  if (event.key === "Escape" && focusPanelEntered && !inlineEditor) {
+    event.preventDefault();
+    focusPanelEntered = false;
+    if (typeof (document.activeElement as HTMLElement | null)?.blur === "function") (document.activeElement as HTMLElement).blur();
+    render();
+    return;
+  }
+
+  // STRUCTURAL CARD KEYS BEFORE THE DOMAIN KEYMAP (2026-08-08, Numeric
+  // category bug). Proposal-only categories have a structural-card cursor
+  // but no matching FocusNavigator item cursor. If Enter/digits reach the
+  // generic item handlers first, they act on whatever candidate item the
+  // domain cursor last held -- observed as Numeric jumping to Other Words
+  // and Digit 1 failing to open the Redact editor. A selected card is the
+  // visible working object, so it gets first refusal here.
+  if (structuralCardFocusPending !== null && !inlineEditor && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (!focusPanelEntered) {
+        focusPanelEntered = true;
+        render(); // the render tail hands DOM focus to the card now that it is entered
+      }
+      return;
+    }
+    if (handleCardPreferredDigitKey(event)) {
+      event.preventDefault();
+      return;
+    }
   }
 
   const command = dispatcher.resolveKeyboardCommand({
@@ -11806,22 +14564,20 @@ document.addEventListener("keydown", (event) => {
       if (queueStage && event.key.startsWith("Arrow")) {
         const visibleIds = queueStage === "item-check" ? visibleItemCheckIds(state) : visibleAmbiguityIds(state);
         const currentId = state.focus?.target.itemId ?? null;
-        // DOWN ENTERS (AG, 2026-08-02): "the nav needs to allow down arrow
-        // to enter the actual focus area. then Tab to go between items" --
-        // Group Check's grammar generalized to the sectioned queue.
-        // ArrowDown on the focused row hands real DOM focus INTO its
-        // expanded detail panel (the same detailPanelFocusPending
-        // mechanism Enter Details uses; Escape backs out, per the
-        // universal out-one-level rule). Moving BETWEEN items is
-        // Tab / Left / Right / Up; the old Down-moves-a-grid-row
-        // spreadsheet motion is deliberately superseded on this surface,
-        // per Andrew's direct instruction.
-        if (event.key === "ArrowDown" && currentId !== null && visibleIds.includes(currentId)) {
-          structuralCardFocusPending = null;
-          detailPanelFocusPending = true;
-          render();
-          return;
-        }
+        // "DOWN ENTERS" RETIRED (AG, 2026-08-06). ArrowDown handed DOM
+        // focus into the detail panel from 2026-08-02 until now. That rule
+        // was SPATIALLY TRUE when it was written -- the panel rendered
+        // directly BELOW its row, so "down" pointed at it. The side-by-side
+        // focus pane moved the panel beside the list, and the metaphor went
+        // with it; Andrew: "I feel arrows should just move up/down/across
+        // the list."
+        //
+        // A second reason it had to go: left/right had nothing to do in a
+        // one-column list, but the zone is now two columns filled
+        // column-major, so all four arrows have real work. Spending one of
+        // them on "enter" costs something it did not cost before.
+        //
+        // Entering is Enter now (see handleTriageKey); Esc still exits.
         if (event.key === "ArrowRight" && currentId !== null && visibleIds.indexOf(currentId) === visibleIds.length - 1) {
           const cards = document.querySelectorAll<HTMLElement>(".relationship-section .relationship-card");
           const first = cards[0];
@@ -11839,8 +14595,21 @@ document.addEventListener("keydown", (event) => {
             return;
           }
         }
-        structuralCardFocusPending = null; // working the rows now: the card cursor stands down
-        moveWithinResultsGrid(visibleIds, currentId, event.key, ".triage-grid .triage-row");
+        /* WHICHEVER CURSOR IS LIVE (AG, 2026-08-06). This used to stand the
+         * card cursor down and hand the mover the ITEM id unconditionally.
+         * Once proposals became cells in the same grid that was wrong twice
+         * over: the item cursor has not moved while a pair is selected, so
+         * every step recomputed from the stale candidate and the cursor
+         * stuck on the first proposal -- and standing the card cursor down
+         * first meant the grid re-rendered under the move.
+         * The mover now owns the handoff: it steps through the grid's own
+         * cells and sets whichever cursor the target cell belongs to. */
+        // ARROWS NEVER CHANGE LEVEL (AG, 2026-08-06). Leaving a proposal cell
+        // by arrow also leaves the card the reviewer may have entered on it --
+        // otherwise the entered flag would outlive its subject and the next
+        // Escape would appear to do nothing.
+        focusPanelEntered = false;
+        moveWithinResultsGrid(visibleIds, structuralCardFocusPending ?? currentId, event.key, ".triage-grid .triage-row");
         return;
       }
       if (stage === "item-check" || stage === "group-check" || stage === "ambiguity-check") {
@@ -11849,6 +14618,12 @@ document.addEventListener("keydown", (event) => {
         // proposal order -- the exact NAV-ORDER class of bug this
         // interception exists to prevent (Home/End and sequential moves).
         const visibleIds = stage === "item-check" ? visibleItemCheckIds(state) : stage === "group-check" ? visibleGroupIds(state) : visibleAmbiguityIds(state);
+        // ARROWS NEVER CHANGE LEVEL (AG, 2026-08-06) -- the candidate half of
+        // the rule the grid mover already follows. Moving the cursor to
+        // another item leaves the panel of the one you were in, so the ring
+        // and the muting must fall away with it; a flag surviving the move
+        // would ring a panel explaining a different item.
+        focusPanelEntered = false;
         moveWithinVisibleList(visibleIds, state.focus?.target.itemId ?? null, command.direction);
         return;
       }
@@ -11865,6 +14640,14 @@ document.addEventListener("keydown", (event) => {
       if (stage === "item-check" || stage === "ambiguity-check") {
         dispatcher.dispatchNavigation(command);
         detailPanelFocusPending = true;
+        // THE CANDIDATE HALF of the level flag (AG, 2026-08-06). Enter on a
+        // candidate cell is the same gesture as Enter on a proposal cell and
+        // must leave the reviewer in the same STATE, or the ring and the
+        // cell-muting would fire on pairs and not on plain items. Set beside
+        // detailPanelFocusPending rather than instead of it: that one is
+        // consumed at the render tail to deliver DOM focus once, this one is
+        // durable and answers "still in the panel" on every later render.
+        focusPanelEntered = true;
         render();
         return;
       }
@@ -11881,6 +14664,50 @@ document.addEventListener("keydown", (event) => {
   // for the reason that matters: chords and digits address the SAME action
   // list, and a chorded action is never numbered, so whichever runs first
   // finds the same single button.
+  /*
+   * ENTER ENTERS THE CARD, ESCAPE LEAVES IT (AG, 2026-08-06). The proposal
+   * half of the level grammar handleTriageKey already implements for
+   * candidates -- placed here, ahead of every within-stage grammar, for the
+   * same reason the reopen prompt is checked first in this listener: while
+   * the reviewer is standing on a card the question "am I in it or on it" has
+   * to be answered before anything reinterprets the key.
+   *
+   * Deliberately narrow. It fires only while the grid cursor is on a proposal
+   * cell, and only for these two keys; every other key on a proposal cell
+   * continues to the handlers that already own it. Enter while ALREADY inside
+   * falls through untouched, so the card's own Enter (run the first preferred
+   * action) is unchanged -- entering and acting stay two presses, which is
+   * what stops a stray Enter from committing a decision the reviewer only
+   * meant to look at.
+   */
+  if (structuralCardFocusPending !== null && !inlineEditor) {
+    if (event.key === "Enter" && !focusPanelEntered) {
+      event.preventDefault();
+      focusPanelEntered = true;
+      render(); // the render tail hands DOM focus to the card now that it is entered
+      return;
+    }
+  }
+  /*
+   * ESCAPE LEAVES THE PANEL, WHICHEVER CELL TYPE PUT YOU THERE (AG,
+   * 2026-08-06). Lifted out of the proposal-only branch above so a candidate's
+   * panel exits by the same key as a pair's -- the whole point of unifying the
+   * flag. First Escape consumer while entered, deliberately: the level the
+   * reviewer is ON has to be settled before Escape's other meanings (the scope
+   * ladder in handleScopeModeKey, the region model's back-out-one-rung) get to
+   * reinterpret it. That ordering IS the ladder, not a bypass of it -- leave
+   * the panel first, then the next Escape addresses the scope outside it.
+   */
+  if (event.key === "Escape" && focusPanelEntered && !inlineEditor) {
+    event.preventDefault();
+    focusPanelEntered = false;
+    // Focus off the panel explicitly: the render tail only ADDS focus when
+    // entered, it cannot take it back, and a card left holding activeElement
+    // would keep swallowing the arrows this exit exists to return.
+    if (typeof (document.activeElement as HTMLElement | null)?.blur === "function") (document.activeElement as HTMLElement).blur();
+    render();
+    return;
+  }
   if (handleGroupScopeChordKey(event)) {
     event.preventDefault();
     return;
@@ -12010,6 +14837,7 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
 if (typeof document.querySelector === "function") {
   const versionLabel = document.querySelector<HTMLElement>(".app-version");
   if (versionLabel) versionLabel.textContent = APP_VERSION;
+  void retryPendingDocumentUsageMetrics();
 }
 
 // APPLICATION FRAME REFINEMENT (AG, 2026-08-01): one-time wiring for the

@@ -246,9 +246,21 @@ export class WorkspaceCommandDispatcher implements CommandDispatcher {
     return this.workspace.listRecentSessions(limit);
   }
 
+  listArchivedSessions(limit?: number): Promise<SessionSummary[]> {
+    return this.workspace.listArchivedSessions(limit);
+  }
+
   /** Passthrough for a Recent Documents "remove" affordance. */
   deleteStoredSession(documentId: string): Promise<void> {
     return this.workspace.deleteStoredSession(documentId);
+  }
+
+  archiveStoredSession(documentId: string): Promise<void> {
+    return this.workspace.archiveStoredSession(documentId);
+  }
+
+  restoreStoredSession(documentId: string): Promise<void> {
+    return this.workspace.restoreStoredSession(documentId);
   }
 
   /** Passthrough for the reopen prompt's "do you already know this file?"

@@ -83,6 +83,17 @@ export interface DecisionMemoryRecord {
 export function projectDecisionMemory(session: ReviewSession, documentId: string, updatedAt: string): DecisionMemoryRecord {
   const entries: ImportedCandidateDecision[] = [];
   for (const decision of Object.values(session.candidateDecisions)) {
+    // DECISION RATIONALE (2026-08-06) is deliberately NOT projected. Field
+    // copying here is explicit rather than a spread, so this is already an
+    // omission by construction -- but it is a deliberate one, worth naming
+    // so nobody "fixes" it later. A rationale is one reviewer's claim about
+    // one document ("Person's name", "Amy Miller"); carried across documents
+    // it would arrive as an assertion the receiving reviewer never made, and
+    // an imported decision already renders as its decision label rather than
+    // as borrowed wording. Propagating it is a defensible LATER feature
+    // ("you called this a common word in three prior documents") but it
+    // needs its own attribution in the UI first -- see ReviewSession.ts's
+    // rationale field comment.
     entries.push({
       candidateId: decision.candidateId,
       decision: decision.decision,

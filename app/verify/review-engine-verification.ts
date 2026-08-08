@@ -127,6 +127,28 @@ async function main(): Promise<void> {
     check("unknown candidateId is rejected", missing.ok === false);
   }
 
+  console.log("--- Reset decisions is durable reversal, not undo ---");
+  {
+    const engine = freshEngine(transcript, "s-reset");
+    engine.dispatch({ family: "review", type: "keepCandidate", candidateId: candA });
+    engine.dispatch({ family: "review", type: "redactCandidate", candidateId: candB });
+    const sequenceBeforeReset = engine.getState().entityRegistry.nextSequence;
+    const eventCountBeforeReset = engine.getState().events.length;
+    const reset = engine.dispatch({ family: "review", type: "resetDecisions", candidateIds: [candA], scope: "zone" });
+    check("resetDecisions succeeds for a decided candidate", reset.ok);
+    check("the reset candidate returns to unresolved/currently undecided", engine.getState().candidateDecisions[candA] === undefined);
+    check("other decided candidates are untouched", engine.getState().candidateDecisions[candB]?.decision === "Redact");
+    check("entity acknowledgement is detached for the reset candidate", engine.getState().entityRegistry.entityIdByCandidateId[candA] === undefined);
+    check("entity registry sequencing remains monotonic", engine.getState().entityRegistry.nextSequence === sequenceBeforeReset);
+    check("prior decision events are left intact", engine.getState().events.slice(0, eventCountBeforeReset).every((event) => event.kind === "candidate-decided"));
+    check(
+      "reset appends one per-candidate event plus one reset anchor",
+      engine.getState().events.slice(eventCountBeforeReset).map((event) => event.kind).join(",") === "candidate-reset,decisions-reset"
+    );
+    const noOp = engine.dispatch({ family: "review", type: "resetDecisions", candidateIds: [candA], scope: "zone" });
+    check("resetting an already-unresolved candidate is rejected as a no-op", noOp.ok === false);
+  }
+
   console.log("--- Deterministic serialization + reload fidelity ---");
   {
     const engine = freshEngine(transcript, "s-serialize");

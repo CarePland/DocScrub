@@ -56,6 +56,18 @@ export class InMemorySessionRepository implements LocalSessionRepository {
     this.decisionMemory.delete(documentId); // ...and so does what it taught
   }
 
+  async archive(documentId: string, archivedAt: string): Promise<void> {
+    const record = this.records.get(documentId);
+    if (!record) return;
+    this.records.set(documentId, { ...record, archivedAt });
+  }
+
+  async restore(documentId: string): Promise<void> {
+    const record = this.records.get(documentId);
+    if (!record) return;
+    this.records.set(documentId, { ...record, archivedAt: null });
+  }
+
   async saveUiState(documentId: string, uiState: PersistedUiState): Promise<void> {
     this.uiStates.set(documentId, uiState);
   }
@@ -72,8 +84,10 @@ export class InMemorySessionRepository implements LocalSessionRepository {
     return [...this.decisionMemory.values()].filter((record) => record.documentId !== excludeDocumentId);
   }
 
-  async listRecent(limit?: number): Promise<SessionSummary[]> {
+  async listRecent(limit?: number, options: { archived?: boolean } = {}): Promise<SessionSummary[]> {
+    const archived = options.archived === true;
     const summaries = [...this.records.values()]
+      .filter((record) => Boolean(record.archivedAt) === archived)
       .map(summarizeSessionRecord)
       .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt));
     return limit === undefined ? summaries : summaries.slice(0, limit);

@@ -133,6 +133,15 @@ export const AUDIT_RECORD_SCHEMA_VERSION = 2 as const;
  *  absence as a value like any other decision, not omit the candidate. */
 export type AuditedDecisionKind = "Keep" | "Rename" | "Redact" | "Ignore" | "Undecided";
 
+/** The flavour of named claim a reviewer accepted, without its text.
+ *  "identity-link" -- the reviewer asserted this candidate IS a specific
+ *  resolved entity (the claim itself is recoverable by opaque alias from
+ *  `ambiguityResolutions`). "suggested-claim" -- the reviewer accepted one
+ *  of the item's own suggestion chips ("Common word", "Person's name",
+ *  "Institutional term", and the like). See AuditedCandidate.rationaleKind
+ *  for why the text is withheld. */
+export type AuditedRationaleKind = "identity-link" | "suggested-claim";
+
 export interface AuditedOccurrence {
   occurrenceId: string;
   blockId: string;
@@ -167,6 +176,35 @@ export interface AuditedCandidate {
    *  reviewer has overridden the decision (see CandidateDecision's own doc
    *  comment for why the evidence is not retained past an override). */
   importEvidence?: DecisionReuseEvidence;
+  /**
+   * DECISION RATIONALE (2026-08-06): WHETHER the reviewer accepted a named
+   * claim when deciding this candidate, and of which flavour -- never the
+   * claim's text. Absent when the decision came from a bare decision button,
+   * a bulk action, or an import, which is the ordinary case.
+   *
+   * THE TEXT IS DELIBERATELY NOT EXPORTED. `CandidateDecision.rationale` in
+   * the session file holds strings like "Common word" (closed app
+   * vocabulary, harmless) AND identity claims like "Amy Miller" (a person's
+   * canonical name, straight from the document). Emitting the field verbatim
+   * would reopen exactly the leak `AuditedEntityGroup.groupId` was converted
+   * to an opaque alias to close in v2 (2026-08-04), and would violate
+   * Andrew's standing instruction on this artifact -- "do not include source
+   * document content unnecessarily... minimize sensitive data in the audit
+   * report" (see AuditExporter.ts's header). Splitting the vocabulary case
+   * from the identity case and exporting only the safe half was considered
+   * and rejected as too subtle a boundary to keep correct as new archetypes
+   * are added: a future suggestion label that happens to interpolate a
+   * document value would leak silently, with nothing failing.
+   *
+   * What survives is the auditable question this actually answers: was this
+   * decision REASONED or defaulted? For the identity case the specific claim
+   * remains fully recoverable within the record, by opaque alias, from
+   * `ambiguityResolutions` -- so nothing is lost, only de-identified.
+   *
+   * Same shape and spirit as `wasImported` above: a derived fact about the
+   * decision, not a copy of its contents.
+   */
+  rationaleKind?: AuditedRationaleKind;
   occurrenceCount: number;
   occurrences: AuditedOccurrence[];
   resolvedStatus: ResolvedStatus;

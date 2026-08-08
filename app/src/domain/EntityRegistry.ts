@@ -116,7 +116,7 @@ function nextEntityId(registry: EntityRegistry): { entityId: string; nextSequenc
 /** Removes candidateId from whatever entity currently holds it, if any --
  *  deleting that entity entirely (and its anchor mapping) if it becomes
  *  empty. A no-op if candidateId is not currently a member of any entity. */
-function detachCandidate(registry: EntityRegistry, candidateId: string): EntityRegistry {
+export function detachCandidate(registry: EntityRegistry, candidateId: string): EntityRegistry {
   const existingEntityId = registry.entityIdByCandidateId[candidateId];
   if (!existingEntityId) return registry;
   const entity = registry.entities[existingEntityId];

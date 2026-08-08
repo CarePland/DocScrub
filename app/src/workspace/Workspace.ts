@@ -947,6 +947,10 @@ export class ReviewWorkspace {
     return this.sessionRepository.listRecent(limit);
   }
 
+  async listArchivedSessions(limit?: number): Promise<SessionSummary[]> {
+    return this.sessionRepository.listRecent(limit, { archived: true });
+  }
+
   /**
    * The stored session for `documentId`, or null if this document has never
    * been worked on (AG, 2026-08-03, reopen prompt).
@@ -969,6 +973,14 @@ export class ReviewWorkspace {
    *  (Andrew: "do not implement a document-management system"). */
   async deleteStoredSession(documentId: string): Promise<void> {
     return this.sessionRepository.delete(documentId);
+  }
+
+  async archiveStoredSession(documentId: string): Promise<void> {
+    return this.sessionRepository.archive(documentId, this.clock());
+  }
+
+  async restoreStoredSession(documentId: string): Promise<void> {
+    return this.sessionRepository.restore(documentId);
   }
 
   /** UI-STATE PERSISTENCE (AG, 2026-08-02): document-tied UI snapshot

@@ -175,13 +175,47 @@ import type { ReplacementRuleConfig } from "./ReplacementRule.js";
  * docscrub-decision-provenance-gap record). Additive and optional: a
  * command without it behaves byte-identically to before, and only
  * app.ts's dispatch choke point stamps it (Item Check only in Pass 1).
+ *
+ * DECISION TRACKER MISCOUNT FIX (2026-08-06): `keepCandidate`,
+ * `renameCandidate`, `ignoreCandidate`, and `linkAmbiguousCandidate` also
+ * carry an optional `viaSuggestionAccept?: boolean`, stamped only by
+ * app.ts's applyOwnSuggestions (the "Accept section" / accept-suggestions
+ * bulk path, where each candidate takes its OWN suggestion rather than one
+ * shared decision, so bulkApplyDecision's single-`decision`-for-all shape
+ * does not fit and these ordinary per-candidate commands are dispatched in
+ * a loop instead). Same additive/optional contract as `scope`. Paired with
+ * the new `suggestionsAccepted` anchor command below -- see
+ * decisionTracker.ts's BATCH_FLAGS/BATCH_ANCHOR_EVENTS for why both are
+ * required for the Decision Tracker to credit the whole run as ONE
+ * reviewer gesture instead of one per candidate.
  */
 
+/**
+ * DECISION RATIONALE (2026-08-06): `rationale` on the four per-candidate
+ * commands (and on linkAmbiguousCandidate below) carries the reviewer-facing
+ * CLAIM a suggestion chip made -- "Common word", "Person's name", an
+ * identity's own label -- from the UI that rendered the chip down to
+ * CandidateDecision, where it becomes the text a decided row displays.
+ *
+ * OPTIONAL AND USUALLY ABSENT, by design. Only the paths that actually put a
+ * named claim in front of the reviewer set it: the suggestion chips and the
+ * Possible-identities options. The bare decision buttons (Keep as-is /
+ * Change / Redact / Ignore) deliberately do NOT, because the reviewer gave
+ * no reason and inventing one would be exactly the unearned inference the
+ * "no automatic decisions" principle forbids -- see ReviewSession.ts's
+ * field comment for the full reasoning and the defect it closes.
+ *
+ * Same shape as `scope` and `viaSuggestionAccept` alongside it: a UI-supplied
+ * provenance stamp the reducer passes through without interpreting. Unlike
+ * those two it lands on CandidateDecision rather than only on the event
+ * payload, because it has to survive a reload -- a row must still say what
+ * the reviewer chose in a session opened tomorrow.
+ */
 export type ReviewCommand =
-  | { family: "review"; type: "keepCandidate"; candidateId: string; scope?: string }
-  | { family: "review"; type: "renameCandidate"; candidateId: string; replacement: string; scope?: string }
-  | { family: "review"; type: "redactCandidate"; candidateId: string; replacement?: string; scope?: string }
-  | { family: "review"; type: "ignoreCandidate"; candidateId: string; scope?: string }
+  | { family: "review"; type: "keepCandidate"; candidateId: string; scope?: string; viaSuggestionAccept?: boolean; rationale?: string }
+  | { family: "review"; type: "renameCandidate"; candidateId: string; replacement: string; scope?: string; viaSuggestionAccept?: boolean; rationale?: string }
+  | { family: "review"; type: "redactCandidate"; candidateId: string; replacement?: string; scope?: string; rationale?: string }
+  | { family: "review"; type: "ignoreCandidate"; candidateId: string; scope?: string; viaSuggestionAccept?: boolean; rationale?: string }
   | { family: "review"; type: "enterNotQuite"; groupId: string }
   | {
       family: "review";
@@ -244,6 +278,14 @@ export type ReviewCommand =
       replacement?: string;
       scope?: string;
     }
+  /** Reset (2026-08-08) -- clears the current decision for each listed
+   *  candidate and returns those candidates/proposal members to unresolved
+   *  review. This is NOT undo: prior events stay append-only, entity
+   *  registry sequencing remains monotonic, and the operation is durable
+   *  through the ordinary autosave path. Invalid ids are skipped, matching
+   *  bulkApplyDecision's defensive posture; an all-invalid/all-undecided
+   *  request fails rather than pretending a reset happened. */
+  | { family: "review"; type: "resetDecisions"; candidateIds: string[]; scope: "zone" | "category" }
   /** Ambiguity Check correction (v10) -- the reviewer confirms candidateId
    *  refers to the entity identified by groupId, one of that candidate's
    *  own AmbiguityProposal.candidateGroupOptions. Applies Keep (preserving
@@ -255,7 +297,19 @@ export type ReviewCommand =
    *  Declining a suggestion has no dedicated command -- dispatch
    *  keepCandidate/renameCandidate/redactCandidate/ignoreCandidate directly
    *  instead, exactly as Ambiguity Check already allows today. */
-  | { family: "review"; type: "linkAmbiguousCandidate"; candidateId: string; groupId: string }
+  | { family: "review"; type: "linkAmbiguousCandidate"; candidateId: string; groupId: string; viaSuggestionAccept?: boolean; rationale?: string }
+  /** Decision Tracker miscount fix (2026-08-06) -- the anchor for the
+   *  accept-suggestions bulk path, dispatched once after app.ts's
+   *  applyOwnSuggestions loop (runSectionAction's "accept-suggestions" op,
+   *  acceptAllInSection's recommendation branch), mirroring bulkApplyDecision/
+   *  confirmGroup/etc.'s own "N per-candidate events then one summary event"
+   *  shape. Touches no candidateDecisions itself -- see dismissRelationship
+   *  for the event-only precedent -- it exists purely to close the gesture
+   *  for decisionTracker.ts's BATCH_ANCHOR_EVENTS. Only dispatched when at
+   *  least one candidate was actually resolved via its own suggestion
+   *  (appliedCount > 0); a run that resolved nothing leaves no tagged events
+   *  behind for it to anchor. */
+  | { family: "review"; type: "suggestionsAccepted"; requestedCount: number; appliedCount: number; skippedCount: number }
   /** Structural Relationship Review (2026-07-30) -- the reviewer marks a
    *  proposed structural relationship (acronym/full-name, shared
    *  identifier pattern -- see StructuralRelationship.ts) as "Unrelated":

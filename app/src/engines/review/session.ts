@@ -184,7 +184,7 @@ import type {
   ReviewEventKind,
   ReviewSession,
 } from "../../domain/ReviewSession.js";
-import { EMPTY_ENTITY_REGISTRY, applyEntityAcknowledgement } from "../../domain/EntityRegistry.js";
+import { EMPTY_ENTITY_REGISTRY, applyEntityAcknowledgement, detachCandidate } from "../../domain/EntityRegistry.js";
 import type { DecisionReuseEvidence } from "../../domain/DecisionReuse.js";
 import type { NotQuiteMemberState, NotQuiteState } from "../../domain/NotQuite.js";
 import type { ReviewCommand, ReviewTransactionResult } from "../../domain/Commands.js";
@@ -264,17 +264,38 @@ function validateGroupBulkCommand(
  * selection), and applyDecisionReuse (each proposal already carries its
  * own independently-matched candidateId) omit it, so the candidate is its
  * own anchor -- a singleton entity.
+ *
+ * OPTIONS BAG (2026-08-06): the optional tail (groupId/source/
+ * importEvidence, now joined by `rationale`) moved from four positional
+ * parameters into one object. At four optionals a caller supplying only the
+ * last one reads `(..., now, undefined, undefined, undefined, x)` -- three
+ * undefineds whose meaning is positional and therefore silently wrong if
+ * miscounted. The first five parameters stay positional because every
+ * caller supplies all five and they read as a sentence. `applyDecisionBatch`
+ * below already took an options object for the same reason, so this is the
+ * established shape in this file rather than a new convention.
  */
+interface DecideCandidateOptions {
+  groupId?: string;
+  source?: CandidateDecisionSource;
+  importEvidence?: DecisionReuseEvidence;
+  /** DECISION RATIONALE (2026-08-06): the named claim the reviewer accepted,
+   *  supplied only by the paths that HAVE one (a suggestion chip, an identity
+   *  option). Every other caller omits it and the decision carries no
+   *  rationale -- see ReviewSession.ts's field comment on why absence is
+   *  meaningful rather than merely unset. */
+  rationale?: string;
+}
+
 function decideCandidate(
   session: ReviewSession,
   candidateId: string,
   decision: CandidateDecisionKind,
   replacement: string | undefined,
   now: string,
-  groupId?: string,
-  source: CandidateDecisionSource = "reviewer",
-  importEvidence?: DecisionReuseEvidence
+  options: DecideCandidateOptions = {}
 ): ReviewSession {
+  const { groupId, source = "reviewer", importEvidence, rationale } = options;
   const entry: CandidateDecision = {
     candidateId,
     decision,
@@ -282,6 +303,7 @@ function decideCandidate(
     source,
     ...(replacement !== undefined ? { replacement } : {}),
     ...(importEvidence !== undefined ? { importEvidence } : {}),
+    ...(rationale !== undefined ? { rationale } : {}),
   };
   const anchor = groupId ?? candidateId;
   return {
@@ -329,6 +351,12 @@ interface DecisionBatchGroupStamp {
 interface DecisionBatchOutcome {
   session: ReviewSession;
   appliedCount: number;
+  skippedCount: number;
+}
+
+interface DecisionResetOutcome {
+  session: ReviewSession;
+  resetCount: number;
   skippedCount: number;
 }
 
@@ -402,7 +430,19 @@ function applyDecisionBatch(
       skippedCount++;
       continue;
     }
-    next = decideCandidate(next, item.candidateId, item.decision, item.replacement, now, options.groupId, item.source, item.importEvidence);
+    // Conditional spreads, not plain assignment: `exactOptionalPropertyTypes`
+    // distinguishes an absent key from one explicitly set to undefined, and
+    // these three are genuinely absent for most batches.
+    //
+    // No rationale, deliberately: a batch applies ONE disposition to a list,
+    // so no member carries a claim of its own. Decision reuse in particular
+    // must not inherit the prior reviewer's wording -- see ReviewSession.ts's
+    // rationale field comment.
+    next = decideCandidate(next, item.candidateId, item.decision, item.replacement, now, {
+      ...(options.groupId !== undefined ? { groupId: options.groupId } : {}),
+      ...(item.source !== undefined ? { source: item.source } : {}),
+      ...(item.importEvidence !== undefined ? { importEvidence: item.importEvidence } : {}),
+    });
     next = {
       ...next,
       events: appendEvent(next, "candidate-decided", now, {
@@ -425,6 +465,47 @@ function applyDecisionBatch(
   return { session: next, appliedCount, skippedCount };
 }
 
+/**
+ * Reset is the inverse of the CURRENT decision value, not an undo of the
+ * historical act that created it. The audit log remains append-only, and
+ * EntityRegistry detachment uses the same teardown path Ignore/reassignment
+ * already rely on without decrementing its monotonic id sequence.
+ */
+function resetDecisionBatch(
+  session: ReviewSession,
+  context: DetectionGroupingContext,
+  candidateIds: readonly string[],
+  now: string,
+  scope: "zone" | "category"
+): DecisionResetOutcome {
+  let next = session;
+  let resetCount = 0;
+  let skippedCount = 0;
+  for (const candidateId of candidateIds) {
+    if (!findCandidate(context.detection, candidateId) || !(candidateId in next.candidateDecisions)) {
+      skippedCount++;
+      continue;
+    }
+    const { [candidateId]: removed, ...remainingDecisions } = next.candidateDecisions;
+    next = {
+      ...next,
+      candidateDecisions: remainingDecisions,
+      entityRegistry: detachCandidate(next.entityRegistry, candidateId),
+      updatedAt: now,
+    };
+    next = {
+      ...next,
+      events: appendEvent(next, "candidate-reset", now, {
+        candidateId,
+        previousDecision: removed!.decision,
+        scope,
+      }),
+    };
+    resetCount++;
+  }
+  return { session: next, resetCount, skippedCount };
+}
+
 function validateReplacementText(replacement: string): { ok: true; value: string } | { ok: false; reason: string } {
   const trimmed = replacement.trim();
   if (!trimmed) return { ok: false, reason: "replacement text cannot be blank" };
@@ -437,11 +518,25 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
   // history of the act — never on CandidateDecision itself. Spread-if-
   // present so a stampless command's payload is byte-identical to before.
   const scopeStamp = (c: { scope?: string }): Record<string, string> => (c.scope !== undefined ? { scope: c.scope } : {});
+  // DECISION TRACKER MISCOUNT FIX (2026-08-06): see Commands.ts's doc
+  // comment on viaSuggestionAccept for why this exists alongside scopeStamp.
+  const suggestionAcceptStamp = (c: { viaSuggestionAccept?: boolean }): Record<string, boolean> =>
+    c.viaSuggestionAccept ? { viaSuggestionAccept: true } : {};
   switch (command.type) {
     case "keepCandidate": {
       if (!findCandidate(context.detection, command.candidateId)) return fail(session, `no such candidate: ${command.candidateId}`);
-      let next = decideCandidate(session, command.candidateId, "Keep", undefined, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Keep", ...scopeStamp(command) }) };
+      let next = decideCandidate(session, command.candidateId, "Keep", undefined, now, {
+        ...(command.rationale !== undefined ? { rationale: command.rationale } : {}),
+      });
+      next = {
+        ...next,
+        events: appendEvent(next, "candidate-decided", now, {
+          candidateId: command.candidateId,
+          decision: "Keep",
+          ...scopeStamp(command),
+          ...suggestionAcceptStamp(command),
+        }),
+      };
       return ok(next);
     }
 
@@ -449,8 +544,19 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       if (!findCandidate(context.detection, command.candidateId)) return fail(session, `no such candidate: ${command.candidateId}`);
       const validated = validateReplacementText(command.replacement);
       if (!validated.ok) return fail(session, validated.reason);
-      let next = decideCandidate(session, command.candidateId, "Rename", validated.value, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Rename", replacement: validated.value, ...scopeStamp(command) }) };
+      let next = decideCandidate(session, command.candidateId, "Rename", validated.value, now, {
+        ...(command.rationale !== undefined ? { rationale: command.rationale } : {}),
+      });
+      next = {
+        ...next,
+        events: appendEvent(next, "candidate-decided", now, {
+          candidateId: command.candidateId,
+          decision: "Rename",
+          replacement: validated.value,
+          ...scopeStamp(command),
+          ...suggestionAcceptStamp(command),
+        }),
+      };
       return ok(next);
     }
 
@@ -462,7 +568,9 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
         if (!validated.ok) return fail(session, validated.reason);
         replacement = validated.value;
       }
-      let next = decideCandidate(session, command.candidateId, "Redact", replacement, now);
+      let next = decideCandidate(session, command.candidateId, "Redact", replacement, now, {
+        ...(command.rationale !== undefined ? { rationale: command.rationale } : {}),
+      });
       next = {
         ...next,
         events: appendEvent(next, "candidate-decided", now, {
@@ -477,8 +585,18 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
 
     case "ignoreCandidate": {
       if (!findCandidate(context.detection, command.candidateId)) return fail(session, `no such candidate: ${command.candidateId}`);
-      let next = decideCandidate(session, command.candidateId, "Ignore", undefined, now);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Ignore", ...scopeStamp(command) }) };
+      let next = decideCandidate(session, command.candidateId, "Ignore", undefined, now, {
+        ...(command.rationale !== undefined ? { rationale: command.rationale } : {}),
+      });
+      next = {
+        ...next,
+        events: appendEvent(next, "candidate-decided", now, {
+          candidateId: command.candidateId,
+          decision: "Ignore",
+          ...scopeStamp(command),
+          ...suggestionAcceptStamp(command),
+        }),
+      };
       return ok(next);
     }
 
@@ -530,7 +648,7 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       }
 
       const decisionKind: CandidateDecisionKind = command.action; // "Keep" | "Rename" | "Redact" all valid CandidateDecisionKind values
-      let next = decideCandidate(session, command.candidateId, decisionKind, replacement, now, command.groupId);
+      let next = decideCandidate(session, command.candidateId, decisionKind, replacement, now, { groupId: command.groupId });
 
       const updatedMembers: Record<string, NotQuiteMemberState> = {
         ...active.members,
@@ -826,6 +944,22 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       return ok(next);
     }
 
+    case "resetDecisions": {
+      if (command.candidateIds.length === 0) return fail(session, "no decisions selected for reset");
+      const batch = resetDecisionBatch(session, context, command.candidateIds, now, command.scope);
+      if (batch.resetCount === 0) return fail(session, "none of the selected candidates currently have decisions to reset");
+      const next = {
+        ...batch.session,
+        events: appendEvent(batch.session, "decisions-reset", now, {
+          scope: command.scope,
+          requestedCount: command.candidateIds.length,
+          resetCount: batch.resetCount,
+          skippedCount: batch.skippedCount,
+        }),
+      };
+      return ok(next);
+    }
+
     case "linkAmbiguousCandidate": {
       // Ambiguity Check correction (v10) -- activates the
       // ambiguityResolutions/ "ambiguity-resolved" schema that has existed
@@ -847,14 +981,43 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
       // the document's surface text -- that remains a separate, explicit
       // Rename/Redact choice like every other candidate gets, preserving
       // the original text by default exactly as keepCandidate always has.
-      let next: ReviewSession = decideCandidate(session, command.candidateId, "Keep", undefined, now, command.groupId);
-      next = { ...next, events: appendEvent(next, "candidate-decided", now, { candidateId: command.candidateId, decision: "Keep", viaAmbiguityLink: true, resolvedGroupId: command.groupId }) };
+      let next: ReviewSession = decideCandidate(session, command.candidateId, "Keep", undefined, now, {
+        groupId: command.groupId,
+        ...(command.rationale !== undefined ? { rationale: command.rationale } : {}),
+      });
+      next = {
+        ...next,
+        events: appendEvent(next, "candidate-decided", now, {
+          candidateId: command.candidateId,
+          decision: "Keep",
+          viaAmbiguityLink: true,
+          resolvedGroupId: command.groupId,
+          ...suggestionAcceptStamp(command),
+        }),
+      };
       next = {
         ...next,
         ambiguityResolutions: { ...next.ambiguityResolutions, [command.candidateId]: { candidateId: command.candidateId, resolvedGroupId: command.groupId, decidedAt: now } },
         updatedAt: now,
       };
       next = { ...next, events: appendEvent(next, "ambiguity-resolved", now, { candidateId: command.candidateId, resolvedGroupId: command.groupId, canonicalName: option.canonicalName }) };
+      return ok(next);
+    }
+
+    case "suggestionsAccepted": {
+      // Decision Tracker miscount fix (2026-08-06) -- see Commands.ts's doc
+      // comment. Touches no candidateDecisions (those already landed via the
+      // individually-dispatched, viaSuggestionAccept-tagged commands that
+      // preceded this one); it exists purely as the anchor event
+      // decisionTracker.ts's BATCH_ANCHOR_EVENTS closes the gesture on.
+      const next = {
+        ...session,
+        events: appendEvent(session, "suggestions-accepted", now, {
+          requestedCount: command.requestedCount,
+          appliedCount: command.appliedCount,
+          skippedCount: command.skippedCount,
+        }),
+      };
       return ok(next);
     }
 

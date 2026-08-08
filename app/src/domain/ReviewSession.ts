@@ -20,6 +20,12 @@
  * `source: "reviewer"` with no `importEvidence`, with zero special-case code
  * needed for that transition. See docs/detection/feature-002-decision-reuse.md.
  *
+ * DECISION RATIONALE (2026-08-06): CandidateDecision gained `rationale`,
+ * additive/optional on the SAME terms and for the same reason as Feature
+ * 002's fields above -- no schema bump, no migration entry, older saves
+ * unaffected. See the field's own comment for what it records and why
+ * absence is meaningful.
+ *
  * SCHEMA v2 (Entity/Decision Separation, 2026-07-29): ReviewSession gained
  * `entityRegistry` (EntityRegistry.ts) -- a session-scoped, in-memory record
  * of human-confirmed semantic entities, separate from the content-derived
@@ -72,6 +78,42 @@ export interface CandidateDecision {
    *  recoverable from the durable event log, see AuditExporter.ts's
    *  wasEverImported()). */
   importEvidence?: DecisionReuseEvidence;
+  /**
+   * DECISION RATIONALE (2026-08-06): the reviewer-facing CLAIM the reviewer
+   * accepted -- "Common word", "Person's name", "Amy Miller" -- when the
+   * decision came from a named suggestion chip or identity option. Absent
+   * when it came from a bare decision button (Keep as-is / Change / Redact /
+   * Ignore), a group or type bulk action, or an import.
+   *
+   * ABSENCE IS MEANINGFUL, and is the whole reason this field exists rather
+   * than the cheaper alternative of matching a decision back to a suggestion
+   * by its op at render time. Two suggestions can share an op kind -- a
+   * term archetype offers "Common word" (Ignore) beside identity options
+   * that are also dispositions -- so an op match is a guess, and a reviewer
+   * who pressed the bare `Keep as-is` button gave NO reason at all. Writing
+   * a reason they never gave is precisely the unearned, non-auditable
+   * inference this project's "no automatic decisions" principle exists to
+   * prevent. A decision with no rationale renders as its decision label.
+   *
+   * The defect this closes: app.ts's decided triage rows rendered
+   * `recommendation.suggestions[0].label` unconditionally, so an item whose
+   * reviewer pressed ② "Person's name" still displayed "→ Common word" --
+   * the FIRST suggestion, never the chosen one. That text was correct while
+   * these archetypes had exactly one suggestion and became wrong, silently,
+   * when the name escape hatch added a second (2026-08-03, the "Amy" case).
+   *
+   * ADDITIVE AND OPTIONAL, deliberately -- the same shape (and the same
+   * reasoning) as `source`/`importEvidence` above: a save file written
+   * before this field existed deserializes exactly as before, so there is
+   * NO schema bump and no migration ladder entry. Unlike `source`, new code
+   * genuinely does omit this field much of the time; it is optional because
+   * most decisions have no named rationale, not only for compatibility.
+   *
+   * NOT propagated through decision reuse: an imported decision's rationale
+   * is the PRIOR reviewer's claim, and presenting it as the current
+   * reviewer's would misattribute a judgment. See DecisionMemory.ts.
+   */
+  rationale?: string;
 }
 
 export interface EntityGroupDecision {
@@ -98,6 +140,7 @@ export interface AmbiguityResolution {
 
 export type ReviewEventKind =
   | "candidate-decided"
+  | "candidate-reset"
   | "group-decided"
   | "ambiguity-resolved"
   | "not-quite-entered"
@@ -124,7 +167,31 @@ export type ReviewEventKind =
    *  established for confirmGroup/rejectGroup/flattenGroup, generalized
    *  from a group's fixed membership to an arbitrary selected candidateId
    *  list. See session.ts's bulkApplyDecision case. */
-  | "bulk-decided";
+  | "bulk-decided"
+  /** Reset (2026-08-08): fired once after a reset command clears one or
+   *  more current candidate decisions, mirroring applyDecisionBatch's
+   *  "N per-candidate events plus one gesture anchor" shape without
+   *  classifying the gesture as a decision-making batch. Decision Tracker
+   *  deliberately does NOT list this in BATCH_ANCHOR_EVENTS: Reset removes
+   *  work from the currently resolved set rather than producing new
+   *  resolved work. */
+  | "decisions-reset"
+  /** Decision Tracker miscount fix (2026-08-06, live report: one click on
+   *  an Ambiguity Check "Accept section" over 8 items read as "8 MADE").
+   *  Fired once per applyOwnSuggestions run (app.ts's runSectionAction
+   *  "accept-suggestions" op and acceptAllInSection's recommendation
+   *  branch) -- the same "one summary event plus N per-candidate events"
+   *  shape as bulk-decided/group-decided/decisions-imported, but the
+   *  per-candidate events are ordinary individually-dispatched
+   *  keepCandidate/renameCandidate/ignoreCandidate/linkAmbiguousCandidate
+   *  commands (each candidate takes its OWN suggestion, not one shared
+   *  decision, so applyDecisionBatch's single-decision shape does not fit)
+   *  stamped viaSuggestionAccept: true. See session.ts's suggestionsAccepted
+   *  case and decisionTracker.ts's BATCH_FLAGS/BATCH_ANCHOR_EVENTS -- before
+   *  this existed, those per-candidate events carried no batch tag at all,
+   *  so the tracker credited one gesture per candidate instead of one per
+   *  click. */
+  | "suggestions-accepted";
 
 export interface ReviewEvent {
   id: string;

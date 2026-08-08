@@ -173,6 +173,15 @@ function buildCandidates(detection: DetectionResult, session: ReviewSession): Au
     if (decision?.decidedAt !== undefined) entry.decidedAt = decision.decidedAt;
     if (decision !== undefined) entry.source = decision.source ?? "reviewer";
     if (decision?.importEvidence !== undefined) entry.importEvidence = decision.importEvidence;
+    // DECISION RATIONALE (2026-08-06): the KIND, never the text -- see
+    // AuditRecord.ts's rationaleKind comment for why the claim itself is
+    // withheld from this artifact. The flavour is derived rather than
+    // stored: an identity link is exactly a candidate with an
+    // ambiguityResolution, which the record already carries by opaque alias,
+    // so no second source of truth is minted for a fact already present.
+    if (decision?.rationale !== undefined) {
+      entry.rationaleKind = session.ambiguityResolutions?.[candidate.id] !== undefined ? "identity-link" : "suggested-claim";
+    }
     return entry;
   });
 

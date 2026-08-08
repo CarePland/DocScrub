@@ -76,6 +76,12 @@ export type QuotaStatus = "ok" | "approaching-limit" | "exceeded";
 export interface SessionRecord {
   schemaVersion: typeof SESSION_RECORD_SCHEMA_VERSION;
   documentId: string;
+  /** Browser-local account boundary. Null means the record was created
+   *  before sign-in or while no account owner was known. */
+  ownerUserId?: string | null;
+  /** Archive hides the document from active recents without removing the
+   *  local bytes. True deletion remains a separate retention decision. */
+  archivedAt?: string | null;
   fileName: string;
   fileBytes: Uint8Array;
   fileMimeType: string;
@@ -98,6 +104,8 @@ export interface SessionRecord {
  *  convention (e.g. ReviewSession.ts's own resolvedStatusOf()). */
 export interface SessionSummary {
   documentId: string;
+  ownerUserId: string | null;
+  archivedAt: string | null;
   fileName: string;
   savedAt: string;
   lastOpenedAt: string;
@@ -116,6 +124,8 @@ export function deriveCompletionPercent(reviewedCandidateCount: number, totalCan
 export function summarizeSessionRecord(record: SessionRecord): SessionSummary {
   return {
     documentId: record.documentId,
+    ownerUserId: record.ownerUserId ?? null,
+    archivedAt: record.archivedAt ?? null,
     fileName: record.fileName,
     savedAt: record.saveFile.savedAt,
     lastOpenedAt: record.lastOpenedAt,
@@ -172,6 +182,8 @@ export interface LocalSessionRepository {
    *  separate method. Returns null if no record exists for `documentId`. */
   load(documentId: string, openedAt: string): Promise<SessionRecord | null>;
   delete(documentId: string): Promise<void>;
+  archive(documentId: string, archivedAt: string): Promise<void>;
+  restore(documentId: string): Promise<void>;
   /** Document-tied UI snapshot (see PersistedUiState above). Small and
    *  written frequently (debounced tab/scroll/focus changes), which is why
    *  it is NOT a field on SessionRecord: rewriting a record that carries
@@ -200,7 +212,7 @@ export interface LocalSessionRepository {
    *  RECENT_DOCUMENTS_DISPLAY_LIMIT in app.ts) -- it does NOT evict storage;
    *  eviction is a separate, explicit policy (see
    *  IndexedDbSessionRepository's own RECENT_DOCUMENTS_STORAGE_CAP). */
-  listRecent(limit?: number): Promise<SessionSummary[]>;
+  listRecent(limit?: number, options?: { archived?: boolean }): Promise<SessionSummary[]>;
   getQuotaStatus(): Promise<QuotaStatus>;
 }
 

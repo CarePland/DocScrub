@@ -41,6 +41,7 @@ import { deriveWorkspaceMetrics, type MetricSection } from "../src/metrics/works
 import { partitionCandidatesByResolution } from "../src/engines/review/coverage.ts";
 import { decisionTrackerFigures, decisionsMade, estimateTimeSaved, explainTimeSaved, individualDecisionRate } from "../src/metrics/decisionTracker.ts";
 import type { ReviewSession } from "../src/domain/ReviewSession.ts";
+import { formatPercentFigure, isRestingFigure } from "../src/metrics/percentDisplay.ts";
 import {
   decisionReduction,
   formatFewerDecisionsPercent,
@@ -193,6 +194,31 @@ async function main(): Promise<void> {
     check("no reduction is exactly 0, not -0", Object.is(decisionReduction([unit("a", 1)]).fewerDecisionPercent, 0));
     check("no reduction formats as '0%'", formatFewerDecisionsPercent(decisionReduction([unit("a", 1)])) === "0%");
     check("empty scope formats as '0%' rather than 'NaN%'", formatFewerDecisionsPercent(decisionReduction([])) === "0%");
+  }
+
+  // ENDPOINT HONESTY (AG, 2026-08-06), from live use: "I had 1/223, which
+  // rounds up to 100%, but of course is not actually 100%." 0% and 100%
+  // are claims, not quantities -- see metrics/percentDisplay.ts.
+  console.log("--- rounding must not reach an endpoint it has not reached ---");
+  {
+    // Andrew's own case: one decision covering 223 occurrences.
+    const andrews = decisionReduction([unit("a", 223)]);
+    check(
+      "1 / 223 = 99.55% reduction reads '~100%', never a bare '100%'",
+      formatFewerDecisionsPercent(andrews) === "~100%",
+      formatFewerDecisionsPercent(andrews)
+    );
+    check("and the tilde disappears at a precision where the figure is honest", formatFewerDecisionsPercent(andrews, 1) === "99.6%");
+    check("a genuinely exact 100% takes no tilde", formatPercentFigure(100) === "100%");
+    check("a genuinely exact 0% takes no tilde", formatPercentFigure(0) === "0%");
+    check("a value rounding DOWN to zero reads '~0%'", formatPercentFigure(0.4) === "~0%");
+    check("the rule holds at one decimal too", formatPercentFigure(99.96, 1) === "~100.0%" && formatPercentFigure(0.04, 1) === "~0.0%");
+    check("ordinary values are untouched -- no tilde noise", formatPercentFigure(93) === "93%" && formatPercentFigure(66.7, 1) === "66.7%");
+    check("non-finite input renders an exact 0%, never 'NaN%'", formatPercentFigure(Number.NaN) === "0%");
+    check("out-of-range input is bounded rather than displayed", formatPercentFigure(140) === "100%" && formatPercentFigure(-3) === "0%");
+    // The muting rule depends on this: grey means "no data," so a
+    // displayed plain zero must never be a rounded-down non-zero.
+    check("resting is EXACT zero only", isRestingFigure(0) && !isRestingFigure(0.4) && isRestingFigure(Number.NaN));
   }
 
   console.log("--- mergedUnit: many candidates presented as one row to judge ---");
@@ -525,6 +551,9 @@ async function main(): Promise<void> {
     d2.dispatchReview({ family: "review", type: "ignoreCandidate", candidateId: one });
     check("re-deciding the same item does not advance Made", tracker(d2).decisionsMade === afterFirst, `${tracker(d2).decisionsMade} vs ${afterFirst}`);
     check("but the raw action tally does move (so the check above is not vacuous)", deriveWorkspaceMetrics(d2.getState()).find((s) => s.id === "consolidation")?.metrics.find((x) => x.id === "actions-so-far")?.value === 3);
+    d2.dispatchReview({ family: "review", type: "resetDecisions", candidateIds: [one], scope: "zone" });
+    check("reset drops the old decision gesture out of Made", tracker(d2).decisionsMade === 0, `Made=${tracker(d2).decisionsMade}`);
+    check("reset events themselves do not inflate Made", decisionsMade(d2.getState().reviewSession, new Set(resolvedCandidatesOf(d2.getState()))) === 0);
 
     // A group action that overwrites members already decided counts ONCE
     // for what it newly resolved, and never again for what it overwrote.
@@ -560,7 +589,10 @@ async function main(): Promise<void> {
     // The three strings the panel renders.
     check("Made renders a grouped integer", /^[\d.,  ]+$/.test(bulk.decisionsMade.toLocaleString()));
     check("Avoided renders a grouped integer", /^[\d.,  ]+$/.test(bulk.avoidedDecisionCount.toLocaleString()));
-    check("Fewer renders a whole percent", /^\d{1,3}%$/.test(formatFewerDecisionsPercent(bulk)), formatFewerDecisionsPercent(bulk));
+    // `~?` is the 2026-08-06 endpoint rule (percentDisplay.ts), not slack
+    // in the format: the tilde appears ONLY where the figure rounds to 0 or
+    // 100 without being either. Everything else is still a bare percent.
+    check("Fewer renders a whole percent", /^~?\d{1,3}%$/.test(formatFewerDecisionsPercent(bulk)), formatFewerDecisionsPercent(bulk));
     check("Fewer never exceeds 100%", bulk.fewerDecisionPercent <= 100);
 
     // Consolidation shows the same Made the panel does.
@@ -718,7 +750,7 @@ async function main(): Promise<void> {
     const avoidedLabel = global.avoidedDecisionCount.toLocaleString();
     const percentLabel = formatFewerDecisionsPercent(global);
     check("Avoided renders a grouped integer count", /^[\d.,  ]+$/.test(avoidedLabel), avoidedLabel);
-    check("Fewer Decisions renders a whole percent", /^\d{1,3}%$/.test(percentLabel), percentLabel);
+    check("Fewer Decisions renders a whole percent", /^~?\d{1,3}%$/.test(percentLabel), percentLabel);
     check("the strip's percent never exceeds 100", Math.round(global.fewerDecisionPercent) <= 100);
     check("the strip shows figures even though local suppression exists", global.avoidedDecisionCount >= 0);
   }

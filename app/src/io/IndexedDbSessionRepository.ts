@@ -24,6 +24,7 @@
 import type { LocalSessionRepository, SessionRecord, SessionSummary, QuotaStatus, PersistedUiState } from "./LocalSessionRepository.js";
 import { summarizeSessionRecord, isValidSessionRecord } from "./LocalSessionRepository.js";
 import { isValidDecisionMemoryRecord, type DecisionMemoryRecord } from "../domain/DecisionMemory.js";
+import { currentLocalSessionOwnerId } from "../account/localSessionOwner.js";
 
 const DB_NAME = "docscrub-sessions";
 // v2 (2026-08-02): adds the "ui-state" store -- document-tied UI snapshots
@@ -50,6 +51,12 @@ const DECISION_MEMORY_STORE = "decision-memory";
  *  "recently opened documents" framing -- old, no-longer-relevant reviews
  *  are meant to age out, not accumulate forever. */
 const RECENT_DOCUMENTS_STORAGE_CAP = 10;
+
+function isVisibleToCurrentOwner(record: SessionRecord): boolean {
+  const ownerId = currentLocalSessionOwnerId();
+  if (!ownerId) return !record.ownerUserId;
+  return record.ownerUserId === ownerId;
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -104,9 +111,11 @@ export class IndexedDbSessionRepository implements LocalSessionRepository {
 
   async save(record: SessionRecord): Promise<void> {
     const db = await this.db();
+    const ownerUserId = currentLocalSessionOwnerId();
+    const ownedRecord: SessionRecord = { ...record, ownerUserId, archivedAt: null };
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(record);
+      tx.objectStore(STORE_NAME).put(ownedRecord);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("failed to save session record"));
       tx.onabort = () => reject(tx.error ?? new Error("save transaction aborted (likely quota exceeded)"));
@@ -120,6 +129,7 @@ export class IndexedDbSessionRepository implements LocalSessionRepository {
       db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(documentId) as IDBRequest<unknown>
     );
     if (!isValidSessionRecord(record)) return null;
+    if (!isVisibleToCurrentOwner(record) || record.archivedAt) return null;
     const touched: SessionRecord = { ...record, lastOpenedAt: openedAt };
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
@@ -145,6 +155,34 @@ export class IndexedDbSessionRepository implements LocalSessionRepository {
       tx.objectStore(DECISION_MEMORY_STORE).delete(documentId);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("failed to delete session record"));
+    });
+  }
+
+  async archive(documentId: string, archivedAt: string): Promise<void> {
+    const db = await this.db();
+    const record = await requestToPromise(
+      db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(documentId) as IDBRequest<unknown>
+    );
+    if (!isValidSessionRecord(record) || !isVisibleToCurrentOwner(record)) return;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put({ ...record, archivedAt });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("failed to archive session record"));
+    });
+  }
+
+  async restore(documentId: string): Promise<void> {
+    const db = await this.db();
+    const record = await requestToPromise(
+      db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(documentId) as IDBRequest<unknown>
+    );
+    if (!isValidSessionRecord(record) || !isVisibleToCurrentOwner(record)) return;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put({ ...record, archivedAt: null });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("failed to restore session record"));
     });
   }
 
@@ -190,13 +228,15 @@ export class IndexedDbSessionRepository implements LocalSessionRepository {
     return (rows ?? []).filter(isValidDecisionMemoryRecord).filter((record) => record.documentId !== excludeDocumentId);
   }
 
-  async listRecent(limit = RECENT_DOCUMENTS_STORAGE_CAP): Promise<SessionSummary[]> {
+  async listRecent(limit = RECENT_DOCUMENTS_STORAGE_CAP, options: { archived?: boolean } = {}): Promise<SessionSummary[]> {
     const db = await this.db();
     const raw = await requestToPromise(
       db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll() as IDBRequest<unknown[]>
     );
+    const archived = options.archived === true;
     return raw
       .filter(isValidSessionRecord)
+      .filter((record) => isVisibleToCurrentOwner(record) && Boolean(record.archivedAt) === archived)
       .map(summarizeSessionRecord)
       .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
       .slice(0, limit);

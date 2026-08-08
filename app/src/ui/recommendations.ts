@@ -126,6 +126,48 @@ const hasCategory = (facts: RecommendationFacts, ...names: string[]): boolean =>
  *  separating shortened names from phrase completion. */
 const KNOWN_NAME_CATEGORIES = ["known-personal-name-token", "known-first-name", "known-name-structure"];
 
+/**
+ * Does this candidate carry POSITIVE name evidence -- a known personal-name
+ * token, a known first name, or a recognized name structure?
+ *
+ * Exported (AG, 2026-08-06) because it is the one signal that separates the
+ * two populations "Other" had been pooling: "Kyle" carries it and is a name
+ * the app already understands, while "Math" and "Residency" carry none and
+ * are words the lexicon simply does not list. Sectioning needs the same
+ * answer the archetype derivation uses, so it reads the same predicate
+ * rather than re-deriving one that could drift.
+ *
+ * MEASURED SCOPE (2026-08-07): the premise in that paragraph -- that
+ * "Kyle" carries this -- IS FALSE against the live document. The gate is
+ * KNOWN_NAME_CATEGORIES, which quality assigns from the curated name
+ * dictionaries, and those hold **23 given names and 5 surnames**
+ * (`quality-dictionaries.data.ts`: KNOWN_GIVEN_NAMES, KNOWN_SURNAMES).
+ * "andrew" and "tamara" are in; "amy", "kyle" and "chris" are not. So this
+ * predicate does not currently mean "has name evidence" -- it means "is one
+ * of about thirty names we happened to list", and every caller inherits that
+ * narrowing silently, because a false answer is indistinguishable from a
+ * genuine absence of evidence.
+ *
+ * The consequence is visible on screen rather than theoretical:
+ * `ambiguitySectionFor` sends both Kyle (95% exact first-name match to
+ * "Kyle Francis") and Amy (90% to "Amy Miller") into Other Words, where the
+ * section's bulk control applies Ignore. See the comment at that return.
+ *
+ * WHY THE FIX IS NOT "ADD MORE NAMES": widening the dictionaries makes the
+ * failure rarer without changing its shape, and the next unlisted surname
+ * repeats it -- the same trap the Other Words reframing named one layer up.
+ * The evidence that actually settles Kyle and Amy (a high-confidence identity
+ * match against a full name found in this document) is computed in the
+ * entity-resolution layer and never reaches this function. Any real fix
+ * routes that signal in HERE, so the one predicate keeps answering for every
+ * caller. Flagged for AG rather than changed unilaterally: widening what
+ * counts as name evidence moves items between categories on a shipped
+ * surface, which is a product decision.
+ */
+export function hasKnownNameEvidence(facts: RecommendationFacts): boolean {
+  return hasCategory(facts, ...KNOWN_NAME_CATEGORIES);
+}
+
 // INSTITUTIONAL_CATEGORIES was a hand-maintained copy of semanticTypeFor's
 // list and had drifted from it by one member. It now comes from the single
 // domain-layer definition -- see the vocabulary note in domain/semanticTypes.ts

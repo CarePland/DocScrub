@@ -166,6 +166,12 @@ async function testSessionRepository(): Promise<void> {
   check("delete() removes the record", (await repo.load("doc-2", "2026-08-10T00:00:00.000Z")) === null);
   check("listRecent() reflects the deletion", (await repo.listRecent()).every((s) => s.documentId !== "doc-2"));
 
+  await repo.archive("doc-3", "2026-08-12T00:00:00.000Z");
+  check("archive() hides the record from active recents", (await repo.listRecent()).every((s) => s.documentId !== "doc-3"));
+  check("listRecent({ archived: true }) shows archived records", (await repo.listRecent(undefined, { archived: true })).some((s) => s.documentId === "doc-3"));
+  await repo.restore("doc-3");
+  check("restore() returns an archived record to active recents", (await repo.listRecent()).some((s) => s.documentId === "doc-3"));
+
   // Graceful-failure control surface (Andrew's "graceful handling of
   // interrupted sessions" bullet) -- exercised here directly since
   // Workspace-level coverage is Part 2's job.

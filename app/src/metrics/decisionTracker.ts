@@ -74,12 +74,23 @@ import { decisionReduction, type ReviewUnit } from "./decisionReduction.js";
  * `via*`-based test would count an import of 100 prior decisions as 100
  * separate human decisions. It is one gesture -- the reviewer chose to
  * import -- anchored by the `decisions-imported` event.
+ *
+ * `viaSuggestionAccept` (2026-08-06 miscount fix, live report: one click on
+ * an Ambiguity Check "Accept section" over 8 items read as "8 MADE") covers
+ * app.ts's applyOwnSuggestions -- each candidate takes its OWN suggestion
+ * (a link, a keep, an ignore, or a rename, never one shared decision), so
+ * it dispatches ordinary individual keepCandidate/renameCandidate/
+ * ignoreCandidate/linkAmbiguousCandidate commands in a loop rather than
+ * going through applyDecisionBatch. Before this flag existed, those
+ * per-candidate events carried no batch tag at all and were credited as one
+ * gesture EACH -- anchored by the new `suggestions-accepted` event below.
  */
-const BATCH_FLAGS = ["viaBulkApply", "viaGroupConfirm", "viaGroupRedact", "viaGroupIgnore", "viaGroupFlatten"] as const;
+const BATCH_FLAGS = ["viaBulkApply", "viaGroupConfirm", "viaGroupRedact", "viaGroupIgnore", "viaGroupFlatten", "viaSuggestionAccept"] as const;
 
-/** The summary events `applyDecisionBatch` callers append AFTER their run
- *  of per-candidate events -- one per reviewer gesture. */
-const BATCH_ANCHOR_EVENTS = new Set<string>(["bulk-decided", "group-decided", "decisions-imported"]);
+/** The summary events `applyDecisionBatch` callers (plus
+ *  applyOwnSuggestions's own `suggestionsAccepted` anchor) append AFTER
+ *  their run of per-candidate events -- one per reviewer gesture. */
+const BATCH_ANCHOR_EVENTS = new Set<string>(["bulk-decided", "group-decided", "decisions-imported", "suggestions-accepted"]);
 
 function isBatchMember(payload: Record<string, unknown>): boolean {
   if (payload["source"] === "imported") return true;
@@ -405,6 +416,63 @@ export function decisionTrackerFigures(
  * the estimate itself, so the explanation cannot describe a calculation
  * that did not happen.
  */
+/**
+ * The tracker cell's label: the UNIT alone, uppercased by CSS -- "MINUTES
+ * AVOIDED". Short enough for a stacked cell, where the full phrase
+ * ("minutes of work avoided") had to wrap to two lines and made this the
+ * one cell able to change the strip's height. See index.html's
+ * .decision-tracker-time for why that mattered enough to change.
+ *
+ * A resting cell borrows the ladder's FIRST RUNG rather than hardcoding a
+ * word, so the label a reviewer sees before any estimate exists is the one
+ * the first real estimate will almost certainly arrive in -- the cell wakes
+ * up without changing width. Reading it off TIME_LADDER means a future
+ * reordering of the ladder cannot leave this out of step with it.
+ *
+ * "Avoided", never "saved", and that is load-bearing rather than a wording
+ * preference: this measures work that did not have to happen, which is
+ * observable, not time banked, which is not. Enforced by
+ * verify/decision-reduction-verification.ts.
+ */
+export function timeSavedUnitLabel(estimate: TimeSavedEstimate | null | undefined): string {
+  return `${estimate?.unit ?? TIME_LADDER[0]!.unit} avoided`;
+}
+
+/**
+ * Why there is no estimate yet -- the resting counterpart to
+ * explainTimeSaved, so the ⓘ control beside the figure is never a dead
+ * button (AG, 2026-08-06: the cell is now permanently rendered, so its
+ * disclosure has to answer for the resting state too).
+ *
+ * Names the precondition that actually failed rather than a generic
+ * "not enough data," because the two are genuinely different situations
+ * and one of them is not a wait-and-see: if nothing has been settled by a
+ * category or group action, there is no avoided workload to price, and no
+ * amount of further individual review will produce a figure.
+ */
+export function explainTimeSavedPending(
+  session: ReviewSession | null | undefined,
+  resolvedUnits: readonly ReviewUnit[] | null | undefined
+): string[] {
+  const units = resolvedUnits ?? [];
+  // Recomputed from the same two inputs decisionTrackerFigures uses rather
+  // than passed in: this must describe the SAME preconditions
+  // estimateTimeSaved actually tested, and a caller-supplied count is a
+  // second place for them to disagree.
+  const unitsAvoided = Math.max(0, decisionReduction(units).decisionUnitCount - decisionsMade(session, new Set(units.map((u) => u.id))));
+  if (unitsAvoided === 0) {
+    return [
+      "No items have been settled without an individual decision yet, so there is no avoided workload to put a time against.",
+      "This figure appears once a category or group action disposes of items in one gesture -- which is the work it measures.",
+    ];
+  }
+  const samples = individualDecisionRate(session)?.samples ?? 0;
+  return [
+    `A pace has not been measured yet: it comes only from items decided ONE AT A TIME, and ${samples === 0 ? "none" : `only ${samples}`} of those intervals are available so far (${MINIMUM_RATE_SAMPLES} are needed).`,
+    "Items settled by a category or group action are excluded from the pace deliberately -- one keystroke over forty items says nothing about how long a single decision takes.",
+  ];
+}
+
 export function explainTimeSaved(estimate: TimeSavedEstimate): string[] {
   const pace =
     estimate.perDecisionSeconds < 90

@@ -86,6 +86,8 @@
  * workspaceMetrics.ts / documentScores.ts / itemCheckQuery.ts.
  */
 
+import { formatPercentFigure } from "./percentDisplay.js";
+
 /**
  * One thing the reviewer judges, plus the document occurrences judging it
  * disposes of.
@@ -194,9 +196,18 @@ export function decisionReduction(scope: Iterable<ReviewUnit> | null | undefined
  * this exists to prevent. `decimals` is 0 for the review-status strip
  * (whole percent, the number a reviewer builds intuition on) and 1 where a
  * report wants finer grain.
+ *
+ * 2026-08-06: the rounding itself moved to percentDisplay.ts, which adds
+ * the `~` an endpoint needs -- `1 / 223` reduces by 99.55%, and a bare
+ * "100%" there says "nothing left to review," which is false. This stays
+ * the one place the figure becomes text; it simply no longer owns the
+ * rounding rule, which is shared with the review-status scores. Existing
+ * behavior away from the endpoints is byte-identical (see
+ * verify/decision-reduction-verification.ts's rounding block, which
+ * pins 93% / 66.7% / 85.7% / 99.9% / 0% unchanged).
  */
 export function formatFewerDecisionsPercent(reduction: { fewerDecisionPercent: number }, decimals = 0): string {
-  return `${reduction.fewerDecisionPercent.toFixed(decimals)}%`;
+  return formatPercentFigure(reduction.fewerDecisionPercent, decimals);
 }
 
 /**

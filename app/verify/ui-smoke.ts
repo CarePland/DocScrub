@@ -23,7 +23,7 @@
  *   node --experimental-strip-types --experimental-loader ./verify/ts-loader.mjs verify/ui-smoke.ts
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 
 let passCount = 0;
 let failCount = 0;
@@ -127,6 +127,42 @@ async function main(): Promise<void> {
     return;
   }
 
+  /* ------------------------------------------------------------------
+   * THE STALE-BUILD TRAP, CLOSED (2026-08-07). Cost a full session an hour.
+   *
+   * `npm run typecheck` is `tsc --noEmit` and writes NOTHING. `npm run build`
+   * is a plain `tsc` and emits to dist/. The browser loads dist/ui/app.js,
+   * and index.html is not compiled -- so CSS edits appear on refresh while TS
+   * edits silently do not, which is exactly what makes the state hard to
+   * notice from the outside.
+   *
+   * This suite was complicit: every structural check below reads
+   * src/ui/app.ts while the module-load check imports dist/ui/app.js, so a
+   * stale dist validated happily against fresh source and reported all green
+   * -- and then someone was told to refresh a page running code that no
+   * longer matched the assertions that had just passed.
+   *
+   * An mtime comparison is the cheap, honest guard: it cannot tell whether
+   * the emit was CORRECT, only whether it happened after the last source
+   * edit, which is the failure that actually occurs. Sources checked are the
+   * ones this suite reasons about; a broader glob would add false positives
+   * from files tsc does not emit (index.html) for no extra signal.
+   * ------------------------------------------------------------------ */
+  console.log("--- dist/ is not stale against src/ ---");
+  {
+    const distMtime = statSync(new URL("../dist/ui/app.js", import.meta.url)).mtimeMs;
+    const watched = ["../src/ui/app.ts", "../src/ui/visibleListAdvance.ts", "../src/ui/reviewZone.ts", "../src/ui/triageQueue.ts"];
+    const newer = watched.filter((rel) => {
+      const url = new URL(rel, import.meta.url);
+      return existsSync(url) && statSync(url).mtimeMs > distMtime;
+    });
+    check(
+      "dist/ui/app.js is newer than the sources this suite asserts against (run `./node_modules/.bin/tsc` -- NOT --noEmit)",
+      newer.length === 0,
+      newer.length > 0 ? `stale build: ${newer.map((r) => r.replace("../", "")).join(", ")} modified after the last emit` : ""
+    );
+  }
+
   // REVIEWER EXPERIENCE WAVE 2 (2026-07-29) -- structural source
   // assertions for RX-22 (single display-label vocabulary) and RX-09
   // (no blocking alerts). Deliberately source-text checks: these ACs are
@@ -137,6 +173,9 @@ async function main(): Promise<void> {
   console.log("--- RX-22 / RX-09 structural source checks ---");
   const appSource = readFileSync(new URL("../src/ui/app.ts", import.meta.url), "utf8");
   const querySource = readFileSync(new URL("../src/ui/itemCheckQuery.ts", import.meta.url), "utf8");
+  // 2026-08-07: the sectioned-queue order rules moved into this pure module,
+  // so the paint/target agreement checks below have to read it.
+  const visibleListAdvanceSource = readFileSync(new URL("../src/ui/visibleListAdvance.ts", import.meta.url), "utf8");
   const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   // 2026-08-04: the focus-panel checks below assert that the panel got
   // PLAINER without the Python-ported explanation layer being touched, so
@@ -195,6 +234,13 @@ async function main(): Promise<void> {
     appSource.indexOf("split.appendChild(focusPane)") !== -1 &&
       appSource.indexOf("split.appendChild(focusPane)") < appSource.indexOf("split.appendChild(grid)")
   );
+  check(
+    "focus pane: duplicate proposal ids cannot break grid arrows -- the grid anchor lookup skips the earlier focus-pane copy",
+    appSource.includes("A selected proposal is rendered twice") &&
+      appSource.includes("document.querySelectorAll<HTMLElement>(cellSelector)") &&
+      appSource.includes("const container = cell.closest<HTMLElement>(containerSelector);") &&
+      !appSource.includes("const cell = document.querySelector<HTMLElement>(cellSelector);")
+  );
   // REVISED by REVIEW SCOPE Pass 1 (2026-08-03): with a workspace-level
   // inspector (Item Check triage), panels ALWAYS leave the section, so
   // the bare-grid condition gained the workspacePane arm. Ambiguity
@@ -214,8 +260,17 @@ async function main(): Promise<void> {
     indexHtml.includes("@media (max-width: 1239.98px) { .triage-split { grid-template-columns: minmax(0, 1fr); } }")
   );
   check(
-    "focus pane: .triage-grid's auto-fill track is UNCHANGED -- the item column re-wraps 2 -> 1 by the mechanism it always used (AG: 'don't mess up the responsiveness')",
-    indexHtml.includes(".triage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.25rem; }")
+    // SUPERSEDED 2026-08-06. The auto-fill track was preserved for a year
+    // under "don't mess up the responsiveness" -- but tuned live in the
+    // browser against the real document, auto-fill was the problem, not the
+    // protection: it stretched cells across 1600px and produced a different
+    // column count per section. Andrew: "we don't have to resize
+    // horizontally." The track is a FIXED 34rem cap now, and the column
+    // count is a deterministic 1-or-2 from the item count.
+    "zone grid: a FIXED track, not auto-fill -- one column to 14, two from 15, column-major",
+    indexHtml.includes(".triage-grid { display: grid; grid-template-columns: minmax(0, 34rem); grid-auto-flow: row; gap: 0.4rem; }") &&
+      indexHtml.includes(".triage-grid.zone-two-col { grid-template-columns: repeat(2, minmax(0, 34rem)); grid-template-rows: repeat(var(--zone-rows, 1), auto); grid-auto-flow: column;") &&
+      appSource.includes("const ZONE_TWO_COLUMN_THRESHOLD = 15;")
   );
   check(
     "stage tabs count COMPLETED work, not remaining -- (14/14) must mean finished, never untouched (AG: 'feels like 2/50 means I have a long way to go')",
@@ -281,7 +336,58 @@ async function main(): Promise<void> {
     "Type Check's member cursor is a SCROLL target -- the highlight and the viewport followed different cursors (AG: 'focused item needs to stay visible')",
     appSource.includes("const memberId = typeCheckCursor?.candidateId;") &&
       appSource.includes('container.querySelector<HTMLElement>(`[data-type-member-id="${escape(memberId)}"]`)') &&
-      indexHtml.includes(".item-row, .type-member-row { scroll-margin-top: calc(var(--workspace-chrome-height)")
+      // `.triage-section` joined the same rule on 2026-08-06 (the section
+      // snap made a heading a scroll target). Matched loosely on the two
+      // selectors that matter here so a THIRD target joining later does not
+      // fail this check for no reason.
+      indexHtml.includes(".item-row, .type-member-row") &&
+      /\.item-row, \.type-member-row[^{]*\{ scroll-margin-top: calc\(var\(--workspace-chrome-height\)/.test(indexHtml)
+  );
+  check(
+    // LIVE BUG, 2026-08-06: "shift + side arrows no longer works all the
+    // way across stages ... got me from Ambiguity to Group then stalled."
+    // Clicking a row focuses its CHECKBOX, and a blanket `tag === "input"`
+    // refusal killed stage movement from that moment on. Caret ownership is
+    // what the guard protects, and a checkbox owns no caret.
+    "stage keys: Shift+Arrow refuses only for TEXT ENTRY -- a focused checkbox must not disable stage movement",
+    appSource.includes("function isTextEntryElement(el: HTMLElement | null | undefined): boolean") &&
+      appSource.includes("if (isTextEntryElement(activeEl)) return false;") &&
+      !/if \(tag === "input" \|\| tag === "textarea" \|\| tag === "select"\) return false;/.test(appSource) &&
+      appSource.includes('NON_TEXT_INPUT_TYPES = new Set(["checkbox", "radio", "button"')
+  );
+  check(
+    "section snap: a section heading is a scroll target, and it snaps only on ARRIVAL in a new section",
+    appSource.includes('section.scrollIntoView({ block: "start" })') &&
+      appSource.includes("let lastSnappedSectionId: string | null = null;") &&
+      appSource.includes('"data-section-id": String(section.id)') &&
+      indexHtml.includes(".item-row, .type-member-row, .triage-section { scroll-margin-top:")
+  );
+  check(
+    "section keys: Opt/Alt section jumps return to Review mode, so the next plain arrow is not swallowed by chrome focus",
+    appSource.includes("SECTION JUMP RETURNS TO REVIEW MODE") &&
+      appSource.includes("const queueStage = activeSectionedQueueStage(state);") &&
+      appSource.indexOf("const active = document.activeElement as HTMLElement | null;") <
+        appSource.indexOf("jumpToStageCategory(categories[0]!);") &&
+      appSource.indexOf('if (active && typeof active.blur === "function") active.blur();') <
+        appSource.indexOf("jumpToStageCategory(categories[0]!);") &&
+      appSource.indexOf('if (active && typeof active.blur === "function") active.blur();') < appSource.indexOf("jumpToStageCategory(target);")
+  );
+  check(
+    "refresh restore: sectioned queues persist their visible category and proposal-card cursor, so proposal-only categories do not reopen on a stale candidate category",
+    appSource.includes("sectionedCategoryId: string | null;") &&
+      appSource.includes("sectionedProposalId: string | null;") &&
+      appSource.includes("SECTIONED QUEUE RESTORE") &&
+      appSource.includes("structuralCardFocusPending = savedProposalId;") &&
+      appSource.includes("restoredSectionedCursor = selectStageCategoryCursor(savedCategory);")
+  );
+  check(
+    "proposal-only shortcuts: Opt/Alt arrows and Opt/Alt C/R resolve from the rendered sectioned queue when the row cursor is parked elsewhere",
+    appSource.includes("function activeSectionedQueueStage(") &&
+      appSource.includes("return structuralCardFocusPending !== null ? sectionedQueueStage(lastRenderedActiveStage ?? undefined) : null;") &&
+      appSource.includes("lastRenderedActiveStage = activeStage;") &&
+      appSource.includes("lastRenderedActiveStage = null;") &&
+      appSource.includes("if (handleGroupScopeChordKey(event)) {") &&
+      appSource.indexOf("if (handleSectionArrowKey(event)) {") < appSource.indexOf("if (handleGroupScopeChordKey(event)) {")
   );
 
   // COMPLETION-PATH AUDIT (AG, 2026-08-03). Every path that finishes work
@@ -293,27 +399,144 @@ async function main(): Promise<void> {
     appSource.includes("function advanceAfterSectionCompletion(") &&
       appSource.split("advanceAfterSectionCompletion(").length - 1 >= 3
   );
+  /* 2026-08-07 completion-path audit. The old form of this check asserted a
+   * `visiblePre` array of candidate IDS was snapshotted pre-dispatch -- true,
+   * but the advance then ran over targets recomputed from the POST-decision
+   * state, so under a review-state filter the completed section was gone from
+   * that list and the anchor matched nothing. Both halves must now be
+   * pre-decision: the anchor AND the target list it indexes into. */
   check(
-    "acceptAllInSection snapshots the displayed order BEFORE dispatching -- the anchor must still be in the list",
-    appSource.includes('const visiblePre = _stage === "item-check" ? visibleItemCheckIds(state) : visibleAmbiguityIds(state);')
+    "both section-clearing paths snapshot the ANCHOR (not just an id list) before dispatching",
+    appSource.includes("function snapshotSectionCompletionAnchor(") &&
+      appSource.split("snapshotSectionCompletionAnchor(").length - 1 >= 3 &&
+      appSource.includes("advanceAfterSectionCompletion(completionAnchor)")
   );
   check(
-    "the kind group's Accept All Remaining now advances -- it was the one bulk path on the structural surface that never moved the cursor",
-    /setStatus\(`Accepted \$\{accepted\} proposal[\s\S]{0,1400}?advanceStructuralCursor\(last\.proposalId\);/.test(appSource)
+    "the section-completion advance indexes into the PRE-decision target list, reading `after` only for resolved-ness",
+    /function snapshotSectionCompletionAnchor\([\s\S]{0,900}?displayedReviewTargetsForSectionedStage\(stage, before\)/.test(appSource) &&
+      /function advanceAfterSectionCompletion\([\s\S]{0,600}?advanceWithinDisplayedReviewTargets\(anchor\.stage, anchor\.anchorKey, anchor\.targets, after\)/.test(
+        appSource
+      )
   );
   check(
-    "a kind-group editor confirm advances the CARD cursor when one is set, never the parked row cursor",
-    appSource.includes("const cardId = structuralCardFocusPending as string | null;\n      if (cardId) {\n        advanceStructuralCursor(cardId);")
+    "no bare candidate id can reach the advance as an anchor -- every anchor goes through reviewDisplayTargetKey",
+    !appSource.includes("[...visiblePre].reverse().find(") && !/const anchor = anchorTarget\s*\?/.test(appSource)
+  );
+  /* THE REVIEW ZONE BOUNDS REVIEW TARGETS, NOT CANDIDATES (2026-08-07).
+   * `const proposalIds = restSet ? [] : (section.relationshipProposalIds ?? []);`
+   * meant a section over ZONE_CAPACITY painted no proposal cells while still
+   * emitting their targets -- a cursor destination drawn nowhere. */
+  check(
+    "the zone's band/rest split is the pure partitionByZone, not an inline candidate-id filter",
+    appSource.includes("partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state))") &&
+      !appSource.includes("const proposalIds = restSet ? [] :") &&
+      !appSource.includes("gridIds.filter((id) => !state.reviewSession?.candidateDecisions[id])")
   );
   check(
+    "proposal bulk actions are scoped from the active Review Zone band, never from the whole section collection",
+    appSource.includes("function proposalTargetsInActiveReviewZone(") &&
+      appSource.includes("sectionGridSequence(section).flatMap((gridTargets)") &&
+      appSource.includes("partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state)).band.filter((target) => target.kind === \"proposal\")") &&
+      appSource.includes("const collectionProposals = relationshipProposalsInActiveReviewZone(stage, section, state);") &&
+      !appSource.includes("const collectionProposals = (section.relationshipProposalIds ?? [])")
+  );
+  check(
+    "proposal digit/chord/Shift+A scope uses the same active-zone proposal subset as the visible collection buttons",
+    appSource.includes("const ofKind = relationshipProposalsInActiveReviewZone(queueStage, section, state).filter((p) => p.kind === current.kind);") &&
+      appSource.includes("const activeZoneProposals = section ? relationshipProposalsInActiveReviewZone(queueStage, section, state).filter((p) => p.kind === current.kind) : [];") &&
+      !appSource.includes("acceptAllInRelationshipKind(proposals.filter((p) => p.kind === current.kind))")
+  );
+  check(
+    "the sectioned grid walks review targets, so candidates and proposals share one painted order",
+    appSource.includes("const renderGrid = (gridTargets: readonly ReviewDisplayTarget[]): void =>") &&
+      appSource.includes('if (target.kind === "proposal") {')
+  );
+  /* PAINT ORDER AND TARGET ORDER ARE ONE DERIVATION. Both live in the pure
+   * visibleListAdvance.ts so the identity
+   * `sectionGridSequence(s).flat() === sectionDisplayTargets(s)` is an
+   * executable assertion (visible-list-advance-verification.ts) rather than a
+   * comment; app.ts must CONSUME them, never restate them. */
+  check(
+    "the section-order helpers live in the pure module and app.ts imports rather than restates them",
+    appSource.includes("sectionDisplayTargets,") &&
+      appSource.includes("sectionGridSequence,") &&
+      !appSource.includes("function sectionDisplayTargets(") &&
+      !appSource.includes("function sectionCandidateTargetGroups(") &&
+      appSource.includes("return sections.flatMap(sectionDisplayTargets);")
+  );
+  check(
+    "visibleListAdvance.ts states the grid rule once, and the flatten identity holds by construction",
+    visibleListAdvanceSource.includes("export function sectionGridSequence(") &&
+      visibleListAdvanceSource.includes("export function sectionDisplayTargets(") &&
+      visibleListAdvanceSource.includes("if (groups.length <= 1) return [[...(groups[0] ?? []), ...proposals]];")
+  );
+  /* A tiered, proposal-bearing section must paint each proposal ONCE.
+   * renderGrid runs per tier, so the proposal grid is a separate entry in the
+   * sequence rather than something drawn inside that loop -- structurally,
+   * not by relying on today's data never producing such a section. */
+  check(
+    "every grid the renderer draws is an entry from sectionGridSequence, proposals included",
+    appSource.includes("const gridSequence = sectionGridSequence(section);") &&
+      appSource.includes("renderGrid(gridSequence[0] ?? []);") &&
+      appSource.includes("renderGrid(gridSequence[tierGroups.indexOf(tier)] ?? []);") &&
+      appSource.includes("const proposalGrid = gridSequence[tierGroups.length];") &&
+      !/renderGrid\(tier\.candidateIds\)/.test(appSource)
+  );
+  check(
+    "the retired rows-then-cards seam is gone rather than kept as a callerless wrapper",
+    !appSource.includes("function continueIntoStructuralCards(")
+  );
+  check(
+    "the kind group's Accept All Remaining advances through the unified review-target model, not a card-only cursor pass",
+    appSource.includes("function advanceWithinDisplayedReviewTargets(") &&
+      appSource.includes("advanceWithinReviewTargets(currentKey, targets") &&
+      appSource.includes("function acceptAllInRelationshipKind(") &&
+      !appSource.includes("advanceStructuralCursor(")
+  );
+  check(
+    "relationship editor confirms rely on the same unified dispatch path as card buttons, never a parked-row or card-only fallback",
+    /else if \(target\.scope === "relationship-kind"\) \{[\s\S]{0,700}?dispatchReviewWithVisibleAdvance\(/.test(appSource) &&
+      appSource.includes("const preReviewTargetKey = currentReviewDisplayTargetKey(stage, preItemId, before);") &&
+      appSource.includes("if (queueStage !== null && visibleTargets !== null && preReviewTargetKey !== null)") &&
+      !appSource.includes("advanceStructuralCursor(")
+  );
+  check(
+    // Bumped 9 -> 10 (2026-08-06, Decision Tracker miscount fix): the new
+    // site is anchorSuggestionsAccepted()'s `suggestionsAccepted` dispatch --
+    // audited and exempt from needing its OWN advance for the same reason a
+    // panel-lifecycle command is: it touches no candidateDecisions (see
+    // Commands.ts's doc comment), completes no item, and both of its two
+    // call sites (runSectionAction, acceptAllInSection) already reach the
+    // existing advanceAfterSectionCompletion() call one line later.
+    //
+    // Bumped 10 -> 11 (2026-08-08, Reset): confirmReset dispatches the
+    // durable reset command and then deliberately reanchors to the first
+    // newly-unresolved target from the reset scope. That is not a
+    // completion path, so dispatchReviewWithVisibleAdvance's "advance off a
+    // just-resolved item" grammar is the wrong tool.
     "no completion path is left with a bare dispatchReview + render: every raw-dispatch site is followed by an advance or is a panel-lifecycle command",
-    appSource.split("dispatcher.dispatchReview({").length - 1 <= 9
+    appSource.split("dispatcher.dispatchReview({").length - 1 <= 11
   );
 
   check(
     "chord caps are advertised on EVERY group button; only DIGITS keep the scarce-space active-scope gate",
-    appSource.includes("const cap = chordCap ?? (active ? digit : null);") &&
-      appSource.split("const cap = chordCap ?? (active ? digit : null);").length - 1 === 2
+    appSource.includes("const cap = chordCap ?? (active ? digitAssignments.get(action) ?? null : null);") &&
+      appSource.includes("const cap = chordCap ?? (active ? digit : null);") &&
+      appSource.split("const cap = chordCap ??").length - 1 === 3
+  );
+  check(
+    "reset controls are heading actions with key-styled Opt+Shift caps, but excluded from 1-9 digit assignment",
+    appSource.includes("excludeFromDigits: true,") &&
+      appSource.includes('keycap: `${OPTION_KEY_LABEL} Shift ${scope.scope === "zone" || collapsed ? "R" : "A"}`,') &&
+      appSource.includes("const chordCap = action.keycap ?? (action.chord !== null ? groupScopeChordLabel(action.chord) : null);") &&
+      appSource.includes("function digitAssignableSectionActions(") &&
+      appSource.includes("sectionActionDigitAssignments(digitAssignableSectionActions(actions),")
+  );
+  check(
+    "reset shortcuts use event.code with Opt/Alt+Shift and open inline confirmation, never dispatch directly",
+    appSource.includes('const match = /^Key([RA])$/.exec(event.code ?? "");') &&
+      appSource.includes("openResetConfirmation(scope);") &&
+      appSource.includes("pendingResetConfirmation && event.key === \"Escape\"")
   );
   check(
     "an inactive chord cap dims rather than vanishing -- vanishing is what taught reviewers the feature was absent",
@@ -549,11 +772,13 @@ async function main(): Promise<void> {
       !indexHtml.includes(".evidence-list {")
   );
   check(
-    "verdict: lives INSIDE the <summary>, so collapsing Why? hides the reasoning but never the conclusion -- and it outsizes the 'Why?' affordance, since the verdict is what the reviewer came for",
+    "verdict: lives INSIDE the <summary> as the expander itself -- no Why? label, with the caret on the right",
     appSource.includes('const whySummary = el("summary", { class: "why-summary" });') &&
       appSource.includes('whySummary.appendChild(el("span", { class: "detail-verdict" }') &&
+      appSource.includes('whySummary.appendChild(el("span", { class: "why-caret", "aria-hidden": "true" }));') &&
       /\.detail-verdict \{[^}]*font-size: 1\.05rem/.test(indexHtml) &&
-      /\.why-label \{[^}]*font-size: 0\.78rem/.test(indexHtml)
+      /\.why-caret::before \{[^}]*font-size: 1\.35rem/.test(indexHtml) &&
+      !indexHtml.includes(".why-label")
   );
   check(
     "evidence: the verdict line is the ENGINE's opener, not a UI paraphrase -- reviewer prose and audit prose come from one function",
@@ -760,9 +985,15 @@ async function main(): Promise<void> {
     appSource.includes('if (typeof navigator === "undefined" || !navigator) return "Alt";')
   );
   check(
+    // 2026-08-06: matched by segment BUILDER-agnostic regex. The command
+    // card groups its rows now, and "Decide the group" is built with
+    // sseg() rather than kseg() because it acts on the scope rather than
+    // the focused item -- a change to which ROW it renders in, not to the
+    // property under test, which is that the legend spells the modifier
+    // through OPTION_KEY_LABEL instead of hardcoding a glyph.
     "chords: ONE spelling function feeds both the keycap and the legend",
     appSource.includes("function groupScopeChordLabel(chord: GroupScopeChord): string") &&
-      appSource.includes('kseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group")')
+      /[ks]seg\(`\$\{OPTION_KEY_LABEL\} K\/C\/R\/N`, "Decide the group"\)/.test(appSource)
   );
   check(
     "chords: index.html gives the chord cap its own wider treatment",
@@ -776,17 +1007,48 @@ async function main(): Promise<void> {
     // resolved to the type card). The property under test is unchanged and
     // asserted more precisely: this caller still measures the cursor's own
     // grid rather than the page.
-    "focus pane: Up/Down measure the CURSOR'S grid -- sections now differ in column count, so the old page-wide measurement would skip rows",
-    appSource.includes("measuredColumnCount(cellSelector, currentId ? gridContainerForItem(currentId) : null)") &&
+    "focus pane: Up/Down measure the CURSOR'S grid -- sections differ in column count, so a page-wide measurement would skip rows",
+    appSource.includes("const cols = measuredColumnCount(cellSelector, anchor);") &&
       appSource.includes("function gridContainerForItem(")
   );
   check(
     "grid geometry: ONE definition of what an arrow key means on a grid -- the Results/triage mover and Type Check's member cursor both call it, so they cannot drift",
-    appSource.includes("function gridStep(idx: number, count: number, cols: number, key: string): number | null") &&
-      appSource.includes("gridStep(idx, visibleIds.length, cols, key)") &&
+    appSource.includes("function gridStep(idx: number, count: number, cols: number, key: string, columnMajorRows?: number): number | null") &&
+      appSource.includes("gridStep(idx, list.length, cols, key, columnMajorRowsOf(anchor))") &&
       // Type Check reaches it through memberGridTarget, which applies it
       // per region (two grids, two column counts) and adds only the seam.
+      // It passes no flow, so it keeps row-major arithmetic unchanged.
       appSource.includes("gridStep(idx - base, count, cols, key)")
+  );
+  check(
+    "grid geometry: index, length, columns and rows all come from ONE coordinate space -- the anchor grid's own cells, never a stage-wide list measured with a grid-local row count",
+    appSource.includes("const list = gridIds.length > 0 ? gridIds : visibleIds;") &&
+      appSource.includes("const idx = currentId ? list.indexOf(currentId) : -1;") &&
+      appSource.includes('anchor.querySelectorAll<HTMLElement>("[data-item-id], [data-proposal-id]")')
+  );
+  check(
+    // 2026-08-06: the flow is TOLD, not measured, and this is the assertion
+    // that keeps it that way. measuredColumnCount counts cells sharing the
+    // first cell's offsetTop IN DOM ORDER -- under column-major the second
+    // DOM cell is directly below the first, so it returns 1 and every
+    // horizontal move would silently no-op.
+    "grid geometry: column-major flow is read from the published class/property, never inferred from a measurement",
+    appSource.includes("function columnMajorRowsOf(grid: HTMLElement | null | undefined): number | undefined") &&
+      appSource.includes('grid.classList.contains("zone-two-col")')
+  );
+  check(
+    // The 2026-08-02 "DOWN ENTERS" rule was spatially true while the panel
+    // rendered below its row; the side-by-side pane moved the panel beside
+    // the list and the metaphor went with it.
+    "keyboard grammar: arrows are pure MOVEMENT -- ArrowDown no longer enters the panel, and Enter does",
+    !appSource.includes('if (event.key === "ArrowDown" && currentId !== null && visibleIds.includes(currentId))') &&
+      !appSource.includes('kseg("↓", "Enter item")') &&
+      appSource.includes("if (!primary) return false;")
+  );
+  check(
+    "keyboard grammar: Esc is the SINGLE exit from the panel -- Up past the first control no longer backs out",
+    !appSource.includes("exitDetailPanel(); // Up past the top: out one level, Review mode") &&
+      appSource.includes("function exitDetailPanel(): void")
   );
 
   // ROW SELECTION (AG, 2026-08-03).
@@ -822,17 +1084,132 @@ async function main(): Promise<void> {
   );
   check(
     "row selection: the select-all follows the BUTTONS -- title line at 0/1 tiers, tier heading at 2 (a checkbox no visible button acts on looks broken)",
-    appSource.includes("if ((section.tiers ?? []).length <= 1) appendHeadingSelectionControls(titleLine, section.candidateIds, state);") &&
+    appSource.includes("if ((section.tiers ?? []).length <= 1) appendHeadingSelectionControls(titleLine, section.candidateIds, state, isMixedCategory);") &&
       appSource.includes("appendHeadingSelectionControls(tierHeading, tier.candidateIds, state);")
   );
   check(
-    "row selection: a completed bulk action leaves no lingering selection (releaseSelection on every declared-action path, queue and Type Check alike)",
-    appSource.split("releaseSelection(scope);").length - 1 === 5
+    "mixed category: no select-all and no category-level bulk action -- two review-unit types mean two action vocabularies, and one control over both would lie about its scope",
+    appSource.includes("if (mixedCategory) return;") &&
+      appSource.includes("const sectionLevel = isMixedCategory ? [] : headingSectionActions(policy, section, null, state);") &&
+      appSource.includes("const isMixedCategory = (section.relationshipProposalIds ?? []).length > 0 && section.candidateIds.length > 0;")
   );
   check(
-    "row selection: NO new key binding -- the checkbox is a native input, so Tab reaches it and handleTriageKey's input guard leaves Space native",
-    appSource.includes('if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || tag === "a") return false;') &&
-      !appSource.includes("shiftKey && event.key === \" \"")
+    "mixed category: relationship proposals render as ordinary rows in the SAME grid, and dim by unit type rather than hiding",
+    appSource.includes('const row = el("div", { class: "triage-row", "data-proposal-id": proposalId });') &&
+      appSource.includes('row.classList.add("triage-row-inactive-unit")') &&
+      indexHtml.includes(".triage-row-inactive-unit { opacity: 0.45; }")
+  );
+  check(
+    "proposal rows follow the unified decision color standard -- dominant decision summary + decisionClass + decision-tinted, no custom proposal palette",
+    appSource.includes("const proposalSummary = decisionSummary(proposal.candidateIds.map((id) => state.reviewSession?.candidateDecisions[id]?.decision));") &&
+      appSource.includes('if (pendingProposalAction) row.classList.add(decisionClass(pendingProposalAction), "decision-tinted");') &&
+      appSource.includes('else if (addressed && proposalSummary.dominant) row.classList.add(decisionClass(proposalSummary.dominant), "decision-tinted");') &&
+      indexHtml.includes(".decision-tinted { border-color: var(--decision-border); background: var(--decision-tint); }")
+  );
+  check(
+    "proposal row decision fills are not defeated by alternating row colors -- triage rows restate the shared tint at row-level specificity",
+    indexHtml.includes(".triage-row.decision-tinted { background: var(--decision-tint); border-color: var(--decision-border); }")
+  );
+  check(
+    "proposal-only categories: the structural card cursor gets Escape/Enter/digits before stale candidate fallback, and grid arrows do not bail on an empty candidate list",
+    appSource.includes("function handleCardPreferredDigitKey(") &&
+      appSource.indexOf("STRUCTURAL CARD KEYS BEFORE THE DOMAIN KEYMAP") < appSource.indexOf("const command = dispatcher.resolveKeyboardCommand") &&
+      appSource.includes("ENTERED FOCUS PANE ESCAPE") &&
+      appSource.indexOf("ENTERED FOCUS PANE ESCAPE") < appSource.indexOf("const command = dispatcher.resolveKeyboardCommand") &&
+      appSource.indexOf("if (handleCardPreferredDigitKey(event))") < appSource.indexOf("if (handleIdentityLinkKey(event))") &&
+      appSource.includes("if (visibleIds.length === 0 && !anchor) return;")
+  );
+  check(
+    "proposal grid arrows keep proposal ids on the proposal cursor -- CSS escaping, not global escape(), decides whether the target cell is a proposal",
+    appSource.includes('anchor?.querySelector(`[data-proposal-id="${cssAttrEscape(targetId)}"]`)') &&
+      !appSource.includes('anchor?.querySelector(`[data-proposal-id="${escape(targetId)}"]`)')
+  );
+  check(
+    "relationship cards: arrows stay on the review-unit axis -- Down/Right move to the next card instead of focusing inner buttons/check boxes",
+    appSource.includes('if (event.key === "ArrowDown" || event.key === "ArrowRight")') &&
+      appSource.includes("ARROWS STAY ON THE REVIEW-UNIT AXIS") &&
+      !appSource.includes('card.querySelector<HTMLElement>("input:not([disabled]), button:not([disabled]), select, a[href]")')
+  );
+  check(
+    // 5 -> 6 on 2026-08-06: the Review Zone routed Shift+A through
+    // headingActionScope, so that path now has a selection to release too.
+    // The count is the point -- it is what catches a NEW bulk path that
+    // forgets to release.
+    "row selection: a completed bulk action leaves no lingering selection (releaseSelection on every declared-action path, queue and Type Check alike)",
+    appSource.split("releaseSelection(scope);").length - 1 === 6
+  );
+  check(
+    // 2026-08-06: the "NO new key binding" rule this used to assert was
+    // REVERSED by Andrew ("space bar should select the checkbox, not scroll
+    // down the page ... a global rule in cell areas"). Native Space on a
+    // Tab-focused checkbox still works and is still asserted; what changed
+    // is that a cell now also selects without requiring that Tab.
+    "row selection: the checkbox stays a native input, so Tab reaches it and the input guard leaves native Space alone",
+    appSource.includes('if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || tag === "a") return false;')
+  );
+  check(
+    "row selection: ONE shared toggle for every cell area, not a copy per key handler (AG: 'a global rule in cell areas')",
+    appSource.includes("function toggleCandidateSelection(candidateId: string): void") &&
+      appSource.split("toggleCandidateSelection(").length - 1 >= 3
+  );
+  check(
+    "row selection: Space never falls through to a page scroll from a cell -- both cell-area handlers preventDefault",
+    /if \(event\.key === " "\) \{\s*\n\s*event\.preventDefault\(\);[\s\S]{0,200}?toggleCandidateSelection/.test(appSource) &&
+      /if \(key === " "\) \{\s*\n\s*event\.preventDefault\(\);\s*\n\s*toggleCandidateSelection/.test(appSource)
+  );
+  check(
+    "row selection: a decided candidate cannot be selected by key -- the surfaces omit its checkbox, so the count must agree",
+    appSource.includes('if (isItemResolvedInState("item-check", candidateId, dispatcher.getState())) return;')
+  );
+  check(
+    "details: D took Space's place as the disclosure key, and Space is no longer bound to expansion",
+    appSource.includes('if (event.key.toLowerCase() === "d") {') &&
+      appSource.includes('kseg("D", "Details")') &&
+      !appSource.includes('kseg("Space", "Details")')
+  );
+  // REVIEW ZONE (AG, 2026-08-06). The pure rules live in
+  // verify/review-zone-verification.ts; these are the WIRING assertions --
+  // that the bound is applied at the one choke point and that no path
+  // slips around it.
+  console.log("--- Review Zone wiring ---");
+  check(
+    "zone: the bound lands in headingActionScope, the one function both the buttons and the digits read",
+    appSource.includes("const zone = reviewZone(undecided, ZONE_CAPACITY);") &&
+      appSource.includes("return { ids: zone.ids, selected: false, available: zone.available, bounded: zone.bounded };")
+  );
+  check(
+    "zone: explicit selection stays UNBOUNDED -- the checked branch returns before the zone is applied",
+    /const checked = undecided\.filter[\s\S]{0,120}?if \(checked\.length > 0\) return \{ ids: checked, selected: true/.test(appSource)
+  );
+  check(
+    "zone: Shift+A goes through the same choke point rather than handing over the whole section (the one bypass that existed)",
+    appSource.includes("const scope = headingActionScope(section.candidateIds, state);") &&
+      !appSource.includes("acceptAllInSection(config, section.label, section.candidateIds, queueStage);")
+  );
+  check(
+    // 2026-08-06 (second pass): the zone became a hard 24, so the measured
+    // size -- and with it the LAST impure input to a decision path -- was
+    // deleted rather than defended. This asserts the deletion stayed
+    // deleted: reintroducing a measured zone size would put the bound back
+    // in the one blind spot this suite cannot see into.
+    "zone: NOTHING is measured to size the zone -- the capacity is a constant",
+    !appSource.includes("function syncZoneColumnCount") &&
+      !appSource.includes("let zoneColumnCount") &&
+      appSource.includes("ZONE_CAPACITY")
+  );
+  // THE BAND-DRAWING CHECKS WERE REMOVED WITH THE FEATURE (2026-08-06).
+  // Drawing the zone as a band beside the panel rendered wrong in the
+  // browser and was reverted the same day. Nothing here asserted that it
+  // LOOKED right -- which is exactly the point, and the reason it shipped
+  // broken: this suite reads source text, so a layout defect is invisible
+  // to it. The BOUND is still fully covered above and in
+  // verify/review-zone-verification.ts; only its visual expression is gone.
+
+  check(
+    "auto-advance: ONE ladder decides which cursor advances, and the suggestion/digit paths use it (2026-08-06 regression)",
+    appSource.includes("function decideThroughOwningCursor(command: AnyCommand, candidateId: string, stage: WorkflowStage): void") &&
+      // the chip path, the identity-digit path, and the inline editor
+      appSource.split("decideThroughOwningCursor(").length - 1 >= 6
   );
 
   // ACTION CLUSTER (AG, 2026-08-03): content-vs-controls reflow.

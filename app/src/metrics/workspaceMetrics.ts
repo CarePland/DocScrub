@@ -61,6 +61,13 @@ interface ActivityTally {
   fixThisMemberActions: number;
   relationshipDismissals: number;
   importedDecisions: number;
+  /** Decision Tracker miscount fix (2026-08-06): app.ts's applyOwnSuggestions
+   *  runs ("Accept section" / accept-suggestions), anchored by
+   *  "suggestions-accepted" -- see decisionTracker.ts's BATCH_ANCHOR_EVENTS.
+   *  A separate bucket from bulkActions because each candidate here takes
+   *  its OWN suggestion rather than one shared decision. */
+  suggestionActions: number;
+  suggestionItemsCovered: number;
   totalActions: number;
 }
 
@@ -75,23 +82,27 @@ function tallyActivity(state: WorkspaceState): ActivityTally {
     fixThisMemberActions: 0,
     relationshipDismissals: 0,
     importedDecisions: 0,
+    suggestionActions: 0,
+    suggestionItemsCovered: 0,
     totalActions: 0,
   };
   for (const event of state.reviewSession?.events ?? []) {
     const payload = event.payload as Record<string, unknown>;
     switch (event.kind) {
       case "candidate-decided":
-        // Bulk/group commands append BOTH per-candidate candidate-decided
-        // events (tagged viaBulkApply / viaGroup*) AND their own single
-        // action event carrying the counts -- count the ACTION once via
-        // the latter, and treat only untagged candidate-decided events as
-        // individual reviewer acts.
+        // Bulk/group/suggestion-accept commands append BOTH per-candidate
+        // candidate-decided events (tagged viaBulkApply / viaGroup* /
+        // viaSuggestionAccept) AND their own single action event carrying
+        // the counts -- count the ACTION once via the latter, and treat
+        // only untagged candidate-decided events as individual reviewer
+        // acts.
         if (
           payload["viaBulkApply"] === true ||
           payload["viaGroupConfirm"] === true ||
           payload["viaGroupRedact"] === true ||
           payload["viaGroupIgnore"] === true ||
-          payload["viaGroupFlatten"] === true
+          payload["viaGroupFlatten"] === true ||
+          payload["viaSuggestionAccept"] === true
         ) {
           break;
         }
@@ -115,13 +126,22 @@ function tallyActivity(state: WorkspaceState): ActivityTally {
       case "decisions-imported":
         tally.importedDecisions += typeof payload["appliedCount"] === "number" ? (payload["appliedCount"] as number) : 0;
         break;
+      case "suggestions-accepted":
+        tally.suggestionActions += 1;
+        tally.suggestionItemsCovered += typeof payload["appliedCount"] === "number" ? (payload["appliedCount"] as number) : 0;
+        break;
       default:
         break;
     }
   }
   // One deliberate reviewer act per event, whatever its reach.
   tally.totalActions =
-    tally.individualDecisions + tally.bulkActions + tally.groupActions + tally.fixThisMemberActions + tally.relationshipDismissals;
+    tally.individualDecisions +
+    tally.bulkActions +
+    tally.groupActions +
+    tally.fixThisMemberActions +
+    tally.relationshipDismissals +
+    tally.suggestionActions;
   return tally;
 }
 
@@ -206,7 +226,12 @@ export function deriveWorkspaceMetrics(state: WorkspaceState): MetricSection[] {
       metrics: [
         m("actions", "Decision actions taken", tally.totalActions),
         m("individual", "Individual decisions", tally.individualDecisions),
-        m("category", "Category and bulk actions", tally.bulkActions + tally.groupActions, `covering ${tally.bulkItemsCovered + tally.groupItemsCovered} items`),
+        m(
+          "category",
+          "Category and bulk actions",
+          tally.bulkActions + tally.groupActions + tally.suggestionActions,
+          `covering ${tally.bulkItemsCovered + tally.groupItemsCovered + tally.suggestionItemsCovered} items`
+        ),
         m("links", "Identity links accepted", tally.ambiguityLinks),
         m("fix-this", "Fix-this member actions", tally.fixThisMemberActions),
         m("dismissals", "Relationship dismissals", tally.relationshipDismissals),

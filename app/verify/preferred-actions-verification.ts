@@ -100,14 +100,17 @@ console.log("--- structural guarantees: shortcuts cannot diverge from the generi
   );
   check(
     "preferred actions call the same shared path / the same existing editor (no parallel dispatch)",
-    appSource.includes('applyRelationshipBulk(proposal.proposalId, selectedIds, "Rename", op.replacement)') &&
-      appSource.includes('openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Redact" })')
+    appSource.includes('applyRelationshipBulk(proposal.proposalId, candidateIds, "Rename", op.replacement)') &&
+      appSource.includes('openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds, action: "Redact" })')
   );
   check("no new review command was introduced by this feature (Commands.ts has no 'preferred' vocabulary)", !/preferred/i.test(commandsSource));
   check("no new persistence: ReviewSession gained nothing for preferred actions", !/preferred/i.test(sessionSource));
   check(
-    "digit handling is card-LOCAL (listener on the card, stopPropagation) -- never a document-level binding",
-    appSource.includes("card.addEventListener(\"keydown\"") && !/handlePreferredActionKey/.test(appSource)
+    "digit handling has both card-local and selected-card fallback paths, but both route through the same preferred-action helper",
+    appSource.includes("card.addEventListener(\"keydown\"") &&
+      appSource.includes("function handleCardPreferredDigitKey(") &&
+      appSource.includes("function runRelationshipPreferredAction(") &&
+      appSource.includes("runRelationshipPreferredAction(proposal, action.op, selectedIds);")
   );
 }
 

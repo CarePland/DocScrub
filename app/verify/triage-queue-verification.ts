@@ -109,8 +109,9 @@ const amb = (
   archetype: AmbiguityQueueItem["archetype"],
   detectedType = "person",
   aliasFlavor: AmbiguityQueueItem["aliasFlavor"] = null,
-  tier: AmbiguityQueueItem["tier"] = archetype ? "strong" : null
-): AmbiguityQueueItem => ({ id, archetype, detectedType, aliasFlavor, tier });
+  tier: AmbiguityQueueItem["tier"] = archetype ? "strong" : null,
+  nameEvidence = false
+): AmbiguityQueueItem => ({ id, archetype, detectedType, aliasFlavor, tier, nameEvidence });
 check("shortened-name -> Shortened Person Names", ambiguitySectionFor(amb("a", "shortened-name")) === "shortened-names");
 check("semantic-alias + nickname flavor -> Nicknames", ambiguitySectionFor(amb("a", "semantic-alias", "person", "nickname")) === "nicknames");
 check("semantic-alias + org-alias flavor -> Organizational Aliases", ambiguitySectionFor(amb("a", "semantic-alias", "person", "org-alias")) === "org-aliases");
@@ -121,9 +122,43 @@ check("term archetypes -> their term sections", ambiguitySectionFor(amb("a", "in
 // 'person' classified items are clearly not people"): a person-typed
 // candidate with NO conclusion is phrase-completion junk here, never a
 // bulk-acceptable person section.
-check("null archetype + person type -> Other, NOT a people section", ambiguitySectionFor(amb("and", null, "person")) === "other");
+// OTHER WORDS (2026-08-06): the split moved from TIER to NAME EVIDENCE.
+// A person-typed token with no name evidence is an ordinary word the
+// lexicon does not list -- "and", "Math", "Residency" -- and belongs in
+// Other Words, not in a bucket that asks the reviewer to adjudicate our
+// missing dictionary data. It is still never a bulk-acceptable PEOPLE
+// section, which is what the original divergence was protecting.
+check("person type, NO name evidence -> Other Words, never a people section", ambiguitySectionFor(amb("and", null, "person")) === "common-words");
+check("name evidence rescues a person-typed token into the names family", ambiguitySectionFor(amb("kyle", null, "person", null, "strong", true)) === "shortened-names");
+check("non-person with no archetype is still Other", ambiguitySectionFor(amb("x", null, "long_numeric_id")) === "other");
 check("identity sections lead the order; other is last", AMBIGUITY_SECTION_ORDER[0] === "shortened-names" && AMBIGUITY_SECTION_ORDER[1] === "nicknames" && AMBIGUITY_SECTION_ORDER[2] === "org-aliases" && AMBIGUITY_SECTION_ORDER[AMBIGUITY_SECTION_ORDER.length - 1] === "other");
-check('labels match Andrew\'s taxonomy ("Shortened Person Names" etc.)', AMBIGUITY_SECTION_LABELS["shortened-names"] === "Shortened Person Names" && AMBIGUITY_SECTION_LABELS.nicknames === "Nicknames / Alternate Names" && AMBIGUITY_SECTION_LABELS["org-aliases"] === "Organizational Aliases");
+// SHORTENED 2026-08-06, his list verbatim. The point of pinning these is
+// unchanged -- the labels are a taxonomy he dictated, not incidental
+// strings -- so the assertion moves with the taxonomy rather than being
+// loosened. It now covers the five inherited ids too, because those are
+// exactly the ones a careless edit to TRIAGE_SECTION_LABELS would silently
+// change on this stage.
+check(
+  'labels match Andrew\'s taxonomy ("Shortened Names" etc.)',
+  AMBIGUITY_SECTION_LABELS["shortened-names"] === "Shortened Names" &&
+    AMBIGUITY_SECTION_LABELS.nicknames === "Other Names" &&
+    AMBIGUITY_SECTION_LABELS["org-aliases"] === "Org Names" &&
+    AMBIGUITY_SECTION_LABELS.institutional === "Institutional" &&
+    AMBIGUITY_SECTION_LABELS.calendar === "Time / Calendar" &&
+    AMBIGUITY_SECTION_LABELS.identifiers === "Numeric" &&
+    AMBIGUITY_SECTION_LABELS["common-words"] === "Other Words" &&
+    AMBIGUITY_SECTION_LABELS.other === "Other"
+);
+// The Ambiguity labels are OVERRIDES, not a rename at the source: Item
+// Check keeps the long forms. Asserted so the next person shortening a
+// label does it in the right map.
+check(
+  "Item Check labels are untouched by the Ambiguity shortening",
+  TRIAGE_SECTION_LABELS.institutional === "Institutional Terminology" &&
+    TRIAGE_SECTION_LABELS.calendar === "Temporal / Calendar Terms" &&
+    TRIAGE_SECTION_LABELS.identifiers === "Identifier Patterns" &&
+    TRIAGE_SECTION_LABELS["common-words"] === "Common English Words"
+);
 check("every orderable section has a label; every non-other section has an explanation", AMBIGUITY_SECTION_ORDER.every((id) => Boolean(AMBIGUITY_SECTION_LABELS[id])) && AMBIGUITY_SECTION_ORDER.every((id) => Boolean(AMBIGUITY_SECTION_EXPLANATIONS[id]) || id === "other" || Boolean(AMBIGUITY_SECTION_EXPLANATIONS[id])));
 {
   const items: AmbiguityQueueItem[] = [
@@ -135,7 +170,10 @@ check("every orderable section has a label; every non-other section has an expla
     amb("may", "calendar-term"),
   ];
   const sections = buildAmbiguitySections(items);
-  check("sections in display order, empties omitted", sections.map((s) => s.id).join(",") === "shortened-names,nicknames,org-aliases,calendar,other");
+  // "did" carries no name evidence, so it is an ordinary word now (Other
+  // Words) rather than junk needing individual review -- and `identifiers`
+  // sits before `common-words` since the 2026-08-06 reorder.
+  check("sections in display order, empties omitted", sections.map((s) => s.id).join(",") === "shortened-names,nicknames,org-aliases,calendar,common-words");
   check("within-section input order preserved", sections[0]!.candidateIds.join(",") === "andrew,tamara");
   check("flat queue order = sections concatenated", ambiguityQueueOrder(items).join(",") === "andrew,tamara,andy,its,may,did");
   check("decision-blind stability: identical inputs, identical order", ambiguityQueueOrder(items).join(",") === ambiguityQueueOrder(items.map((i) => ({ ...i }))).join(","));
@@ -146,11 +184,11 @@ check('tier labels are the spec\'s reviewer language', REVIEW_TIER_LABELS.strong
 // The person question rescued from "Other": a recognized-name person
 // with unrecognized options carries tier needs-review and joins the
 // person-name category rather than the junk bucket.
-check("needs-review person (null archetype) -> Shortened Person Names", ambiguitySectionFor(amb("julie", null, "person", null, "needs-review")) === "shortened-names");
-check("null archetype + null tier person stays in Other", ambiguitySectionFor(amb("and", null, "person", null, null)) === "other");
+check("name evidence, not tier, is what routes to the names family", ambiguitySectionFor(amb("julie", null, "person", null, "needs-review", true)) === "shortened-names");
+check("no name evidence lands in Other Words regardless of tier", ambiguitySectionFor(amb("and", null, "person", null, null)) === "common-words");
 {
   const items: AmbiguityQueueItem[] = [
-    amb("julie", null, "person", null, "needs-review"), // input first...
+    amb("julie", null, "person", null, "needs-review", true), // name evidence puts her in the names family; input first...
     amb("andrew", "shortened-name"), // ...but strong tier renders first
     amb("nsc", "acronym", "person", null, "needs-review"),
     amb("its", "acronym", "person", null, "strong"),
@@ -163,8 +201,9 @@ check("null archetype + null tier person stays in Other", ambiguitySectionFor(am
   check("section candidateIds = tier groups concatenated (queue order)", shortened.candidateIds.join(",") === "andrew,julie");
   const acronyms = sections.find((s) => s.id === "acronyms")!;
   check("acronyms partition too (strong: its, needs-review: nsc)", acronyms.tiers[0]!.candidateIds.join(",") === "its" && acronyms.tiers[1]!.candidateIds.join(",") === "nsc");
-  const other = sections.find((s) => s.id === "other")!;
-  check("Other carries untiered items with NO tier groups", other.tiers.length === 0 && other.candidateIds.join(",") === "and");
+  // "and" is an untiered, evidence-free word -- Other Words now, not Other.
+  const otherWords = sections.find((s) => s.id === "common-words")!;
+  check("Other Words carries untiered items with NO tier groups", otherWords.tiers.length === 0 && otherWords.candidateIds.join(",") === "and");
   check("flat queue order walks tiers in display order", ambiguityQueueOrder(items).join(",") === "andrew,julie,its,nsc,and");
 }
 {
@@ -199,7 +238,7 @@ check("null archetype + null tier person stays in Other", ambiguitySectionFor(am
     "term sections state their CATEGORY CONCLUSION, not the decision mechanism",
     AMBIGUITY_TIER_ACTIONS.institutional?.strong?.[0]?.label === "These are all institutional terms" &&
       AMBIGUITY_TIER_ACTIONS.calendar?.strong?.[0]?.label === "These are all calendar terms" &&
-      AMBIGUITY_TIER_ACTIONS["common-words"]?.strong?.[0]?.label === "These are all common words" &&
+      AMBIGUITY_TIER_ACTIONS["common-words"]?.strong?.[0]?.label === "These are all words, not names" &&
       (["institutional", "calendar", "common-words"] as const).every((id) => {
         const op = AMBIGUITY_TIER_ACTIONS[id]?.strong?.[0]?.op;
         return op?.kind === "bulk-decision" && op.decision === "Ignore";
@@ -215,7 +254,7 @@ check("null archetype + null tier person stays in Other", ambiguitySectionFor(am
   // A conclusion-naming label must NOT -- see SectionAction.selectedLabel.
   check(
     // EXACT, not a word-proxy: the old rule keyed on the literal word
-    // "all", which "These are all common words" contains while quantifying
+    // "all", which "These are all words, not names" contains while quantifying
     // over "these" rather than claiming the section. And AG's follow-up
     // ("if they happen to process several, the option should exist for the
     // remainder, i.e. 'Selected' as elsewhere built") settled it: EVERY
