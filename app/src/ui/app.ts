@@ -3427,6 +3427,24 @@ function confirmReset(): void {
   render();
 }
 
+function handleResetConfirmationKey(event: KeyboardEvent): boolean {
+  if (!pendingResetConfirmation) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  if (event.key === "Escape") {
+    cancelResetConfirmation();
+    return true;
+  }
+  // Reset confirmation owns plain R while the prompt is visible. The same
+  // letter normally means Redact, so this sits above the review command
+  // resolver and answers only after the reviewer has explicitly opened the
+  // reset confirmation strip.
+  if ((event.code ?? "") === "KeyR") {
+    confirmReset();
+    return true;
+  }
+  return false;
+}
+
 function renderResetConfirmation(host: HTMLElement, action: QueueSectionAction): void {
   if (!action.resetScope || pendingResetConfirmation?.key !== action.resetScope.key) return;
   const prompt = el("span", { class: "reset-confirmation", role: "group", "aria-label": `${action.resetScope.label} confirmation` });
@@ -3434,13 +3452,13 @@ function renderResetConfirmation(host: HTMLElement, action: QueueSectionAction):
     el(
       "span",
       { class: "reset-confirmation-copy" },
-      `${action.resetScope.label}: clear ${action.resetScope.candidateIds.length} decision(s) and return those items to unresolved review.`
+      `Clear ${action.resetScope.candidateIds.length} decision${action.resetScope.candidateIds.length === 1 ? "" : "s"} and revert to unresolved`
     )
   );
-  const confirm = button("Confirm Reset", confirmReset);
+  const confirm = keycapButton("R", "Confirm Reset", confirmReset);
   confirm.classList.add("reset-confirm");
   prompt.appendChild(confirm);
-  prompt.appendChild(button("Cancel", cancelResetConfirmation));
+  prompt.appendChild(keycapButton("Esc", "Cancel", cancelResetConfirmation));
   host.appendChild(prompt);
 }
 
@@ -14387,6 +14405,11 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (handleResetConfirmationKey(event)) {
+    event.preventDefault();
+    return;
+  }
+
   // ESCAPE LADDER, workspace level: with every more-local context already
   // handled above (editor: its own stopPropagation'd listener; chrome/
   // panel: gates 1-2; search: its input listener; Not Quite: keymap's
@@ -14429,12 +14452,6 @@ document.addEventListener("keydown", (event) => {
   // acceptable (see handleTriageKey's doc comment).
   if (handleTriageKey(event)) {
     event.preventDefault();
-    return;
-  }
-
-  if (pendingResetConfirmation && event.key === "Escape") {
-    event.preventDefault();
-    cancelResetConfirmation();
     return;
   }
 

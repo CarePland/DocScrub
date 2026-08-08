@@ -533,10 +533,14 @@ async function main(): Promise<void> {
       appSource.includes("sectionActionDigitAssignments(digitAssignableSectionActions(actions),")
   );
   check(
-    "reset shortcuts use event.code with Opt/Alt+Shift and open inline confirmation, never dispatch directly",
+    "reset shortcuts use event.code with Opt/Alt+Shift and open inline confirmation; confirmation owns R/Esc with visible keycaps",
     appSource.includes('const match = /^Key([RA])$/.exec(event.code ?? "");') &&
       appSource.includes("openResetConfirmation(scope);") &&
-      appSource.includes("pendingResetConfirmation && event.key === \"Escape\"")
+      appSource.includes("function handleResetConfirmationKey(event: KeyboardEvent): boolean") &&
+      appSource.includes('if ((event.code ?? "") === "KeyR")') &&
+      appSource.includes('const confirm = keycapButton("R", "Confirm Reset", confirmReset);') &&
+      appSource.includes('prompt.appendChild(keycapButton("Esc", "Cancel", cancelResetConfirmation));') &&
+      appSource.includes("handleResetConfirmationKey(event)")
   );
   check(
     "an inactive chord cap dims rather than vanishing -- vanishing is what taught reviewers the feature was absent",
