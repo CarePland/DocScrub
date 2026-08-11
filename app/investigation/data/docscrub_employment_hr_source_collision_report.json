@@ -1,0 +1,44 @@
+{
+  "statistics": {
+    "rows": 267,
+    "unique_normalized_terms": 252,
+    "single_token_unique_terms": 56,
+    "single_token_census_intersections": 3,
+    "legal_intersections": 10,
+    "higher_ed_intersections": 2,
+    "finance_accounting_tax_intersections": 5,
+    "high_collision_rows": 50,
+    "medium_collision_rows": 12,
+    "low_collision_rows": 205
+  },
+  "examples": {
+    "single_token_census": [
+      "ada",
+      "erisa",
+      "grade"
+    ],
+    "legal": [
+      "appeal",
+      "appellant",
+      "arbitration",
+      "arbitrator",
+      "beneficiary",
+      "harassment",
+      "reasonable accommodation",
+      "retaliation",
+      "transfer",
+      "undue hardship"
+    ],
+    "higher_ed": [
+      "credit hours",
+      "position title"
+    ],
+    "finance_accounting_tax": [
+      "appeal",
+      "arbitration",
+      "beneficiary",
+      "employee retirement income security act",
+      "erisa"
+    ]
+  }
+}

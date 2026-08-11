@@ -44,7 +44,7 @@ design principle, not an implementation accident.
 ### reviewer-is-the-decision-maker  [BUILT]
 
 Automation detects, scores, groups, proposes, and recommends; only a
-reviewer action creates or changes a decision. Nothing automatic ever
+reviewer action creates or changes a **decision**. Nothing automatic ever
 overrides a human decision. The one historical counterexample — entity
 resolution silently auto-merging a first-name-only candidate into a
 matching bucket — was classified as a defect and removed (ambiguity
@@ -59,11 +59,72 @@ proposals, quick-picks) but must terminate in an explicit reviewer
 action; bulk actions are reviewer-triggered aggregations, not automatic
 resolution; confidence scores inform, never decide.
 
+#### Amendment, 2026-08-09 — automatic RESOLUTIONS (AG)
+
+**Recorded as a SCOPE CHANGE, not a clarification.** Andrew described it as
+a clarification; this document's own governance rule decides otherwise —
+"if the clarified wording would change what an implementer is allowed to
+do, it is a scope change" — and this permits something the paragraph above
+explicitly forbade by name ("not automatic resolution"). Filed under the
+stricter reading deliberately, so the change is visible to anyone who
+later cites this invariant.
+
+The amended rule, in Andrew's words:
+
+> DocScrub still makes no automatic reviewer decisions. It may produce
+> explicit, auditable, reversible automatic resolutions when the system has
+> sufficient evidence that no meaningful human judgment remains.
+
+The distinction is between two different things that were previously one
+word:
+
+- a **decision** is a judgment a person made and is answerable for;
+- a **resolution** is a claim DocScrub makes about the evidence, that no
+  judgment remained to be made.
+
+What this permits: DocScrub may settle a candidate itself, recorded as an
+`AutomaticResolution` (domain/ReviewSession.ts) — a record structurally
+separate from `CandidateDecision`, carrying `ruleId`, `reason`, itemised
+`evidence` and a timestamp.
+
+What it does NOT permit, and these are the load-bearing limits:
+
+- No automatic `CandidateDecision` is ever written. `CandidateDecisionSource`
+  remains `"reviewer" | "imported"`; there is no automatic source value, so
+  DocScrub cannot impersonate a reviewer even by accident.
+- Automatic resolutions may only apply `Keep` or `Ignore` — never `Rename`
+  or `Redact`. Those alter the document, and no evidence short of a human
+  judgment justifies DocScrub changing the text on its own.
+- A reviewer or imported decision always supersedes and **clears** the
+  automatic resolution (`session.ts`'s `decideCandidate`). The two are never
+  both live for one candidate.
+- Reversal is deletion of the resolution. It leaves no decision behind, so
+  it cannot fabricate a human author.
+- Automatic resolutions never increment `decisionsMade`. That function
+  counts events; resolutions write none, so the separation is structural
+  rather than a rule someone must remember. They may contribute to
+  avoided-work metrics, which is what they actually are.
+- "Sufficient evidence" means POSITIVE evidence. Absence of person evidence
+  is not presence of ordinary-language evidence — an unrecognized candidate
+  is unknown, not settled, and unknown material stays with the reviewer.
+
+Why this is not the defect the paragraph above describes: the ambiguity
+anchor counterexample was a **silent merge** — unrecorded, unexplained,
+indistinguishable from the reviewer's own work. Every property that made it
+a defect is inverted here. The principle being protected was never "do less
+automatically"; it was "never present machine inference as human judgment."
+
 Verified by: `verify/ambiguity-anchor-verification.ts` (no silent merge);
 `verify/decision-reuse-verification.ts` (deterministic tiers, overridable
-results); specification §12 principle 2.
+results); `verify/residual-review-gate-verification.ts` (provenance,
+supersession, non-inflation of `decisionsMade`, mixed-use and
+name-collision guards); specification §12 principle 2.
 
-Changing it: effectively a different product; treat as out of scope
+Changing it: the core rule — no automatic reviewer decisions — is
+effectively a different product; treat as out of scope. The 2026-08-09
+amendment's limits above are individually changeable only by the same
+recorded-decision process, and any relaxation of the `Keep`/`Ignore`
+restriction should be treated as a new scope change rather than a tuning
 absent an explicit product decision by Andrew.
 
 ### ambiguity-link-preserves-surface-text  [BUILT]

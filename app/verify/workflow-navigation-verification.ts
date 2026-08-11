@@ -318,8 +318,9 @@ async function main(): Promise<void> {
       activeWorkflowStages(withArtifacts, allItems).join(",")
     );
 
-    // DISMISSAL DISSOLVES THE WORK: "Unrelated" removes the proposal from
-    // the model entirely rather than reporting it resolved.
+    // DISMISSAL IS REVERSIBLE REVIEW STATE: "Unrelated" no longer removes
+    // the proposal from the artifact list; it remains present and resolved
+    // so the reviewer can inspect/recombine it.
     let dismissed = session; // rows done, artifact outstanding
     dismissed = applyReviewCommand(
       dismissed,
@@ -327,9 +328,9 @@ async function main(): Promise<void> {
       withArtifacts,
       "2026-08-02T00:00:04.000Z"
     ).session;
-    check("a dismissed proposal leaves the artifact list entirely", reviewArtifactIdsForStage("ambiguity-check", withArtifacts, dismissed).length === 0);
+    check("a dismissed proposal stays in the artifact list", reviewArtifactIdsForStage("ambiguity-check", withArtifacts, dismissed).join(",") === "rel-acronym-TEST");
     const afterDismiss = computeStageStatus("ambiguity-check", withArtifacts, dismissed);
-    check("...so the stage completes without any member being decided", afterDismiss.completion === "complete" && !isStageActive(afterDismiss));
+    check("...and is reported resolved without any member being decided", afterDismiss.completion === "complete" && !isStageActive(afterDismiss) && afterDismiss.unresolvedArtifactCount === 0);
     check("...and dismissal decided nothing", Object.keys(dismissed.candidateDecisions).length === Object.keys(session.candidateDecisions).length);
   }
 

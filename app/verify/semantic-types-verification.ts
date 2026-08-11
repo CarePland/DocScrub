@@ -39,7 +39,11 @@ check("phone -> Phone Numbers", semanticTypeFor(facts("phone")) === "phones");
 check("cin/long_numeric_id -> Identifiers", semanticTypeFor(facts("cin")) === "identifiers" && semanticTypeFor(facts("long_numeric_id")) === "identifiers");
 check("identifier-pattern relationship member -> Identifiers regardless of type", semanticTypeFor(facts("person", [], ["numeric-identifier"])) === "identifiers");
 check('NSC-style acronym -> Acronyms "regardless of how it was detected"', semanticTypeFor(facts("person", ["likely_acronym"])) === "acronyms" && semanticTypeFor(facts("organization", [], ["acronym"])) === "acronyms");
-check("recognized person name -> People", semanticTypeFor(facts("person", ["surname_given_structure"])) === "people" && semanticTypeFor(facts("person", ["known-first-name"])) === "people");
+// AFFIRMATIVE person EVIDENCE -> People (AG, 2026-08-10). `surname_given_
+// structure` was removed from this assertion deliberately: it is SHAPE, and
+// shape no longer assigns a semantic type. The second check pins that.
+check("recognized person name -> People", semanticTypeFor(facts("person", ["known_personal_name_token"])) === "people" && semanticTypeFor(facts("person", ["known-first-name"])) === "people");
+check("name SHAPE alone is not a semantic type", semanticTypeFor(facts("person", ["surname_given_structure"])) === "other" && semanticTypeFor(facts("person", ["strong_name_structure"])) === "other");
 check("departments/systems -> Organizations", semanticTypeFor(facts("person", ["department_organization"])) === "organizations" && semanticTypeFor(facts("organization")) === "organizations");
 check("calendar/season -> Dates / Terms", semanticTypeFor(facts("person", ["season_or_academic_term"])) === "dates-terms");
 check("document-structure -> Document Titles", semanticTypeFor(facts("person", ["document_structure_term"])) === "document-titles");

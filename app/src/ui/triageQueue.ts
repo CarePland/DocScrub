@@ -114,7 +114,10 @@ export const TRIAGE_SECTION_ACCEPT_DEFAULT: Partial<Record<TriageSectionId, "Kee
   "common-words": "Ignore",
 };
 
-export function triageSectionFor(archetype: RecommendationArchetype | null, detectedType: string): TriageSectionId {
+export function triageSectionFor(
+  archetype: RecommendationArchetype | null,
+  detectedType: string
+): TriageSectionId {
   switch (archetype) {
     case "shortened-name":
     case "semantic-alias":
@@ -798,29 +801,29 @@ export type SectionActionSeverity = "safe" | "change" | "redact";
  * all, and the verification suite asserts exactly that over the real
  * vocabulary.
  */
-export type GroupScopeChord = "K" | "C" | "R" | "N" | "U";
+export type GroupScopeChord = "K" | "C" | "R" | "I" | "N" | "U";
 
 /**
- * `Ignore` answers **N**, not I (AG, 2026-08-03).
+ * `Ignore` answers **I** for Ambiguity Check and Item Check (AG, 2026-08-11).
  *
- * Two reasons, and the second is the durable one. The shallow one: `Opt I`
- * rendered next to a digit was the glyph collision that started this --
- * "Why Opt + I? I worry. very close to the number 1."
+ * This map is the canonical semantic action contract for the two sectioned
+ * candidate stages: bare K/C/R/I acts on the focused item; Opt+K/C/R/I acts
+ * on the applicable heading Zone/selection scope through the exact same
+ * QueueSectionAction descriptor the visible button uses. Earlier builds used
+ * Opt+N for conclusion-named Ignore actions ("Not people", "None are names")
+ * to avoid an Opt+I/1 visual collision, but that made the modifier vocabulary
+ * differ from the focused-item vocabulary and from the settled product rule.
  *
- * The real one: `Ignore` is being retired as a decision the reviewer can
- * NAME. Every group-level control that applies it now states a conclusion
- * instead -- "These are all words, not names", "None are personal", "None
- * are names" -- and every one of those sentences begins with the claim that
- * these items are Not what the detector took them for. So the letter names
- * what the buttons actually say, rather than the mechanism underneath, and
- * `I` disappears from the reviewer's vocabulary entirely along with the
- * word it stood for.
+ * Type Check is deliberately not standardized in this pass. Its explicit
+ * "None are personal" action still declares chord "N" in app.ts, so changing
+ * this decision map updates Ambiguity/Item section actions without rolling the
+ * contract into Type Check.
  */
 export const GROUP_SCOPE_CHORD_FOR_DECISION: Record<"Keep" | "Ignore" | "Redact" | "Rename", GroupScopeChord> = {
   Keep: "K",
   Rename: "C",
   Redact: "R",
-  Ignore: "N",
+  Ignore: "I",
 };
 
 // How a chord is SPELLED lives in app.ts (groupScopeChordLabel), not here:

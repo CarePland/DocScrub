@@ -310,19 +310,27 @@ export type ReviewCommand =
    *  (appliedCount > 0); a run that resolved nothing leaves no tagged events
    *  behind for it to anchor. */
   | { family: "review"; type: "suggestionsAccepted"; requestedCount: number; appliedCount: number; skippedCount: number }
-  /** Structural Relationship Review (2026-07-30) -- the reviewer marks a
+  /** Structural Relationship Review (2026-07-30; revised 2026-08-08) -- the reviewer marks a
    *  proposed structural relationship (acronym/full-name, shared
    *  identifier pattern -- see StructuralRelationship.ts) as "Unrelated":
-   *  the proposal DISSOLVES and nothing else happens. Deliberately NOT a
-   *  decision about any candidate -- it never writes candidateDecisions,
-   *  never classifies anything as non-sensitive, and every member
-   *  continues through the normal per-candidate review pipeline. Carries
-   *  the proposal's own facts (kind, members) so the durable session/audit
-   *  record stands alone without re-running detection. Accepting a
+   *  the proposal becomes a visible, resolved "marked unrelated" state and
+   *  nothing else happens. Deliberately NOT a decision about any candidate
+   *  -- it never writes candidateDecisions, never classifies anything as
+   *  non-sensitive, and every member continues through the normal
+   *  per-candidate review pipeline. Carries the proposal's own facts (kind,
+   *  members) so the durable session/audit record stands alone without
+   *  re-running detection. Accepting a
    *  relationship needs no command of its own: "Keep/Change/Redact
    *  All/Selected" are ordinary bulkApplyDecision dispatches over the
    *  proposal's members. */
-  | { family: "review"; type: "dismissRelationship"; proposalId: string; relationshipKind: RelationshipKind; candidateIds: string[] };
+  | { family: "review"; type: "dismissRelationship"; proposalId: string; relationshipKind: RelationshipKind; candidateIds: string[] }
+  /** Structural Relationship Review revision (2026-08-08): reverse an
+   *  earlier "Unrelated" dismissal so the derived proposal can re-enter
+   *  normal relationship review. If the members have since been edited
+   *  individually, the UI may pass those ids after an explicit warning;
+   *  the reducer clears them through the same reset semantics used by
+   *  `resetDecisions` before removing the dismissal. */
+  | { family: "review"; type: "restoreRelationship"; proposalId: string; relationshipKind: RelationshipKind; candidateIds: string[]; resetCandidateIds?: string[] };
 
 // ---- navigation.* -- routed to FocusNavigator -------------------------
 //

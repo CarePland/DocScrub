@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "entityGroups": [
+    {
+      "id": "person:the:t",
+      "canonicalName": "The Office Of The",
+      "detectedType": "person",
+      "memberKeys": [
+        "person:the office of the",
+        "person:the"
+      ],
+      "confidence": 40,
+      "memberConfidences": {
+        "person:the office of the": 70,
+        "person:the": 40
+      },
+      "reasons": [
+        "deterministic_grouping",
+        "shared_name_signature"
+      ]
+    }
+  ]
+}

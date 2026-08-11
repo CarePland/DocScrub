@@ -108,6 +108,68 @@ export function advanceWithinReviewTargets(
 }
 
 /**
+ * ZONE-SCOPED ADVANCE (AG, 2026-08-10). The fix for "deciding the last cell
+ * of the Zone throws the cursor out of the Zone."
+ *
+ * ═══════════════ THE OBSERVED DEFECT ═══════════════
+ *
+ * Ambiguity Check, category `Other Words`. The Zone held 24 cells; `Amy` (1)
+ * and `Kyle` (24) were decided. Deciding `Kyle` advanced the cursor to `Math`
+ * -- a cell BELOW the Zone -- rather than back to `Last` (2), the first cell
+ * still needing a decision.
+ *
+ * The cascading consequence is the real damage: `Alt N` ("These are all words,
+ * not names") is scoped to the Zone, so with focus parked outside the Zone the
+ * bulk action silently did nothing.
+ *
+ * ═══════════════ WHY THE EXISTING GUARD DID NOT CATCH IT ═══════════════
+ *
+ * `advanceWithinDisplayedReviewTargets` already has the right SHAPE -- a
+ * `preferredTargets` list it tries before the full sequence. But the caller
+ * passed the SECTION, and a section extends past the Zone. `Kyle` is cell 24
+ * of the Zone and cell 24 of a 26-cell section, so the forward scan inside the
+ * "preferred" list happily walked on to `Math`.
+ *
+ * The preference has to be the ZONE, because the Zone -- not the section -- is
+ * what bounds the bulk actions and what the reviewer is actually working.
+ *
+ * ═══════════════ WHY THIS WRAPS, WHERE THE LIST ADVANCE DOES NOT ═══════════════
+ *
+ * `advanceWithinVisibleList` deliberately refuses to wrap: a post-decision
+ * advance teleporting from the bottom of a long document to the top is
+ * disorienting, and that rule stands.
+ *
+ * A ZONE IS DIFFERENT, and the difference is bounded size. Wrapping inside a
+ * 24-cell surface the reviewer can see in one screen is a carriage return, not
+ * a teleport -- it lands on the first cell still needing a decision, which is
+ * exactly where the reviewer expects to continue. This is why the rule lives
+ * in its own function rather than as a flag on the list advance: the two have
+ * genuinely different justifications and should not be able to drift into each
+ * other.
+ *
+ * Returns null when the zone holds no unresolved work, which is the caller's
+ * signal to fall through to the full sequence and leave the zone behind.
+ */
+export function advanceWithinZone(
+  currentKey: string | null,
+  zoneTargets: readonly ReviewDisplayTarget[],
+  isResolved: (target: ReviewDisplayTarget) => boolean
+): ReviewDisplayTarget | null {
+  if (zoneTargets.length === 0) return null;
+  const keys = zoneTargets.map(reviewDisplayTargetKey);
+  const index = currentKey === null ? -1 : keys.indexOf(currentKey);
+  /* Forward from the current cell to the end of the zone. */
+  for (let i = index + 1; i < zoneTargets.length; i += 1) {
+    if (!isResolved(zoneTargets[i]!)) return zoneTargets[i]!;
+  }
+  /* Then wrap: the first cell in the zone still needing a decision. */
+  for (let i = 0; i <= index && i < zoneTargets.length; i += 1) {
+    if (!isResolved(zoneTargets[i]!)) return zoneTargets[i]!;
+  }
+  return null;
+}
+
+/**
  * The shape of a sectioned-queue section this module needs in order to state
  * its display order. STRUCTURAL, not an import of app.ts's
  * `SectionedQueueSection`: the rules below are the ones that decide where a
@@ -188,6 +250,174 @@ export function sectionGridSequence(section: ReviewTargetSection): ReviewDisplay
 /** The section's review targets in displayed order. */
 export function sectionDisplayTargets(section: ReviewTargetSection): ReviewDisplayTarget[] {
   return [...sectionCandidateTargetGroups(section).flat(), ...sectionProposalTargets(section)];
+}
+
+/**
+ * CATEGORY ARRIVAL LANDS ON THE FIRST UNRESOLVED UNIT, OF EITHER KIND
+ * (AG, 2026-08-09, observed live -- a recurrence).
+ *
+ * THE TRACE:
+ *
+ *   seq 4  category.arrive  selectStageCategoryCursor
+ *          category acronyms -> candidate:person:may (ALREADY RESOLVED)
+ *          {candidateCount: 1, proposalCount: 3, remaining: 2}
+ *
+ * The reviewer opened Acronyms, which held two unresolved proposals, and
+ * was placed on a candidate they had already decided. They then had to
+ * pick a card by hand (seq 6) to start working.
+ *
+ * WHAT THE OLD RULE WAS, and why it is worth stating rather than just
+ * deleting -- it looked correct, which is how it survived a previous fix:
+ *
+ *     candidateIds.find((id) => !decisions[id]) ?? candidateIds[0]
+ *     if (firstCandidate) { select it; return }
+ *     ...proposal branch...
+ *
+ * Two separate faults, either of which alone reproduces the symptom:
+ *
+ *  1. The `??` fallback lands on `candidateIds[0]` -- a RESOLVED unit --
+ *     once every candidate is decided.
+ *  2. The proposal branch is unreachable whenever `candidateIds` is
+ *     NON-EMPTY. The function's own doc comment promised "its first
+ *     unreviewed unit of EITHER type... a category holding nothing but
+ *     proposals lands on a proposal"; the code delivered that only for a
+ *     category with no candidates AT ALL, which is a much narrower thing
+ *     than a category whose only REMAINING work is proposals.
+ *
+ * Candidates still lead the order -- `sectionDisplayTargets` draws them
+ * before proposals, so a category with unresolved work of both kinds still
+ * opens on a candidate exactly as before. What changes is that "first
+ * unresolved" is now asked of the whole unit sequence instead of the
+ * candidate array, which is what the documented behavior always said.
+ *
+ * FALLING BACK TO `targets[0]` ON A FULLY RESOLVED CATEGORY IS
+ * DELIBERATE, and matches navigator.ts's own first_active_key(): a
+ * finished category is still inspectable, and arriving nowhere would be
+ * worse than arriving on its first cell.
+ *
+ * Pure and DOM-free; pinned by verify/visible-list-advance-verification.ts.
+ */
+export function firstUnresolvedReviewTarget(
+  targets: readonly ReviewDisplayTarget[],
+  isResolved: (target: ReviewDisplayTarget) => boolean
+): ReviewDisplayTarget | null {
+  if (targets.length === 0) return null;
+  return targets.find((target) => !isResolved(target)) ?? targets[0]!;
+}
+
+/**
+ * THE COMPLETION ADVANCE MAY NOT OVERRIDE A LIVE CURSOR (AG, 2026-08-08).
+ *
+ * ROOT CAUSE OF THE OBSERVED OVERWRITE, from the instrumented run:
+ *
+ *   seq 68  advance.visible      proposal:rel-acronym-ITS -> proposal:rel-acronym-PERC
+ *   seq 69  cursor.write L3566   proposalCursor ITS -> PERC
+ *   seq 70  advance.completion   anchor proposal:rel-acronym-QBU -> candidate:person:civitas
+ *   seq 71  cursor.write L3569   proposalCursor PERC -> (none)
+ *
+ * `advanceAfterSectionCompletion` fired 39ms after the per-unit advance had
+ * already placed the reviewer correctly on PERC, and overwrote it. It fired
+ * because its call site (app.ts, acknowledgeBulkCandidateFeedback's ELSE
+ * branch -- the branch reached precisely when `sectionCompletedByAnchor`
+ * returned FALSE) invoked it on the sole condition that a completion anchor
+ * EXISTED. `snapshotCurrentScopeCompletionAnchor` returns one for
+ * essentially every decision on a sectioned stage, so a function named
+ * "advance after section completion" ran on every decision, completed or
+ * not, recomputing the cursor from a TRAILING anchor.
+ *
+ * Bounding where it could land (advanceWithinCategoryScope, below) stopped
+ * it leaving the category, but not the overwrite itself: the completion
+ * advance was still entitled to replace a perfectly good position with its
+ * own answer. This is the gate that ends the class.
+ *
+ * THE RULE: a completion advance may move the reviewer only when the
+ * reviewer is standing on FINISHED work. If the current unit is still
+ * unresolved, someone has already placed the cursor somewhere valid --
+ * the per-unit advance, or the reviewer themselves -- and the completion
+ * path must leave it alone.
+ *
+ * WHY THIS PRESERVES THE PULSE, which is the behavior most at risk here.
+ * On genuine section completion the UI deliberately pins the cursor back
+ * onto the completed anchor (keepSectionVisibleForCompletionFeedback) so
+ * the section stays visible while it flashes, and only then, after the
+ * acknowledgement timer, calls this advance. That anchor is RESOLVED by
+ * definition -- the section just completed -- so the gate opens and the
+ * advance proceeds exactly as before. The bulk case is preserved for the
+ * same reason: a bulk action that resolves the block under the cursor
+ * leaves the cursor on resolved work, and the advance is permitted to
+ * carry the reviewer past it.
+ *
+ * A cursor that is absent, or that has fallen off the target list
+ * entirely, permits the advance: recovering from that is exactly what the
+ * advance is for, and refusing would strand the reviewer.
+ */
+export function completionAdvanceIsPermitted(
+  currentKey: string | null,
+  targets: readonly ReviewDisplayTarget[],
+  isResolved: (target: ReviewDisplayTarget) => boolean
+): boolean {
+  if (currentKey === null) return true;
+  const current = targets.find((target) => reviewDisplayTargetKey(target) === currentKey);
+  if (current === undefined) return true;
+  return isResolved(current);
+}
+
+/**
+ * THE CATEGORY BOUNDARY IS A HARD STOP (AG, 2026-08-08, observed live).
+ *
+ * "A category must NOT advance while unresolved review units remain in it"
+ * -- Andrew's invariant, stated as a rule the advance cannot route around
+ * rather than as a comment three call sites promise to honour.
+ *
+ * WHAT THIS FIXES, from an instrumented run rather than from reading:
+ *
+ *   seq 68  advance.visible      proposal:rel-acronym-ITS -> proposal:rel-acronym-PERC
+ *   seq 70  advance.completion   anchor proposal:rel-acronym-QBU -> candidate:person:civitas
+ *                                {sectionId: "acronyms", remaining: 2}
+ *
+ * The reviewer decided ITS; the per-unit advance correctly chose PERC; then
+ * the section-completion advance overrode it and jumped to a DIFFERENT
+ * CATEGORY while acronyms still held two unresolved units.
+ *
+ * The mechanism is not "zone exhaustion mistaken for completion" (an
+ * earlier hypothesis, refuted by probe -- chunk retirement makes that state
+ * unreachable). It is simpler and worse: the completion anchor's
+ * `anchorKey` is the LAST target of the current zone scope, NOT the unit
+ * the reviewer acted on. `advanceWithinReviewTargets` scans FORWARD first,
+ * so advancing from a trailing anchor walks straight out of the category
+ * and never reaches the unresolved units sitting BEHIND that anchor -- the
+ * backward fallback is never consulted, because the forward scan succeeded.
+ *
+ * That single fact explains three separately-reported failures: completing
+ * a relationship proposal advancing to the wrong place (the anchor is a
+ * different proposal), a category "opening on its last item" (the anchor
+ * trails), and a decision advancing to the next category with work
+ * remaining.
+ *
+ * THE RULE: while the category still holds unresolved work, the advance is
+ * scoped to that category, and the forward-then-backward scan therefore
+ * finds the work behind the anchor instead of leaving. Only once the
+ * category is genuinely complete may the advance range over the whole
+ * stage -- which is exactly the documented completion behavior, now
+ * conditioned on the category being complete instead of assumed.
+ *
+ * Pure and DOM-free so it is provable without a browser; pinned by
+ * verify/visible-list-advance-verification.ts.
+ */
+export function advanceWithinCategoryScope(
+  anchorKey: string | null,
+  categoryTargets: readonly ReviewDisplayTarget[],
+  stageTargets: readonly ReviewDisplayTarget[],
+  isResolved: (target: ReviewDisplayTarget) => boolean
+): ReviewDisplayTarget | null {
+  const categoryHasWork = categoryTargets.some((target) => !isResolved(target));
+  if (categoryHasWork) {
+    // Scoped. If the anchor is not itself in this category the scan starts
+    // from -1 and simply takes the category's first unresolved unit, which
+    // is the correct landing for a trailing/foreign anchor.
+    return advanceWithinReviewTargets(anchorKey, categoryTargets, isResolved);
+  }
+  return advanceWithinReviewTargets(anchorKey, stageTargets, isResolved);
 }
 
 export function adjacentReviewTarget(

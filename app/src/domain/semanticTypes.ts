@@ -71,6 +71,132 @@ export interface SemanticTypeFacts {
   /** Quality categories (kebab or snake -- normalized here). */
   categories: readonly string[];
   relationshipKinds: ReadonlySet<RelationshipKind>;
+  /**
+   * CROSS-CANDIDATE NON-PERSON EVIDENCE (AG, 2026-08-10). True when
+   * engines/cross-candidate produced evidence for this candidate AND the
+   * person-protection gate did not exclude it.
+   *
+   * WHAT IT DOES, PRECISELY: it removes the `people` branch's ability to
+   * fire on SHAPE alone. It does not assign a type, it does not suppress
+   * detection, and it never overrides a name-evidence category -- a
+   * candidate carrying `known-personal-name-token` still returns `people`
+   * below, and in practice can never arrive here with this flag set,
+   * because the gate excludes it upstream. Two independent guarantees, on
+   * purpose.
+   *
+   * OPTIONAL, and absent means false: every existing caller and every
+   * verification suite is unchanged by construction, and the Type Check
+   * assignment is byte-identical unless a caller opts in.
+   */
+  crossCandidateNonPerson?: boolean;
+  /**
+   * CENSUS NAME STRUCTURE (AG, 2026-08-10) -- two tokens agreeing on
+   * first-name / surname roles in U.S. Census name data. Affirmative evidence
+   * about the referent, and the reason `Yazmine Guzmán`, `Amy Miller` and
+   * `Chelsye Angelina` can reach People without shape.
+   *
+   * STRUCTURE, never token membership: `censusRoleFor` is not consulted here
+   * and must not be. Optional; absent means false.
+   */
+  censusNameStructure?: boolean;
+  /**
+   * HIGHER-EDUCATION TERMINOLOGY ATTESTATION (AG, 2026-08-10) -- true when
+   * the candidate's phrase is attested in
+   * engines/knowledge/HigherEdTerminologyEvidence's reference dataset.
+   *
+   * CARRIED FOR DIAGNOSTICS, AUDIT AND BENCHMARKING. NOTHING IN
+   * `semanticTypeFor` BELOW MAY BRANCH ON IT, and the reason is the same
+   * measurement that kept `censusNameStructure` out of the branches above,
+   * arriving from a third source: 34 single-token terms in that dataset are
+   * also Census-attested personal-name tokens -- `White`, `Major`, `Minor`,
+   * `Race`, `Session`, `Course` -- 19 of them flagged HIGH collision risk by
+   * the dataset itself. Attestation is a claim about the PHRASE, not about
+   * the referent, and this function may only read claims about the referent.
+   *
+   * Nor may it route to `organizations`: only 86 of 1,394 rows carry an
+   * ORGANIZATION hint at all, and the dataset's own methodology calls the
+   * hints "evidence features, not final entity labels". `Cost of Attendance`
+   * is attested terminology and is not an organization.
+   *
+   * The honest destination for this evidence is a deterministic
+   * evidence-COMBINATION layer that can weigh it against geographic, person,
+   * contextual and pattern evidence and can represent a CONFLICT rather than
+   * a winner. That layer does not exist yet (the GNIS benchmark reached the
+   * same conclusion independently -- see
+   * 20260810-gnis-place-evidence-benchmark.md §13). This field is where the
+   * evidence arrives at the interpretation boundary so that layer, when it is
+   * designed, has a call site rather than a plumbing problem.
+   *
+   * Optional; absent means false. Type Check assignment is byte-identical
+   * whether or not a caller sets it -- asserted in
+   * verify/higher-ed-terminology-evidence-verification.ts.
+   */
+  higherEdTerminologyAttested?: boolean;
+  /**
+   * GNIS GEOGRAPHIC ATTESTATION (AG, 2026-08-10) -- the strength returned by
+   * engines/knowledge/GnisPlaceEvidence: "strong", "weak" or "none".
+   *
+   * CARRIED FOR DIAGNOSTICS, AUDIT AND BENCHMARKING. NOTHING BELOW BRANCHES
+   * ON IT, and the reason is a STOP CONDITION rather than caution:
+   *
+   *   1. `SemanticTypeId` has no Place/Geography member. Routing strong PLACE
+   *      evidence anywhere would require inventing a reviewer-facing category,
+   *      which §19.4 of the integration instruction reserves to Andrew.
+   *   2. `semanticTypeFor` is a first-match-wins chain returning ONE id. A
+   *      `places` branch would sit either before or after the `people` branch,
+   *      and that ordering IS the arbitrary precedence §7 forbids. The
+   *      function cannot represent "affirmative PERSON evidence AND
+   *      affirmative PLACE evidence" at all -- it can only pick.
+   *
+   * This is the third evidence family to arrive at the same boundary
+   * (`censusNameStructure`, `higherEdTerminologyAttested`, and now this), and
+   * the convergence is the finding: what is missing is a deterministic
+   * evidence-COMBINATION layer that can hold a CONFLICT rather than a winner.
+   *
+   * Optional; absent means "none". Type Check assignment is byte-identical
+   * whether or not a caller sets it -- asserted in
+   * verify/gnis-place-evidence-verification.ts.
+   */
+  gnisPlaceStrength?: "strong" | "weak" | "none";
+  /**
+   * MEDICAL/HEALTHCARE TERMINOLOGY ATTESTATION (AG, 2026-08-10) -- true when
+   * the candidate's phrase is attested in engines/knowledge/MedicalEvidence's
+   * reference dataset.
+   *
+   * CARRIED FOR DIAGNOSTICS, AUDIT AND BENCHMARKING. NOTHING IN
+   * `semanticTypeFor` BELOW MAY BRANCH ON IT. The fourth family to arrive at
+   * this boundary, and it brings two reasons of its own on top of the three
+   * already recorded above:
+   *
+   *   1. THE COLLISION POPULATION IS THE SAME SHAPE, AGAIN. The dataset flags
+   *      38 rows HIGH collision risk and 16 MEDIUM, and the MEDIUM list is
+   *      ordinary English wearing a CMS/CDC badge -- `Case`, `Claim`,
+   *      `Provider`, `Agent`, `Carrier`, `Premium`, `Bias`, `Association`.
+   *      The HIGH list is chiefly two- and three-letter abbreviations (`RT`,
+   *      `IV`, `TB`, `LP`, `GAS`, `Ear`, `Eye`), which is exactly the shape
+   *      personal initials and OCR fragments take. Attestation is a claim
+   *      about the PHRASE, never about the referent, and this function may
+   *      only read claims about the referent.
+   *   2. THE HINTS ARE NOT TYPES, AND THIS FAMILY'S ARE THE MOST TEMPTING
+   *      ONES YET. `Cardiology` is hinted ORGANIZATION_DEPARTMENT and
+   *      `Anesthesiologists` is hinted ROLE. Routing on either would assert
+   *      that a candidate IS a department or IS a role on the strength of a
+   *      dictionary hit -- which is precisely the "dictionary membership
+   *      determines semantic type" failure the source methodology's own
+   *      closing line warns against.
+   *
+   * AND ONE CONSTRAINT UNIQUE TO THIS FAMILY, which is not a matter of
+   * accuracy but of harm: medical terminology attestation must never become an
+   * assertion about an individual. No branch here, and no future combination
+   * rule, may read `Diabetes Mellitus` or `HIV` near a name as evidence that
+   * the person has a condition. See the module header in
+   * engines/knowledge/MedicalEvidence.ts.
+   *
+   * Optional; absent means false. Type Check assignment is byte-identical
+   * whether or not a caller sets it -- asserted in
+   * verify/medical-evidence-verification.ts.
+   */
+  medicalTerminologyAttested?: boolean;
 }
 
 const norm = (c: string): string => c.replace(/_/g, "-");
@@ -124,6 +250,41 @@ export const INSTITUTIONAL_CATEGORIES: readonly string[] = [
   DOCUMENT_STRUCTURE_CATEGORY,
 ];
 
+/**
+ * AFFIRMATIVE person evidence -- evidence about the REFERENT, never about the
+ * string's shape. Shape categories are deliberately excluded; see the people
+ * branch below.
+ */
+export const PERSON_EVIDENCE_CATEGORIES: readonly string[] = [
+  "known-personal-name-token",
+  "known-first-name",
+  "known-name-structure",
+  "known-surname",
+  "nearby-title",
+];
+
+/**
+ * Does ANY affirmative semantic evidence exist for this candidate?
+ *
+ * THE INVARIANT THIS ENFORCES: DocScrub must never assign a semantic type
+ * merely because every other type failed. `semanticTypeFor` returns `other`
+ * from a single fallthrough at its end, and that fallthrough is reached by
+ * absence rather than by evidence -- so `other` cannot be distinguished from
+ * "unresolved" by its value alone. This predicate makes the distinction
+ * explicit, and `typeCheckSectionFor` routes the unsupported case to
+ * Undetermined instead.
+ *
+ * NOTE, and it is the honest finding rather than an oversight: there is no
+ * affirmative evidence in the production vocabulary that MEANS "miscellaneous".
+ * Every category asserts something specific. So this returns false for every
+ * candidate that reaches the fallthrough, and `other` is currently
+ * unreachable. That is reported rather than papered over -- see
+ * 20260810-evidence-faithful-type-check.md §4.
+ */
+export function hasAffirmativeSemanticEvidence(facts: SemanticTypeFacts): boolean {
+  return semanticTypeFor(facts) !== "other";
+}
+
 export function semanticTypeFor(facts: SemanticTypeFacts): SemanticTypeId {
   // Typed detections first -- unambiguous semantics.
   if (facts.detectedType === "email") return "emails";
@@ -140,21 +301,208 @@ export function semanticTypeFor(facts: SemanticTypeFacts): SemanticTypeId {
   }
   if (has(facts, "calendar-term", "calendar-abbreviation", "season-or-academic-term")) return "dates-terms";
   if (has(facts, DOCUMENT_STRUCTURE_CATEGORY)) return "document-titles";
-  if (facts.detectedType === "person" && has(facts, "known-personal-name-token", "known-first-name", "known-name-structure", "strong-name-structure", "surname-given-structure")) {
-    return "people";
+  // AFFIRMATIVE PERSON EVIDENCE ONLY (AG, 2026-08-10).
+  //
+  // `strong-name-structure` and `surname-given-structure` are SHAPE -- two
+  // capitalized tokens. They are deliberately absent from this test: shape is
+  // what made `Grade Rosters` and `Amy Miller` indistinguishable, and a
+  // category that can be earned by shape alone cannot mean "DocScrub has
+  // evidence this is a person".
+  //
+  // What remains is evidence about the referent: a lexicon-recognised name
+  // token, an attached honorific, or Census-attested name STRUCTURE (two
+  // tokens agreeing on first/surname roles -- never single-token membership,
+  // which is attested for Will, Hope, Rose, Grade and Reason alike).
+  if (facts.detectedType === "person") {
+    // AFFIRMATIVE evidence about the referent. NEVER defeated by
+    // cross-candidate evidence -- a recognised name outranks a structural
+    // observation about other candidates, and the verification suite caught
+    // the first draft letting the flag gate this branch too.
+    if (has(facts, ...PERSON_EVIDENCE_CATEGORIES)) return "people";
+    /*
+     * CENSUS IS DELIBERATELY NOT CONSULTED HERE, and the first draft of this
+     * change proved why.
+     *
+     * Census name STRUCTURE was validated as PROTECTION -- a reason not to let
+     * cross-candidate evidence reinterpret a candidate -- and it is used for
+     * exactly that in engines/cross-candidate/person-evidence-gate.ts. Adding
+     * it as affirmative CLASSIFICATION evidence here routed `Good Morning`
+     * into People: GOOD is an attested first name, MORNING is attested in both
+     * roles, so the pair reads as an ambiguous-role personal-name structure.
+     *
+     * That is the measured 20/106 collision rate arriving exactly where it was
+     * predicted to. Protection and classification are different jobs, and this
+     * source is only sound for the first. `facts.censusNameStructure` is
+     * carried on SemanticTypeFacts for diagnostics and audit; nothing in this
+     * function may branch on it.
+     */
+    /*
+     * SHAPE IS NOT AFFIRMATIVE PERSON EVIDENCE, and no branch below reads it
+     * (AG's ruling, 2026-08-10).
+     *
+     * `strong_name_structure` and `surname_given_structure` remain detector
+     * and provenance evidence -- they are still scored, still explained, still
+     * carried in `reasons` and still visible in Expert View. What they no
+     * longer do is ASSIGN a semantic type. Two capitalized tokens is a fact
+     * about the string; People must mean DocScrub has evidence about the
+     * referent.
+     *
+     * THE COST, PINNED RATHER THAN COMPENSATED FOR. `Chriztopher Johnson`
+     * (unusual spelling, no lexicon, no Census) and `Fox, Liud` (a truncation,
+     * so the surname role does not resolve) are real people who now route to
+     * Undetermined. That is EXPECTED BEHAVIOUR, asserted as such in
+     * verify/evidence-faithful-type-check-verification.ts. No exception, no
+     * candidate-specific rule, and no widening of the person lexicon exists to
+     * keep them in People -- the honest state is that DocScrub has no evidence
+     * about them, and Undetermined says exactly that.
+     *
+     * The remedy is more positive-evidence capability, not a softer contract.
+     */
   }
   return "other";
 }
 
+/*
+ * ============================================================================
+ * UNDETERMINED -- A ROUTING STATE, NOT A SEMANTIC TYPE (AG, 2026-08-10)
+ * ============================================================================
+ *
+ * `SemanticTypeId` above is a SEMANTIC ONTOLOGY: every member is a claim about
+ * what a thing IS. Andrew's constraint, verbatim: "Do not create a fake
+ * semantic ontology merely to make the UI work."
+ *
+ * Undetermined is not such a claim. It is the state of an INTERPRETATION:
+ *
+ *     the detector proposed a type, deterministic interpretation has
+ *     sufficient evidence to REJECT that proposal, and there is insufficient
+ *     evidence to assign a supported replacement.
+ *
+ * So it lives one level up, in the vocabulary Type Check ROUTES on, and
+ * `SemanticTypeId` is left exactly as it was -- nine members, all semantic.
+ * A consequence worth stating: `semanticTypeFor()` can never return
+ * "undetermined", by type. Only `typeCheckSectionFor()` can, and only when it
+ * has a rejected hypothesis in hand.
+ *
+ * WHAT IT IS NOT, enforced by that shape rather than by documentation:
+ *   - not "low confidence"      -- no score reaches this function
+ *   - not "miscellaneous"       -- `other` is still a real semantic
+ *                                  destination and still reachable
+ *   - not "detection failed"    -- the detector's hypothesis is preserved
+ *   - not "probably non-person" -- it records that ONE hypothesis was
+ *                                  rejected, and nothing more
+ *   - not a catch-all for whatever semanticTypeFor cannot classify -- a
+ *     candidate with no rejected hypothesis can never arrive here
+ */
+export const UNDETERMINED_SECTION = "undetermined" as const;
+
+/** What Type Check routes on: the semantic ontology, plus the one state that
+ *  is not a member of it. */
+export type TypeCheckSectionId = SemanticTypeId | typeof UNDETERMINED_SECTION;
+
+/** Undetermined sits LAST -- after Other / Miscellaneous. It is neither a
+ *  high-certainty category (which lead) nor a semantic bucket (which follow);
+ *  it is the residue of a rejected hypothesis, and the calm reading is that
+ *  the reviewer meets it after everything the system can actually name. */
+export const TYPE_CHECK_SECTION_ORDER: readonly TypeCheckSectionId[] = [...SEMANTIC_TYPE_ORDER, UNDETERMINED_SECTION];
+
+export const TYPE_CHECK_SECTION_LABELS: Record<TypeCheckSectionId, string> = {
+  ...SEMANTIC_TYPE_LABELS,
+  [UNDETERMINED_SECTION]: "Undetermined",
+};
+
+/** Reviewer-facing meaning. Deliberately free of implementation vocabulary --
+ *  no rule ids, no "cross-candidate", no "name-shaped". Those belong to
+ *  Expert View and the audit record, which read the provenance instead. */
+export const TYPE_CHECK_SECTION_EXPLANATIONS: Partial<Record<TypeCheckSectionId, string>> = {
+  [UNDETERMINED_SECTION]: "Type could not be determined.",
+};
+
+/**
+ * The full interpretation of one candidate: what the detector proposed, what
+ * the semantic layer concluded, and where Type Check therefore routes it.
+ *
+ * `rejectedType` is the load-bearing field. It is what makes Undetermined a
+ * narrow state rather than a catch-all: a candidate can only be Undetermined
+ * if something was rejected, and the thing rejected is recorded.
+ */
+export interface CandidateInterpretation {
+  /** Detector provenance. Carried, never consulted for routing. */
+  detectedType: string;
+  /** What the semantic layer supports, on its own vocabulary. */
+  semanticType: SemanticTypeId;
+  /** The detector-proposed semantic type that evidence rejected, if any. */
+  rejectedType?: SemanticTypeId;
+  /** Where Type Check puts it. */
+  section: TypeCheckSectionId;
+}
+
+/**
+ * Interprets one candidate for Type Check routing.
+ *
+ * `nonPersonEvidence` is the caller's conclusion that independent,
+ * person-scoped evidence rejects a PERSON reading (today: engines/
+ * cross-candidate, after its own protection gate). It is deliberately a
+ * boolean rather than the evidence itself -- this function must not be able
+ * to grow rules of its own, and the evidence travels separately to the
+ * provenance record.
+ *
+ * THE ORDER MATTERS AND IS THE WHOLE CONTRACT:
+ *
+ *  1. Ask for the supported semantic type, ignoring the rejection entirely.
+ *     If it is anything other than `people`, the rejection is irrelevant --
+ *     person-scoped evidence has no business moving an Organization.
+ *  2. Only when the supported answer WAS `people` and the rejection stands,
+ *     ask a second time WITH the rejection, to see whether some other type is
+ *     independently supported. That is Andrew's case A.
+ *  3. If the second answer is `other`, no replacement type is supported. That
+ *     is NOT a semantic conclusion of "miscellaneous" -- it is the absence of
+ *     one, and it routes to Undetermined. Case B.
+ *
+ * Step 3 is why `other` cannot become the dumping ground for rejected
+ * hypotheses: reaching `other` through a rejection is treated as a MISSING
+ * answer, while reaching it directly is still a real one.
+ */
+export function typeCheckSectionFor(facts: SemanticTypeFacts, nonPersonEvidence: boolean): CandidateInterpretation {
+  const proposed = semanticTypeFor({ ...facts, crossCandidateNonPerson: false });
+  if (!nonPersonEvidence || proposed !== "people") {
+    // NO AFFIRMATIVE EVIDENCE -> UNDETERMINED, never `other`. Reaching the
+    // fallthrough is the absence of an answer; treating it as the answer
+    // "miscellaneous" is exactly the default-bucket behaviour this contract
+    // exists to remove.
+    if (proposed === "other") {
+      return { detectedType: facts.detectedType, semanticType: proposed, section: UNDETERMINED_SECTION };
+    }
+    return { detectedType: facts.detectedType, semanticType: proposed, section: proposed };
+  }
+  const replacement = semanticTypeFor({ ...facts, crossCandidateNonPerson: true });
+  // THE REJECTION DID NOT STAND. `semanticTypeFor` still answers `people`,
+  // which means name EVIDENCE (not shape) is present and the flag has no
+  // purchase on it. Recording a `rejectedType` here would be incoherent --
+  // nothing was rejected -- and would let a person-evidenced candidate carry
+  // a rejection into the audit. In production the protection gate already
+  // excludes these upstream; this is the second, independent guarantee, and
+  // it was added because the verification suite caught the first draft
+  // emitting `{ section: "people", rejectedType: "people" }`.
+  if (replacement === proposed) {
+    return { detectedType: facts.detectedType, semanticType: proposed, section: proposed };
+  }
+  if (replacement !== "other") {
+    // Case A: some other semantic type is independently supported.
+    return { detectedType: facts.detectedType, semanticType: replacement, rejectedType: proposed, section: replacement };
+  }
+  // Case B: the hypothesis is rejected and nothing replaces it.
+  return { detectedType: facts.detectedType, semanticType: replacement, rejectedType: proposed, section: UNDETERMINED_SECTION };
+}
+
 export interface SemanticTypeItem {
   id: string;
-  type: SemanticTypeId;
+  type: TypeCheckSectionId;
   occurrenceCount: number;
   decided: boolean;
 }
 
 export interface SemanticTypeSummary {
-  id: SemanticTypeId;
+  id: TypeCheckSectionId;
   label: string;
   entityCount: number;
   occurrenceCount: number;
@@ -166,11 +514,11 @@ export interface SemanticTypeSummary {
  *  categories that actually contain entities"); input order preserved
  *  within a type. */
 export function buildSemanticTypeSummaries(items: readonly SemanticTypeItem[]): SemanticTypeSummary[] {
-  const byType = new Map<SemanticTypeId, SemanticTypeSummary>();
+  const byType = new Map<TypeCheckSectionId, SemanticTypeSummary>();
   for (const item of items) {
     const existing = byType.get(item.type) ?? {
       id: item.type,
-      label: SEMANTIC_TYPE_LABELS[item.type],
+      label: TYPE_CHECK_SECTION_LABELS[item.type],
       entityCount: 0,
       occurrenceCount: 0,
       decidedCount: 0,
@@ -182,7 +530,7 @@ export function buildSemanticTypeSummaries(items: readonly SemanticTypeItem[]): 
     existing.candidateIds.push(item.id);
     byType.set(item.type, existing);
   }
-  return SEMANTIC_TYPE_ORDER.filter((id) => byType.has(id)).map((id) => byType.get(id)!);
+  return TYPE_CHECK_SECTION_ORDER.filter((id) => byType.has(id)).map((id) => byType.get(id)!);
 }
 
 // --------------------------------------------------------------------------
@@ -206,21 +554,21 @@ export function buildSemanticTypeSummaries(items: readonly SemanticTypeItem[]): 
  * mid-session would violate the same stability contract.
  */
 export interface SemanticTypeGroup {
-  typeId: SemanticTypeId;
+  typeId: TypeCheckSectionId;
   candidateIds: readonly string[];
 }
 
 /** Folds a per-candidate assignment (insertion-ordered, as produced by
  *  iterating DetectionResult.candidates) into the ordered, populated-only
  *  group list. */
-export function buildSemanticTypeGroups(assignments: ReadonlyMap<string, SemanticTypeId>): SemanticTypeGroup[] {
-  const byType = new Map<SemanticTypeId, string[]>();
+export function buildSemanticTypeGroups(assignments: ReadonlyMap<string, TypeCheckSectionId>): SemanticTypeGroup[] {
+  const byType = new Map<TypeCheckSectionId, string[]>();
   for (const [candidateId, typeId] of assignments) {
     const existing = byType.get(typeId);
     if (existing) existing.push(candidateId);
     else byType.set(typeId, [candidateId]);
   }
-  return SEMANTIC_TYPE_ORDER.filter((id) => byType.has(id)).map((typeId) => ({ typeId, candidateIds: byType.get(typeId)! }));
+  return TYPE_CHECK_SECTION_ORDER.filter((id) => byType.has(id)).map((typeId) => ({ typeId, candidateIds: byType.get(typeId)! }));
 }
 
 /**
@@ -233,5 +581,38 @@ export function buildSemanticTypeGroups(assignments: ReadonlyMap<string, Semanti
  */
 export function qualityCategoriesOf(assessment: { filterRules: readonly string[]; reasons: readonly string[] } | undefined): readonly string[] {
   if (!assessment) return [];
-  return assessment.filterRules.length ? assessment.filterRules : assessment.reasons;
+  /*
+   * THE MASKING DEFECT, FIXED (AG, 2026-08-10).
+   *
+   * This used to return `filterRules.length ? filterRules : reasons` -- an
+   * EITHER/OR. Because `scoredResult` sets `filterRules` to the dictionary
+   * classifications on every name-structure branch, one incidental dictionary
+   * hit replaced the whole category channel and hid the positive evidence
+   * sitting in `reasons`:
+   *
+   *   Julie Ford   reasons     [small_frequency_bonus, address_suffix,
+   *                             strong_name_structure, known_personal_name_token]
+   *                filterRules [address_suffix]
+   *                categories  [address_suffix]              -> other
+   *
+   *   Amy Miller   filterRules []
+   *                categories  [.., strong_name_structure]   -> people
+   *
+   * `known_personal_name_token` is the strongest name evidence in the system,
+   * and `address_suffix` -- a fact about the token "Ford" -- erased it. The
+   * two are not in contradiction; they answer DIFFERENT questions. Evidence
+   * about one hypothesis was being used to suppress evidence about another.
+   *
+   * normalization.ts already documented this as a "quirk" and routed around
+   * it by passing contextual strength as a separate parameter rather than
+   * through this function. That workaround is the tell: the channel was known
+   * to be lossy and was worked around instead of repaired.
+   *
+   * The union is the honest representation -- every category the assessment
+   * actually produced, with nothing hidden. It is safe ONLY because
+   * `semanticTypeFor` below now requires affirmative EVIDENCE rather than
+   * name SHAPE; a union without that change would have routed "Good Morning"
+   * (greeting_or_courtesy + strong_name_structure) to People.
+   */
+  return [...new Set([...assessment.filterRules, ...assessment.reasons])];
 }

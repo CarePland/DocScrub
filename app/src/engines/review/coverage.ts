@@ -41,7 +41,27 @@ export function candidateResolvedStatus(session: ReviewSession, detection: Detec
   const candidate = detection.candidates.find((c) => c.id === candidateId);
   const occurrenceIds = candidate?.occurrenceIds ?? [];
   const coveredByResolvedGroups = coveredOccurrenceIdsByResolvedGroups(session, detection);
-  const hasDirectDecision = candidateId in session.candidateDecisions;
+  /*
+   * AUTOMATIC RESOLUTIONS SETTLE A CANDIDATE (AG, 2026-08-09).
+   *
+   * `hasDirectDecision` is now "somebody settled this" rather than "the
+   * reviewer decided this". Both a reviewer/imported CandidateDecision and
+   * an automatic resolution satisfy it, because this predicate answers
+   * "does this candidate still owe the workflow an answer" -- and it does
+   * not, either way.
+   *
+   * WHAT THIS DELIBERATELY DOES NOT DO is tell the two apart. It cannot:
+   * "resolved" is one bit. Everything that needs the distinction --
+   * `decisionsMade`, the audit export, the metrics split -- reads the two
+   * records directly, which is exactly why they were kept structurally
+   * separate rather than merged behind a source enum.
+   *
+   * Precedence is not handled here because it cannot arise: decideCandidate()
+   * clears any automatic resolution for the candidate it decides, so the two
+   * are never both present.
+   */
+  const hasDirectDecision =
+    candidateId in session.candidateDecisions || Boolean(session.automaticResolutions?.[candidateId]);
   return resolvedStatusOf(occurrenceIds, coveredByResolvedGroups, hasDirectDecision);
 }
 

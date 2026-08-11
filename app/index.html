@@ -81,6 +81,64 @@
            chrome contents freely without touching this -- the measurement
            follows. */
         --workspace-chrome-height: 0px;
+
+        /* THE FOCUS PANEL'S OWN CEILING (AG, 2026-08-06: "be kind to the
+           focus panel -- it can take up vertical space and the text can be
+           larger. It really should be more pronounced than the cells").
+
+           Until now the panel had no height of its own; it inherited
+           whatever `.workbench-main` allowed, which reserved 8rem of bottom
+           slack. That slack was sized for a column of stacked content that
+           could keep growing, not for a fixed inspector sitting beside a
+           fixed block of cells -- so it was simply unused screen.
+
+           Halving it to 4rem buys the panel roughly 10% more vertical room
+           at ordinary laptop heights (~644px -> ~708px at a 900px viewport,
+           ~824px -> ~888px at 1080px). Expressed as its own named variable
+           rather than a second inline calc() so the panel's ceiling has ONE
+           definition that every surface hosting an inspector reads -- Item
+           Check's `.scope-inspector`, Ambiguity Check's `.triage-focus-pane`
+           and Type Check's `.type-focus-pane` must not drift apart, since a
+           reviewer moving between stages should not find the reading surface
+           changing size under them.
+
+           A FIXED ceiling, not a fluid one, is what makes the cycling block
+           possible at all: the block beside the panel is "the rows that fit
+           next to it," so if the panel's height tracked its own contents the
+           block would resize every time the cursor moved to a taller item.
+           Panel height is the independent variable; block size follows. */
+        /* THE FOCUS PANEL'S OWN SURFACE (AG, 2026-08-06: "let's make the
+           focus panel .. 10% darker grey perhaps? That will help a lot").
+
+           EASED BACK 35% (AG, same day: "can we pull back about 30-40% from
+           the difference please? lighter that is"). The first pass was
+           #f6f8fa x 0.9 -- a literal 10% step -- landing at #dddfe1, 25
+           levels down on every channel. Giving back 9 of those 25 (35%)
+           lands here, a ~6.5% step off `--surface-muted` rather than 10%.
+
+           Kept as an absolute hex rather than a colour-mix of the two, so
+           the value a reviewer sees is the value written down; the arithmetic
+           is recorded above instead of executed at paint time.
+
+           `--surface-muted` is the reference point because that is what the
+           panel was effectively showing before (its `.detail-panel` is
+           transparent inside an inspector column by design, see the
+           .decision-tinted rule, so the column's own background is what a
+           reviewer actually sees).
+
+           Applied to the COLUMN rather than to `.detail-panel`, for that
+           same reason: tinting the panel would mean overriding a
+           transparency that exists so the decision-colour system can own
+           that element's fill. The column has no such duty, so a background
+           there is free of the palette -- which matters, because the
+           decision hues are fully allocated and a new fill on a decided
+           panel would read as a decision that was never made.
+
+           Named so the three inspector columns cannot drift, the same
+           reason --focus-panel-max is named. */
+        --focus-panel-surface: #e6e8ea;
+        --focus-panel-bottom-slack: 4rem;
+        --focus-panel-max: calc(100vh - var(--workspace-chrome-height, 8rem) - var(--focus-panel-bottom-slack));
       }
       * { box-sizing: border-box; }
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 1.75rem 2rem 3rem; color: var(--text); background: var(--surface-muted); font-size: 14px; line-height: 1.45; }
@@ -100,7 +158,68 @@
          measured --app-header-height (same measured-obstruction contract
          as RX-04; never a hard-coded constant). */
       .app-header { position: sticky; top: 0; z-index: 40; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.75rem; margin: -1.75rem -2rem 0.5rem; padding: 0.5rem 2rem; background: var(--surface-muted); border-bottom: 1px solid var(--border-soft); }
-      .app-header-left { display: flex; align-items: baseline; gap: 0.5rem; }
+      /* Actions live here now; the brand moved to the centre slot. */
+      .app-header-left { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+      .app-brand { display: flex; align-items: center; justify-content: center; gap: 0.4rem; white-space: nowrap; }
+      /* ONE AXIS FOR ALL THREE ZONES (AG, 2026-08-06: "The burger is too
+         low, the left items too high").
+         The header grid was already `align-items: center`, but each zone
+         centred its own differently-sized content: the buttons on their
+         line-height, the brand on a BASELINE (so the logo image dragged the
+         version text with it), and the hamburger on a glyph whose natural
+         line box is taller than the text beside it. Three correct centrings
+         of three different boxes do not line up.
+         Fixed by giving every item in the row the same line box -- `line-
+         height: 1` plus centred flex -- so what is centred is the same
+         height everywhere and the row reads as one line. */
+      .app-header > * { min-height: 1.9rem; }
+      /* The toolbar carried `margin-bottom: 0.9rem` from its old life as a
+         page-flow band. Inside a CENTRED grid cell that margin is part of
+         the box being centred, so it pushed the buttons up by half of it --
+         which is exactly the "left items too high" that survived the
+         line-height pass. Zeroed only in the header; the landing view still
+         renders this toolbar in the flow and still wants the gap. */
+      .app-header-left .top-bar { margin: 0; }
+      .app-header-left button, .app-header-right .app-save-status, .app-header-right .app-document-title, .app-brand { line-height: 1; }
+      /* Sized UP from the text beside it (AG: "burger is probably too small
+         too, no?"). It is an icon standing alone rather than a word in a
+         sentence, so matching the 0.85rem button text made it read as a
+         stray character. 1.15rem in a 2rem box gives it a real hit target
+         and lets it hold the right end of the line against the logo
+         holding the middle. */
+      .app-settings-button { display: inline-flex; align-items: center; justify-content: center; line-height: 1; width: 2rem; height: 2rem; padding: 0; font-size: 1.15rem; }
+      /* MODERN, NOT SEVERE (AG, 2026-08-06: "not dark filled buttons, more
+         like a modern 'add' iconish thing ... less severe maybe").
+         Ghost buttons: no fill, no border at rest, colour and a hover tint
+         doing the work. Two solid navy blocks were the heaviest ink on the
+         page and sat in the calmest band of it, which read as urgency the
+         actions do not have -- opening a file is not a commitment.
+         SCOPED TO THE HEADER on purpose: `.primary-action` is shared with
+         Sign In, the setup wizard and the admin forms, where a filled
+         button IS right because those are commitments. Restyling the class
+         would have quietly softened a submit button three screens away. */
+      .app-header-left button { border: 1px solid transparent; background: transparent; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; padding: 0.32rem 0.6rem; border-radius: 7px; transition: background-color 0.15s ease, color 0.15s ease; }
+      .app-header-left button:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+      /* "+ New" keeps the accent, as colour rather than as a slab -- it is
+         the one action here a first-time reviewer has to find. */
+      .app-header-left .primary-action { color: var(--accent); background: transparent; border-color: transparent; }
+      .app-header-left .primary-action:hover:not(:disabled) { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+      /* The document name is now a right-hand STATUS item, not the page
+         title: smaller, muted, and allowed to ellipsis hard. It sits before
+         the save state because the two read as one phrase -- which file,
+         and whether it is safe. */
+      .app-header-right .app-document-title { font-size: 0.82rem; color: var(--text-muted); max-width: 22vw; }
+      /* The version is a footnote on the wordmark, not a peer of it -- it
+         answers "which build" for a bug report and nothing else, so it
+         shrinks and mutes rather than sitting at the brand's own size. */
+      .app-brand .app-version { font-size: 0.62rem; color: var(--text-muted); letter-spacing: 0.01em; }
+      /* Nudges the filename LEFT. The right zone is flex-end aligned, so
+         widening the gap AFTER the name is what moves the name itself
+         leftward while the save state and menu stay pinned to the edge --
+         adding padding to the zone would have shifted the whole cluster
+         the wrong way. */
+      .app-header-right .app-document { margin-right: 1.1rem; }
+      .app-header-right .app-document-current { font-weight: 600; }
       .app-logo { display: block; height: 28px; width: auto; }
       .app-version { color: var(--text-muted); font-size: 0.78rem; }
       /* The document is the center of the application: largest text in
@@ -123,16 +242,23 @@
       .app-save-status.save-status-ok { color: var(--good); }
       .app-save-status.save-status-warn { color: var(--warn); font-weight: 600; }
       .app-save-status.save-status-error { color: var(--caution); font-weight: 600; }
+      .app-admin-button { border: none; background: none; padding: 0.1rem 0.3rem; color: var(--text-muted); cursor: pointer; }
+      .app-admin-button:hover { color: var(--text); border-color: transparent; }
       .app-settings-button { border: none; background: none; padding: 0.1rem 0.3rem; font-size: 1.15rem; line-height: 1; color: var(--text-muted); cursor: pointer; }
       .app-settings-button:hover { color: var(--text); border-color: transparent; }
       .app-settings-menu { position: absolute; top: calc(100% + 0.35rem); right: 0; z-index: 45; min-width: 12rem; padding: 0.3rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 20px rgba(31, 36, 48, 0.12); }
       .app-settings-item { padding: 0.35rem 0.6rem; border-radius: 5px; font-size: 0.88rem; }
       .app-settings-item-disabled { color: var(--text-muted); cursor: default; }
       .app-settings-about { border-top: 1px solid var(--border-soft); margin-top: 0.25rem; padding-top: 0.45rem; color: var(--text-muted); font-size: 0.8rem; }
-      .app-settings-exit-preview { display: block; width: 100%; text-align: left; border: none; background: none; font-weight: 400; color: var(--text); cursor: pointer; }
-      .app-settings-exit-preview:hover { background: var(--surface-muted); border-color: transparent; }
+      .app-settings-account,
+      .app-settings-admin,
+      .app-settings-sign-out { display: block; width: 100%; text-align: left; border: none; background: none; font-weight: 400; color: var(--text); cursor: pointer; }
+      .app-settings-account:hover,
+      .app-settings-admin:hover,
+      .app-settings-sign-out:hover { background: var(--surface-muted); border-color: transparent; }
       /* WORKSPACE METRICS (2026-08-02): same quiet menu-item treatment as
-         Exit Preview -- a plain interactive row, not a button chip. */
+         the Account and Sign out rows -- plain interactive rows, not button
+         chips. */
       .app-settings-metrics { display: block; width: 100%; text-align: left; border: none; background: none; font-weight: 400; color: var(--text); cursor: pointer; }
       .app-settings-metrics:hover { background: var(--surface-muted); border-color: transparent; }
 
@@ -153,20 +279,35 @@
          native submit. Every earlier "verification" read the attribute,
          not actual visibility. One line: */
       .preview-gate[hidden] { display: none; }
-      .preview-gate-card { width: min(24rem, calc(100vw - 2rem)); padding: 1.6rem 1.8rem 1.8rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.08); }
+      .preview-gate-card { width: min(30rem, calc(100vw - 2rem)); padding: 1.6rem 1.8rem 1.8rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.08); }
       .preview-gate-brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.1rem; }
       .preview-badge { border: 1px solid var(--border); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); background: var(--surface-muted); }
-      .preview-gate-heading { margin: 0 0 0.35rem; font-size: 1.25rem; }
-      .preview-gate-supporting { margin: 0 0 1.1rem; color: var(--text-muted); font-size: 0.88rem; }
+      .preview-gate-heading { margin: 0 0 1rem; font-size: 1.25rem; line-height: 1.25; }
+      .preview-gate-heading span { display: block; }
+      .preview-google { display: flex; align-items: center; justify-content: center; gap: 0.65rem; width: 100%; padding: 0.65rem 0.8rem; border-color: var(--accent); background: var(--accent); color: #fff; font-size: 0.98rem; font-weight: 700; }
+      .preview-google[hidden] { display: none; }
+      .preview-google:hover:not(:disabled) { background: #1e4a91; border-color: #1e4a91; }
+      .preview-google-mark { display: inline-flex; align-items: center; justify-content: center; width: 1.35rem; height: 1.35rem; border-radius: 999px; background: #fff; color: var(--accent); font-size: 0.86rem; font-weight: 800; }
+      .preview-auth-divider { display: flex; align-items: center; gap: 0.7rem; margin: 1rem 0 0.9rem; color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+      .preview-auth-divider[hidden] { display: none; }
+      .preview-auth-divider::before,
+      .preview-auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--border-soft); }
       .preview-gate-form { display: flex; flex-direction: column; gap: 0.8rem; }
       .preview-field { display: flex; flex-direction: column; gap: 0.25rem; }
+      .preview-field[hidden] { display: none; }
       .preview-field-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
-      .preview-field input { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
-      .preview-field input:disabled { background: var(--surface-muted); color: var(--text-muted); }
-      .preview-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-      .preview-password-invalid, .preview-field .preview-password-invalid:focus { border-color: var(--caution); box-shadow: 0 0 0 3px var(--caution-soft); }
+      .preview-field input,
+      .preview-field textarea { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+      .preview-field input:disabled,
+      .preview-field textarea:disabled { background: var(--surface-muted); color: var(--text-muted); }
+      .preview-field input:focus,
+      .preview-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
       .preview-gate-error { margin: -0.3rem 0 0; color: var(--caution); font-size: 0.85rem; font-weight: 600; }
+      .preview-gate-status { margin: -0.3rem 0 0; color: var(--good); font-size: 0.85rem; font-weight: 600; }
       .preview-submit { padding: 0.5rem 0.7rem; font-size: 0.95rem; }
+      .preview-account-switch { margin: 0.1rem 0 0; color: var(--text-muted); font-size: 0.88rem; text-align: center; }
+      .preview-link-button { border: none; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; }
+      .preview-link-button:hover { text-decoration: underline; }
       .preview-gate-shake { animation: preview-gate-shake 0.3s ease-in-out; }
       @keyframes preview-gate-shake {
         0%, 100% { transform: translateX(0); }
@@ -176,6 +317,102 @@
       }
       @media (prefers-reduced-motion: reduce) {
         .preview-gate-shake { animation: none; }
+        .setup-wizard-pill-new { animation: none; }
+      }
+      .account-panel { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(31, 36, 48, 0.22); }
+      .account-panel[hidden] { display: none; }
+      .account-panel-card { width: min(38rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.2rem 1.35rem 1.35rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 14px 40px rgba(31, 36, 48, 0.18); }
+      .account-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+      .account-panel-title { margin: 0; font-size: 1.15rem; }
+      .account-panel-subtitle { margin: 0.25rem 0 0; color: var(--text-muted); }
+      .account-panel-close { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; line-height: 1; }
+      .account-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
+      .account-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; }
+      .account-line { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-soft); }
+      .account-line span { color: var(--text-muted); }
+      .account-invite-form { display: grid; grid-template-columns: minmax(0, 1fr) 8rem auto; gap: 0.5rem; align-items: end; }
+      .account-invite-output { margin: 0.55rem 0 0; color: var(--text-muted); overflow-wrap: anywhere; }
+      .admin-panel-card { width: min(70rem, calc(100vw - 2rem)); }
+      .admin-panel-action { margin-top: 1rem; }
+      .admin-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-soft); }
+      .admin-nav-button { border: 1px solid transparent; background: transparent; color: var(--text-muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+      .admin-nav-button-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+      .admin-filters { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: end; margin-top: 1rem; }
+      .admin-filter-field { min-width: 10rem; }
+      .admin-filter-field input { width: 100%; }
+      .admin-status { margin: 0.8rem 0 0; color: var(--text-muted); }
+      .admin-status-error { color: var(--caution); font-weight: 600; }
+      .admin-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.65rem; margin-top: 1rem; }
+      .admin-metric-card { padding: 0.75rem; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-muted); }
+      .admin-metric-label { display: block; color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+      .admin-metric-value { display: block; margin-top: 0.2rem; color: var(--text); font-size: 1.35rem; font-weight: 800; }
+      .admin-table-wrap { margin-top: 1rem; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; }
+      .admin-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      .admin-table th,
+      .admin-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border-soft); text-align: left; white-space: nowrap; }
+      .admin-table th { color: var(--text-muted); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; background: var(--surface-muted); }
+      .admin-table tr:last-child td { border-bottom: none; }
+      .admin-table button { border: none; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; }
+      .admin-unavailable { color: var(--text-muted); font-style: italic; }
+      .setup-wizard { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 1.5rem; background: rgba(246, 248, 250, 0.96); }
+      .setup-wizard[hidden] { display: none; }
+      .setup-wizard-frame { width: min(64rem, calc(100vw - 3rem)); min-height: min(40rem, calc(100vh - 3rem)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 55px rgba(31, 36, 48, 0.15); }
+      .setup-wizard-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1rem; padding: 0.95rem 1.15rem; border-bottom: 1px solid var(--border-soft); background: #f3f6fb; }
+      .setup-wizard-logo { height: 26px; width: auto; }
+      .setup-wizard-progress { display: flex; align-items: center; justify-content: center; gap: 0.35rem; min-width: 0; }
+      .setup-wizard-pill { min-width: 0; border: 1px solid transparent; border-radius: 999px; padding: 0.25rem 0.55rem; color: var(--text-muted); background: transparent; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+      .setup-wizard-pill-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+      .setup-wizard-close { border: none; background: none; padding: 0.1rem 0.3rem; color: var(--text-muted); font-size: 1.35rem; line-height: 1; }
+      .setup-wizard-body { flex: 1; min-height: 0; padding: 2rem 2.4rem; background: var(--surface); overflow: auto; }
+      .setup-wizard-step { max-width: 58rem; }
+      .setup-wizard-step[hidden] { display: none; }
+      .setup-wizard-step h2 { max-width: 34rem; margin: 0; font-size: 2rem; line-height: 1.12; }
+      .setup-wizard-copy { max-width: 34rem; margin: 0.85rem 0 0; color: var(--text-muted); font-size: 1rem; line-height: 1.55; }
+      .setup-welcome-center { min-height: 24rem; display: grid; place-items: center; text-align: center; }
+      .setup-welcome-center h2,
+      .setup-welcome-center .setup-wizard-copy { margin-inline: auto; }
+      .setup-welcome-center h2 { font-size: 2.25rem; }
+      .setup-welcome-center .setup-wizard-copy { font-size: 1.08rem; }
+      .setup-wizard-pill-new { animation: setup-pill-enter 0.22s ease-out; }
+      @keyframes setup-pill-enter {
+        from { opacity: 0; transform: translateY(-0.25rem); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .setup-profile-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 0.9rem; margin-top: 1.35rem; max-width: 48rem; }
+      .setup-profile-form .preview-field input,
+      .setup-profile-form .preview-field textarea { min-height: 2.35rem; }
+      .setup-field-wide { grid-column: 1 / -1; }
+      .setup-invite-copy { margin: 0.55rem 0 0; color: var(--text-muted); font-size: 0.95rem; }
+      .setup-invite-table { display: grid; gap: 0.45rem; margin-top: 1.35rem; max-width: 48rem; }
+      .setup-invite-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 0.65rem; align-items: end; }
+      .setup-invite-head { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+      .setup-invite-row input { font: inherit; width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+      .setup-invite-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .setup-invite-add { justify-self: start; margin-top: 0.35rem; }
+      .setup-invite-error { margin: 0.65rem 0 0; color: var(--caution); font-size: 0.88rem; font-weight: 600; }
+      .setup-ready-center { min-height: 24rem; display: grid; place-items: center; text-align: center; }
+      .setup-ready-center h2 { margin-inline: auto; }
+      .setup-start-button { margin-top: 1.3rem; padding: 0.85rem 1.4rem; border-radius: 8px; font-size: 1.08rem; }
+      .setup-ready-invite { display: block; margin-top: 1rem; }
+      .setup-ready-invite:disabled { color: var(--text-muted); text-decoration: none; opacity: 0.65; cursor: default; }
+      .setup-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.85rem 1.15rem; border-top: 1px solid var(--border-soft); background: var(--surface); }
+      .setup-wizard-footer-left,
+      .setup-wizard-footer-right { display: flex; align-items: center; gap: 0.55rem; }
+      .setup-wizard-note { color: var(--text-muted); font-size: 0.82rem; }
+      .setup-wizard-next { min-width: 8rem; padding: 0.45rem 0.8rem; }
+      @media (max-width: 760px) {
+        .setup-wizard { padding: 0.75rem; }
+        .setup-wizard-frame { width: calc(100vw - 1.5rem); min-height: calc(100vh - 1.5rem); }
+        .setup-wizard-header { grid-template-columns: 1fr auto; }
+        .setup-wizard-progress { grid-column: 1 / -1; justify-content: flex-start; overflow-x: auto; }
+        .setup-wizard-body { padding: 1.4rem; }
+        .setup-profile-form { grid-template-columns: minmax(0, 1fr); }
+        .setup-invite-row { grid-template-columns: minmax(0, 1fr); }
+        .setup-invite-head { display: none; }
+        .setup-field-wide { grid-column: auto; }
+        .setup-wizard-footer { align-items: stretch; flex-direction: column; }
+        .setup-wizard-footer-left,
+        .setup-wizard-footer-right { justify-content: space-between; }
       }
       /* 2026-07-30 feature spec, visual weight pass: "buttons larger, bold
          text that fills most of the smaller button size" -- heavier weight
@@ -210,10 +447,45 @@
          color communicating status quietly (the existing muted
          good/warn/caution hues -- subtle and professional, not
          dashboard-saturated). */
-      .review-status { display: flex; align-items: flex-end; gap: 2.2rem; margin: 0.2rem 0 0.65rem; }
-      .review-status-item { display: flex; flex-direction: column; gap: 0.05rem; }
-      .review-status-label { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-      .review-status-value { font-size: 1.45rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+      /* STRIP ALIGNMENT (AG, 2026-08-06): "the percentages and counts on
+         left are not horizontally aligned."
+
+         THE CAUSE was not the order of label and value -- it was that
+         Review Status (label + value, 2 lines) and the Decision Tracker
+         (title + value + label, 3 lines) were two INDEPENDENT boxes
+         bottom-aligned to each other. Bottom alignment made the tracker's
+         LABEL row line up with the scores' VALUE row, so the two sets of
+         numbers sat a line apart. Andrew's fix -- move the score labels
+         below their values -- is right, and this adds the half that makes
+         it stay right: the panels no longer agree by coincidence.
+
+         THREE SHARED ROW HEIGHTS, declared once here, are what align the
+         strip. Every panel is top-aligned and reserves the same title row
+         (whether or not it draws a title) and the same value row (whatever
+         font size its value uses), so the value figures share a baseline
+         and the labels beneath them share a baseline -- BY CONSTRUCTION,
+         at any width, however either panel's contents change. That last
+         property is the point: the tracker is about to gain a permanently
+         reserved fourth figure, and a coincidental alignment would have
+         broken again the moment it did.
+
+         The value row is a fixed-height box with its content bottom-set,
+         which is what lets the scores stay at 1.45rem and the tracker's
+         figures stay at 1.3rem -- both deliberate, separately reasoned
+         sizes (see each panel's own note) -- while still sharing a
+         baseline. Aligning by unifying the font size would have quietly
+         discarded one of those two decisions. */
+      .review-status {
+        width: 100%;
+        --metric-title-row: 0.95rem;   /* reserved for a panel title, drawn or not */
+        --metric-value-row: 1.7rem;    /* the figure's line box, any font size */
+        --metric-label-size: 0.7rem;   /* one label size across both panels */
+        display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.35rem 2.2rem; margin: 0.2rem 0 0.65rem;
+      }
+      /* Reserves the title row the tracker beside it actually draws. */
+      .review-status-item { display: flex; flex-direction: column; padding-top: var(--metric-title-row); }
+      .review-status-label { color: var(--text-muted); font-size: var(--metric-label-size); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+      .review-status-value { display: flex; align-items: flex-end; height: var(--metric-value-row); font-size: 1.45rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
       /* 2026-08-03: document scores are a MEASUREMENT, same as confidence
          -- so they speak in depth of ink rather than borrowing the
          decision hues. A red "score-low" figure in the status region was
@@ -222,6 +494,13 @@
       .review-status-value.score-low { color: var(--text-muted); text-decoration: underline dotted currentColor; text-underline-offset: 0.18em; }
       .review-status-value.score-mid { color: var(--text-muted); }
       .review-status-value.score-high { color: var(--text); }
+      /* RESTING FIGURE (AG, 2026-08-06): an exact zero is the ABSENCE of a
+         score, not a low one, so it drops the dotted underline that marks
+         "measured, and low." Without this a fresh document's 0% carries a
+         diagnostic mark about a measurement that has not happened. See
+         metrics/percentDisplay.ts for why grey has to mean exactly this
+         and nothing else. */
+      .review-status-value.score-none { color: var(--text-muted); text-decoration: none; opacity: 0.55; }
       /* DECISION TRACKER (AG, 2026-08-03): the panel that answers "how much
          have I completed, and how much repetitive work did DocScrub
          eliminate." It sits in the same strip as Extraction/Review/Overall
@@ -240,31 +519,103 @@
          why a completion color would misdescribe these numbers. Tabular
          figures so the row doesn't jitter as digits change under the
          reviewer's eye, which matters here more than anywhere else in the
-         app: this panel is meant to be watched. */
-      .decision-tracker { display: flex; flex-direction: column; gap: 0.1rem; padding-left: 1.6rem; border-left: 1px solid var(--border); align-self: stretch; justify-content: flex-end; }
-      .decision-tracker-title { color: var(--text-muted); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-      .decision-tracker-row { display: flex; align-items: flex-end; gap: 1.35rem; }
-      .decision-tracker-cell { display: flex; flex-direction: column; align-items: center; gap: 0.02rem; }
-      .decision-tracker-value { font-size: 1.3rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text); }
-      .decision-tracker-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-      /* TIME SAVED: number at the same size as the other three, with its
-         phrase beside it rather than beneath, vertically centred and free
-         to wrap to two lines. The different SHAPE is the signal -- this is
-         the one modeled figure among three exact counts, and it should not
-         read as a fourth measurement of the same kind. The phrase is
-         width-capped so it wraps predictably instead of stretching the
-         strip. */
-      .decision-tracker-time { flex-direction: row; align-items: center; gap: 0.4rem; }
-      .decision-tracker-time-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; line-height: 1.2; max-width: 6.2rem; white-space: normal; }
-      .decision-tracker-info { background: none; border: 0; padding: 0; margin: 0; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; line-height: 0; opacity: 0.75; }
+         app: this panel is meant to be watched.
+
+         2026-08-06: the title is CENTRED over the figures it heads (Andrew:
+         "having the title centred would help"), the panel is top-aligned
+         into the strip's shared row heights above rather than bottom-
+         aligned against its neighbours, and the fourth figure is now
+         permanently present -- see .decision-tracker-time below. */
+      /* CENTRED AND SECONDARY (AG, 2026-08-06: "Make Decision tracker
+         centered under the docscrub logo and smaller fonts/numbers to make
+         it secondary").
+         The auto margins centre it in the status band while the three
+         Review Status scores stay hard left, which puts it under the
+         wordmark. The divider rule goes with the move -- it existed to
+         separate two panels sitting shoulder to shoulder, and a centred
+         panel with air on both sides separates itself.
+         It reads as secondary now because the SCORES did not shrink: this
+         panel's figures drop below theirs, so the eye lands on review
+         progress first and on decision volume second. That ordering is the
+         point -- the tracker counts what has been done, the scores say how
+         much is left, and only one of those is the reviewer's next move. */
+      .decision-tracker { position: relative; display: flex; flex-direction: column; margin: 0 auto; padding-left: 0; border-left: none; }
+      /* line-height PINNED TO THE ROW HEIGHT rather than left at the
+         inherited default: the reserved title row is only ~1rem tall, and
+         a default line box for this font size lands within a hair of it.
+         Setting both makes the title exactly fill the row it reserves, so
+         it can neither clip nor bleed into the value row beneath -- the
+         one thing that would break the alignment this row height exists to
+         guarantee. */
+      .decision-tracker-title { height: var(--metric-title-row); line-height: var(--metric-title-row); text-align: center; color: var(--text-muted); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .decision-tracker-row { display: flex; align-items: flex-start; gap: 1.1rem; }
+      .decision-tracker-cell { display: flex; flex-direction: column; align-items: center; }
+      .decision-tracker-value { display: flex; align-items: flex-end; height: var(--metric-value-row); font-size: 0.98rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text); }
+      .decision-tracker-label { color: var(--text-muted); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: center; }
+      /* RESTING FIGURE (AG, 2026-08-06): "any item that is at 0 because
+         there is no data gets a muted grey color." These four were the
+         only confident-black figures in the strip, so on a freshly opened
+         document the loudest numbers in the header were the ones with the
+         least behind them. Muted while resting, full ink the moment they
+         mean something -- which also gives the panel a visible waking-up
+         as the first decisions land. The rule itself (and why a displayed
+         "0%" must therefore mean EXACTLY zero) lives in
+         metrics/percentDisplay.ts. */
+      .decision-tracker-value.metric-resting { color: var(--text-muted); opacity: 0.55; }
+      .decision-tracker-cell.metric-resting .decision-tracker-label,
+      .decision-tracker-cell.metric-resting .decision-tracker-time-label { opacity: 0.7; }
+      /* TIME AVOIDED (AG, 2026-08-03; reshaped 2026-08-06).
+         ORIGINALLY this cell was laid out sideways -- number with its
+         phrase beside it -- so that its different SHAPE would signal "this
+         one is modeled, the other three are counted."
+         THAT SIGNAL NOW MOVES TO THE `~` PREFIX, and the cell takes the
+         same value-over-label shape as its neighbours. Two reasons, both
+         Andrew's: the sideways cell's two-line wrapping phrase was the
+         single thing most able to change the panel's height, which is what
+         the strip's shared row heights above exist to prevent; and the
+         figure is now permanently present rather than appearing mid-
+         session, so a shape that differs from its neighbours reads as
+         misalignment rather than as meaning. The tilde says "estimate" in
+         the same channel percentDisplay.ts already uses for "not exactly
+         this," and the ⓘ control beside it still opens the full account.
+         The label is the UNIT ONLY ("MINUTES AVOIDED") rather than the
+         phrase, so it fits a stacked cell without wrapping -- "avoided"
+         stays, and stays load-bearing (verify/decision-reduction-
+         verification.ts enforces that this figure never says "saved"). */
+      .decision-tracker-time { flex-direction: row; align-items: flex-start; gap: 0.25rem; }
+      .decision-tracker-time-figure { display: flex; flex-direction: column; align-items: center; }
+      .decision-tracker-time-label { color: var(--text-muted); font-size: var(--metric-label-size); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: center; white-space: nowrap; }
+      /* Sits beside the figure, not beside the cell -- nudged down to the
+         value row's optical centre so it reads as annotating the number
+         rather than floating above the panel. */
+      .decision-tracker-info { background: none; border: 0; padding: 0; margin: calc(var(--metric-value-row) * 0.28) 0 0; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; line-height: 0; opacity: 0.75; }
       .decision-tracker-info:hover, .decision-tracker-info:focus-visible { color: var(--text); opacity: 1; }
-      /* The explanation opens beneath the panel, in the flow -- not a
-         floating layer. Constrained so it reads as a paragraph rather than
-         spanning the whole window. */
-      .decision-tracker-note { margin-top: 0.45rem; max-width: 34rem; color: var(--text-muted); font-size: 0.72rem; line-height: 1.45; }
+      /* INFORMATION POPOVER (AG, 2026-08-09): the Decision Tracker's
+         explanatory copy is substantial enough to need click-open dialog
+         semantics, but it remains peripheral chrome rather than part of
+         the review keyboard grammar. Absolute placement keeps the headline
+         metrics permanently visible and prevents the sticky chrome from
+         changing height when the reviewer opens the account. */
+      .decision-tracker-note { position: absolute; top: calc(100% + 0.5rem); left: 50%; z-index: 60; width: min(34rem, calc(100vw - 3rem)); transform: translateX(-50%); padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 28px rgba(31, 36, 48, 0.16); color: var(--text-muted); font-size: 0.72rem; line-height: 1.45; }
       .decision-tracker-note p { margin: 0 0 0.4rem; }
       .decision-tracker-note p:last-child { margin-bottom: 0; }
-      .review-status-diagnostic { flex: 1; min-width: 0; align-self: center; white-space: pre-line; text-align: right; font-size: 0.72rem; line-height: 1.35; color: var(--text-muted); }
+      /* SCORE-CHANGE DIAGNOSTIC -- the temporary dev explanation ("8
+         ambiguities back to unresolved").
+         WIDTH FLOOR (AG, 2026-08-06): `flex: 1; min-width: 0` let this be
+         squeezed to a few characters at narrower viewports, at which point
+         it wrapped to ONE WORD PER LINE and grew the whole status strip to
+         eight lines tall -- which then dragged the Decision Tracker down
+         with it (Andrew's shot 5). `min-width: 0` on a flex child is the
+         standard cure for the OPPOSITE problem (a child refusing to shrink
+         below its content); here it removed the only thing stopping a
+         prose paragraph from being crushed into a column.
+         With a floor plus `flex-wrap` on the strip, the diagnostic instead
+         DROPS TO ITS OWN LINE when there is no room for it -- the strip
+         grows by exactly one line rather than by seven, and nothing above
+         it moves. Growing gracefully is available to this element and to
+         nothing else in the strip, which is why it is the one that
+         wraps. */
+      .review-status-diagnostic { flex: 1 1 15rem; min-width: 15rem; margin-left: auto; align-self: center; white-space: pre-line; text-align: right; font-size: 0.72rem; line-height: 1.35; color: var(--text-muted); }
       /* The LOCAL Decision Reduction equation -- "23 / 418 = 395 decisions
          avoided" -- on section headings, tier headings, type cards, the
          Group Check toolbar and the Item Check bulk bar. Quiet by design:
@@ -292,7 +643,7 @@
       .stage-tabs { display: flex; gap: 0.3rem; margin-bottom: 0; width: 100%; position: relative; z-index: 2; }
       .stage-tabs .tab { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.45rem 0.5rem; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--text-muted); }
       .stage-tabs .tab:hover:not(.tab-active) { border-color: var(--border-soft); }
-      .stage-tabs .tab.tab-active { background: var(--surface-canvas); border-color: var(--border); color: var(--accent); font-weight: 600; margin-bottom: -1px; box-shadow: inset 0 2px 0 var(--accent); }
+      .stage-tabs .tab.tab-active { position: relative; z-index: 3; background: var(--surface-canvas); border-color: var(--border); color: var(--accent); font-weight: 600; margin-bottom: -1px; box-shadow: inset 0 2px 0 var(--accent); }
       /* FINISHED STAGE (AG, 2026-08-03): green, with the check replacing
          the fraction. Same --good the section headings and done rows
          already use -- a finished tab is not a new state needing a new
@@ -325,7 +676,18 @@
          of the contained workspace surface -- no top border/radius (the
          sticky workspace-top band above supplies that edge), so band +
          body read as one panel the active tab terminates into. */
-      .stage-body { background: var(--surface-canvas); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.9rem 1rem; }
+      /* FLAT STAGE BODY (AG, 2026-08-06: "I would like for there to be no
+         border here and for the bckg color to be the same as the main
+         background on the page. That will help soften the category/panel
+         differential").
+         The stage body was a bordered canvas panel, so the category sat in
+         a box inside a box inside the page. `transparent` rather than
+         naming a token on purpose: it then IS the page background by
+         construction and cannot drift from it if that token is ever
+         retuned -- the same failure the row banding hit when it was set to
+         --surface-muted and disappeared into the page. Padding stays; it
+         is doing spacing work, not decoration. */
+      .stage-body { background: transparent; border: none; border-radius: 0 0 8px 8px; padding: 0.9rem 1rem; }
       .view-toggle { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; }
       /* TYPE CHECK STAGE (PHASE 2, AG 2026-08-02): "display each type as a
          clean card ... keep the interface visually calm. Make each
@@ -534,7 +896,12 @@
          scrollIntoView aims at the true top of the row and the sticky
          chrome covers the very row it just brought into view -- the exact
          obstruction RX-04 measures this variable for. */
-      .item-row, .type-member-row { scroll-margin-top: calc(var(--workspace-chrome-height) + 0.4rem); }
+      /* `.triage-section` joined this rule (AG, 2026-08-06) when the section
+         SNAP made a section heading a scroll target for the first time --
+         same reason `.type-member-row` joined it: without a margin the
+         heading arrives underneath the sticky chrome, which is the exact
+         cut-off the snap exists to prevent. */
+      .item-row, .type-member-row, .triage-section { scroll-margin-top: calc(var(--workspace-chrome-height) + 0.4rem); }
       /* RX-04: everything between the top bar and the stage body -- file
          line, persistence status, banners, statistics, warnings, stage
          tabs, command bar -- sticks as one unit so tabs and the command
@@ -585,6 +952,18 @@
         30% { box-shadow: 0 0 0 4px var(--decision-tint, var(--good-soft)); transform: scale(1.012); }
         100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
       }
+      /* Bulk-action completion feedback (2026-08-08): category completion
+         uses the existing acknowledgement pulse, locked to the completion
+         hue. This is intentionally a preset over the shared pulse language,
+         not a second animation grammar. */
+      .completion-acknowledged {
+        --decision-hue: var(--good);
+        --decision-tint: var(--good-soft);
+        --decision-border: #bfe3cc;
+        border-color: var(--decision-border);
+        background: var(--decision-tint);
+        animation: row-acknowledged-pulse 0.7s ease-out;
+      }
       .ack-badge { display: inline-flex; align-items: center; color: var(--decision-hue, var(--good)); font-weight: 600; font-size: 0.82rem; }
       .not-quite-panel { margin: 0.4rem 0 0.6rem 1.5rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); }
       .verification-report { margin-top: 1rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; }
@@ -623,6 +1002,15 @@
 
       /* CandidateDetailPanel (Milestone 1, Phase 1) */
       .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.78rem; font-weight: 600; background: var(--surface-muted); color: var(--text-muted); }
+      /* REVIEW NECESSITY (AG, 2026-08-10). DELIBERATELY NO NEW COLOUR: the
+         unified decision colour system's palette is fully allocated, and
+         "Unlikely" is triage, not a decision -- giving it a hue would put it
+         in the same visual language as Keep/Redact/Ignore, which is exactly
+         the "same colour, different meaning" problem that system exists to
+         prevent. It is distinguished by weight and a dashed border only. */
+      .badge-unlikely { border-style: dashed; font-weight: 500; letter-spacing: 0.02em; }
+      .badge-unlikely-reason { border-style: dashed; font-weight: 400; opacity: 0.8; }
+      .item-check-unlikely-notice { font-size: 0.82rem; color: var(--text-muted); padding: 0.25rem 0 0.35rem; }
       /* CONFIDENCE IS A MEASUREMENT, NOT A DECISION (AG, 2026-08-03,
          unified decision color system). These bands used to be
          --good/--warn/--caution, which meant a 72%-confidence badge
@@ -811,16 +1199,21 @@
          gaps; the card should read like a taller sibling of a triage row,
          not a document. */
       .relationship-card { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0.15rem; padding: 0.4rem 0.55rem; }
-      /* UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03): same eviction as
-         .triage-row-done -- an addressed card used to go green regardless
-         of what was actually decided on it. It now wears the dominant
-         decision of its own members (plus pills for the others, since a
-         relationship card is by definition multi-candidate and is exactly
-         the case the pills exist for). The class survives because
-         app.ts's advanceToNextRelationshipCard() queries it to find the
-         next UNaddressed card -- it is load-bearing for navigation, not
-         just styling, so it keeps its name and loses only its color. */
+      /* UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03), narrowed by the
+         completed-cell rule below (AG, 2026-08-08): relationship cards still
+         compute and expose their member decision summary, but an addressed
+         card's outer cell chrome speaks the same completion-green language
+         as singleton rows. The class survives because app.ts's
+         advanceToNextRelationshipCard() queries it to find the next
+         UNaddressed card -- it is load-bearing for navigation, not just
+         styling. */
       .relationship-card-addressed { border-color: var(--decision-border, var(--good)); }
+      .relationship-card-dismissed {
+        color: var(--text-muted);
+        background: #f1f3f5;
+        border-color: var(--border-soft);
+      }
+      .relationship-dismissed-label { font-weight: 700; color: var(--text-muted); }
       /* AG (2026-07-30): the whole title/button line -- kind label,
          keycap accelerators, Keep/Change/Redact/Unrelated -- stays on ONE
          horizontal row; the card sizes to its content instead (fewer
@@ -959,12 +1352,13 @@
       .why-view > summary { cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.85rem; }
       /* Refinement (2026-07-30): detector confidence is disclosed inside
          Why?, not headlined -- a quiet line, deliberately unlike a pill. */
-      /* CONFIDENCE, TOP RIGHT (AG, 2026-08-04). `margin-left: auto` pushes
-         it to the corner past the badges; tabular numerals so the figure
-         does not shift width as the reviewer moves between items. It
-         inherits the .confidence-high/mid/low ink ramp rather than a hue --
-         see app.ts for why the hue is deliberately still open. */
-      .detail-confidence { margin-left: auto; flex-shrink: 0; font-size: 0.85rem; white-space: nowrap; }
+      /* CONFIDENCE, TOP RIGHT (AG, 2026-08-04). Header-mode keeps this at
+         the far right as the only status on the title line (Andrew,
+         2026-08-08); Esc moved down to the action row where it belongs.
+         It inherits the .confidence-high/mid/low ink ramp rather than a hue
+         -- see app.ts for why the hue is deliberately still open. */
+      .detail-title-status { margin-left: auto; display: inline-flex; align-items: center; justify-content: flex-end; flex-shrink: 0; white-space: nowrap; }
+      .detail-confidence { flex-shrink: 0; font-size: 0.85rem; white-space: nowrap; }
 
       /* SIGNED EVIDENCE LIST (AG, 2026-08-04) -- replaces the run-on "because
          X and Y, but Z" paragraph with the polarity made visual. The sign is
@@ -974,17 +1368,17 @@
          allocated (see app.ts's unified colour system notes). Green here
          would read as "Keep". Ink depth separates them instead, which is the
          same device confidence uses two lines above. */
-      /* THE VERDICT IS THE HEADLINE, "Why?" IS THE DOOR (AG, 2026-08-04).
-         The size relationship is inverted from what it was: the disclosure
-         affordance shrinks to a small muted marker and the conclusion takes
-         the line. Both live in the <summary>, so the verdict survives the
-         reviewer collapsing the section -- `list-style: none` + the flex
-         row replace the default marker layout, which cannot align a
-         two-part summary. */
-      .why-summary { display: flex; align-items: baseline; gap: 0.5rem; cursor: pointer; list-style: none; }
+      /* THE VERDICT IS THE DISCLOSURE (AG, 2026-08-08): no "Why?" label.
+         The sentence is the click target and the larger caret moves to the
+         right, so the expand/collapse affordance is visible without spending
+         a word on it. Overrides the global details marker rule above. */
+      .why-summary { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; list-style: none; }
       .why-summary::-webkit-details-marker { display: none; }
-      .why-label { color: var(--text-muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; flex-shrink: 0; }
+      .why-view > .why-summary::before,
+      .why-view[open] > .why-summary::before { content: none; display: none; }
       .detail-verdict { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; }
+      .why-caret::before { content: "▸"; display: inline-block; color: var(--text-muted); font-size: 1.35rem; font-weight: 800; line-height: 1; transform: translateY(0.02em); }
+      .why-view[open] .why-caret::before { content: "▾"; }
       /* INLINE FLOW, not one line per item (AG). Wrapping chips mean the
          line count follows the panel WIDTH rather than the evidence count,
          which is what keeps six pieces of evidence from costing six lines
@@ -1105,7 +1499,108 @@
          the opposite emphasis. A fully-complete category goes green
          (existing completion palette), so the page visibly turns green
          as review progresses and the eye hunts remaining categories. */
-      .triage-section-heading { margin-bottom: 0.4rem; }
+      /* THE WORK REGION (AG, 2026-08-06: "a subtle border closing in the top
+         green buttons and the item list to distinguish them from the focus
+         panel and emphasize the green buttons will act upon the item list").
+
+         The buttons and the list are the same object -- one acts on the
+         other -- but they were three separate floating clusters, so nothing
+         said the green bar governed the column on the right rather than the
+         panel on the left. This draws that relationship.
+
+         THE SHAPE IS A FLAG, NOT A BOX, because the button strip spans the
+         full width while the list occupies only the right column: the
+         outline runs across the top, down to the grid's left edge, then down
+         the side of the list and closes underneath it. The notch is where
+         the focus panel sits, deliberately outside.
+
+         Built from two borders plus one pseudo-element rather than by moving
+         the buttons into the right column. Moving them was the obvious
+         alternative and is rejected: at ~40% width those three labels wrap
+         to two or three lines, which spends vertical height (explicitly not
+         wanted) to buy a rectangle.
+
+         The bottom-left segment lands at `calc(60% + 0.3rem)`, which is the
+         grid column's true start, derived rather than eyeballed:
+         `.triage-split` is `3fr 2fr` with a 0.75rem gap, so the right track
+         begins at 0.6 x (100% - gap) + gap = 60% + 0.4 x gap. Both elements
+         are full-width children of the same section, so the percentage
+         resolves against the same box for each.
+
+         NO HEIGHT IS SPENT. The heading's 0.4rem bottom margin moves inside
+         the enclosure as padding -- the same gap, now enclosed, so the
+         region reads as one object without the section growing. */
+      .triage-section-heading { margin-bottom: 0; }
+      /* GREEN BUTTONS RIGHT-ALIGNED (AG, 2026-08-06). The title, progress
+         and reduction figure stay left; the actions push to the far right,
+         which puts them directly above the list column they act on and
+         reinforces the enclosure below.
+
+         `margin-left: auto` on the FIRST action only -- the rest follow it
+         as one cluster on the title line's own 0.6rem gap. Selecting "first"
+         via `:not(.triage-accept-all ~ .triage-accept-all)` rather than
+         `:first-of-type`, because the actions are appended as plain siblings
+         alongside a selection checkbox and whatever else the heading carries;
+         `:first-of-type` would mean "first <button>", which is not
+         necessarily the first ACTION and would silently pick the wrong
+         element the moment another button joins the line ahead of them.
+
+         Wrapping still behaves: if the line wraps, the auto margin right-
+         aligns the cluster on its own row rather than stranding it. */
+      .triage-section-titleline > .triage-accept-all:not(.triage-accept-all ~ .triage-accept-all) { margin-left: auto; }
+      .triage-section-titleline {
+        position: relative;
+        padding: 0.45rem 0.6rem 0.4rem;
+        border: 1px solid var(--border-soft);
+        border-bottom: none;
+        border-radius: 8px 8px 0 0;
+        background: var(--surface-muted);
+      }
+      /* CLOSED BY DEFAULT, NOTCHED ONLY WHEN THERE IS SOMETHING TO NOTCH
+         AROUND. A section renders its grid inside `.triage-split` only when
+         it has a focus panel to sit beside -- with no panel open (and under
+         a workspace inspector, which takes the panels away entirely) the
+         grid is a direct child of the section and spans the full width. So
+         the full bottom border is the base state, and `:has()` cuts it back
+         only for the arrangement that actually has a panel in the way.
+
+         Base-state-as-fallback is the point of the ordering: a browser
+         without `:has()` gets a closed strip above a full-width list, which
+         is a coherent object, rather than a border that stops in the middle
+         of nothing. */
+      .triage-section-titleline::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -1px;
+        width: 100%;
+        height: 1px;
+        background: var(--border-soft);
+      }
+      .triage-grid {
+        padding: 0.4rem 0.5rem 0.5rem;
+        border: 1px solid var(--border-soft);
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        background: var(--surface-muted);
+      }
+      @media (min-width: 1240px) {
+        .triage-section:has(> .triage-split) .triage-section-titleline::after { width: calc(60% + 0.3rem); }
+      }
+      /* Stacked below the split's breakpoint: the panel sits ABOVE the list
+         rather than beside it, so the list is no longer touching the strip
+         and cannot borrow its bottom edge -- it becomes a card of its own. */
+      @media (max-width: 1239.98px) {
+        .triage-split > .triage-grid { border-top: 1px solid var(--border-soft); border-radius: 8px; }
+        /* Item Check's active grid is one level deeper -- it sits inside
+           `.scope-queue` within the split -- so the stacked-state card
+           treatment needs its own selector (2026-08-09). */
+        .scope-split > .scope-queue > .triage-grid { border-top: 1px solid var(--border-soft); border-radius: 8px; }
+      }
+      /* The continuation queue is outside the initial focus-pane/active-zone
+         region, but it is not a separate semantic section. Keep it visually
+         quiet and let it use the full page width below both columns. */
+      .zone-rest > .triage-grid { border: none; border-radius: 0; background: none; padding: 0; }
       /* WRAPPING TITLE LINE (AG, 2026-08-03, taken globally by decision):
          this line was `nowrap`, which meant a heading whose green actions
          outgrew the width compressed its own TITLE and count -- the two
@@ -1133,6 +1628,10 @@
       .triage-accept-all { margin-left: 0.75rem; font-size: 0.82rem; padding: 0.15rem 0.6rem; border-color: var(--good); color: var(--good); font-weight: 600; }
       .triage-accept-all:hover:not(:disabled) { background: var(--good-soft); }
       .triage-accept-all ~ .triage-accept-all { margin-left: 0; }
+      .reset-confirmation { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--caution); background: var(--caution-soft); color: var(--text); border-radius: 0.35rem; padding: 0.2rem 0.35rem; font-size: 0.82rem; }
+      .reset-confirmation-copy { font-weight: 600; }
+      .reset-confirmation button { font-size: 0.78rem; padding: 0.12rem 0.45rem; }
+      .reset-confirmation .reset-confirm { border-color: var(--caution); color: var(--caution); font-weight: 700; }
       /* SECTION-ACTION DIGITS (AG, 2026-08-02): a numbered section button
          is built by the shared keycapButton, which also carries
          `.preferred-action` -- whose keycap is the blue ACCENT treatment.
@@ -1152,8 +1651,218 @@
       .review-tier-heading.triage-section-complete .review-tier-title { color: var(--good); }
       /* Category-first: items resemble spreadsheet cells, not cards --
          tighter grid, flatter cells. */
-      .triage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.25rem; }
-      .triage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; min-width: 0; padding: 0.18rem 0.45rem; border: 1px solid var(--border-soft); border-radius: 3px; background: var(--surface); font-size: 0.92rem; cursor: pointer; transition: background-color 0.3s ease, border-color 0.3s ease; }
+      /* ZONE GRID (AG, 2026-08-06), tuned live in the browser against the real
+         document. Cell metrics are Type Check's -- Andrew: "the cells could use
+         sizing/spacing more like Type check's, plus the alternating row
+         coloration" -- so the two surfaces stop looking like different apps.
+
+         THE TRACK IS FIXED, NOT FLUID. `minmax(0, 34rem)` rather than `1fr`:
+         "we don't have to resize horizontally." A cell holding a short label
+         has no business stretching to 1600px, and a fixed track means the
+         list looks the same at any window width.
+
+         ONE COLUMN TO 14, TWO FROM 15 -- see syncZoneGridLayout(), which sets
+         `.zone-two-col` and `--zone-rows` from the child count. The second
+         column is `grid-auto-flow: column`, which is what makes 23 read as
+         12 down + 11 down rather than as interleaved pairs. */
+      /* SECTION PILLS (AG, 2026-08-06) -- "a new permanent layer." Inside the
+         sticky chrome, so they ride along with it and are already counted in
+         --workspace-chrome-height (which is what keeps the section snap
+         landing in the right place without a second measurement).
+         Wrapping rather than scrolling horizontally: a hidden pill is a
+         hidden section, and this bar exists to say what the stage contains. */
+      /* A SEGMENTED HEADING, NOT A ROW OF BUTTONS (AG, 2026-08-06: "The
+         categories become labels, not controls ... note the second
+         screenshot shows how visually disruptive the current buttons are").
+         Eight bordered, filled chips read as eight competing controls and
+         out-shouted the review list they exist to label. The bar now reads
+         as one object -- a single tinted track -- and the ITEMS inside it
+         are plain text until one is chosen. Chrome went from 8 borders + 8
+         fills to 1 fill. */
+      .section-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; margin: 0.4rem 0 0.2rem; padding: 0.25rem 0.5rem; background: var(--surface-muted); border-radius: 999px; }
+      /* STAGE-OWNED SECTION NAV (AG, 2026-08-08): stages that expose the
+         permanent category/section strip need one structural fact drawn:
+         the active stage tab owns the secondary navigation immediately
+         below it. This is intentionally a treatment of the EXISTING row,
+         not a new panel and not a new navigation model. The active tab's
+         existing -1px overlap sits above this top border, so the border
+         continues left and right of the tab without slicing underneath it.
+         The pills keep their text/control styling; only their shared row
+         changes from a soft track to a light folder-tab enclosure. The row
+         stays unfilled so the outline explains hierarchy without turning
+         the nav into another content card. */
+      .workspace-chrome-stage-sections .section-pills {
+        margin: 0 0 0.2rem;
+        padding: 0.55rem 0.65rem 0.45rem;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 0 0 8px 8px;
+      }
+      /* No background and no border on an inactive item -- only the
+         selected one is drawn. Vertical padding is the generous end of
+         Andrew's 8-12px so they breathe; horizontal is wider still, which
+         is what separates them now that no border does. */
+      /* SUBORDINATE TO THE STAGE TABS (AG, 2026-08-06: "make the categories
+         ... smaller relative to the larger section titles above. Smaller
+         fonts. Not tiny, but noticeably subordinate").
+
+         They were 0.9rem/600 against tabs at 1rem/600 -- a 10% size gap and
+         IDENTICAL weight, which is why "Shortened Names" read as a peer of
+         "Group Check" rather than as something inside it. Weight was doing
+         most of the shouting, so most of the correction is there: 600 -> 500
+         against the tabs' 600, with the size stepping to 0.82rem.
+
+         0.82rem is not an arbitrary shrink -- it is the size `.app-save-status`
+         and `.type-card-counts` already use for exactly this "present, but a
+         level down" role, so the hierarchy is the app's existing one rather
+         than a third scale invented here.
+
+         Padding deliberately UNCHANGED. 0.6rem is inside the 8-12px vertical
+         range Andrew specified for these, and the generous target is what
+         separates the items now that they carry no borders -- shrinking the
+         type is a hierarchy change, shrinking the hit area would be a
+         usability one.
+
+         HEIGHT HELD, NOT JUST PADDING (AG, 2026-08-06: "but not much closer
+         up. don't lose vertical height as a result of this to squish
+         things"). Leaving the padding alone is NOT sufficient on its own --
+         a pill's height is padding PLUS its line box, and the line box
+         shrinks with the font. At the inherited 1.45 the drop from 0.9rem to
+         0.82rem would have taken ~1.6px out of every pill and the same out
+         of the track around them, tightening the bar as a side effect of a
+         change that was only ever about hierarchy.
+
+         `line-height: 1.6` restores it almost exactly: 0.82rem x 1.6 =
+         18.4px against the old 0.9rem x 1.45 = 18.3px. Expressed as a
+         line-height rather than a min-height so the text stays optically
+         centred -- the pill aligns its label and count on the BASELINE, and
+         a min-height would have grown the box downward and left both sitting
+         high in it. */
+      .section-pill { display: inline-flex; align-items: baseline; gap: 0.4rem; padding: 0.6rem 1rem; border: 1px solid transparent; border-radius: 999px; background: transparent; font-size: 0.82rem; font-weight: 500; line-height: 1.6; }
+      /* Weight does NOT change with selection ("Text weight stays the same
+         between selected and unselected. Don't make the selected one much
+         bolder") -- the outline and fill carry the state, so the text does
+         not shift and the row never reflows as the cursor moves. */
+      .section-pill:hover:not(:disabled) { background: var(--surface); }
+      /* The count is the same subdued treatment a cell's occurrence count
+         gets -- one visual idea for "how many", wherever it appears. */
+      /* Steps down with its label (2026-08-06): the count sat at 500 to read
+         a notch under a 600 label, so leaving it there as the label moved to
+         500 would have flattened the pair into one weight and left colour
+         alone to separate them. */
+      .section-pill-count { color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+      /* The selected item keeps exactly the blue outline it had, over a
+         subtle white fill so it lifts off the track. The heavy 2px ring is
+         gone with the rest of the chrome -- against an untinted neighbour a
+         1px outline is already unambiguous. */
+      .section-pill-current { border-color: var(--accent); background: var(--surface); }
+      /* Finished sections stay in the bar rather than disappearing: the map
+         should still show the whole stage.
+         GREY RETIRED (AG, 2026-08-06, "the pill/nav items should also go
+         green with a checkmark as other sections and items do when
+         complete. check mark replaces the number"). The original grey was
+         defended as "grey already means nothing here" -- true of the
+         Decision Tracker's resting figures, but wrong here: a finished
+         category is not an absence of data, it is a COMPLETION, and this
+         app already has one visual idea for that (.triage-section-complete
+         paints its title green and prefixes "✓ "). The pill was the only
+         place completion spoke a different language than the heading it
+         mirrors -- the same "one visual idea, wherever it appears" rule the
+         pill count above already follows.
+         The ✓ REPLACES the count rather than joining it: "(0)" and "✓" say
+         the same thing, and a finished pill that still reports a number
+         invites reading it as work outstanding. */
+      /* BORDERLESS (AG, 2026-08-06). A finished category is not a
+         destination -- it is a state -- so it takes the same no-chrome
+         treatment as every other unselected item and says "done" with the
+         green text and ✓ alone. Deliberately declares no border-color:
+         .section-pill-current sits above it at equal specificity, so a
+         category that is both complete AND selected still gets its blue
+         outline instead of having it overridden here. */
+      .section-pill-done { color: var(--good); }
+      .section-pill-done .section-pill-count { display: none; }
+      .section-pill-done::after { content: "✓"; font-weight: 700; }
+      /* THE OTHER REVIEW-UNIT TYPE (AG, 2026-08-06). A category can hold
+         both singleton candidates and relationship proposals; the ones that
+         are not the active unit type dim, because the card on the left can
+         only act on its own kind. Dimmed, never hidden or moved -- "nothing
+         should disappear, move between categories, or require expanding" --
+         so the list stays a stable map of the category's whole workload.
+         Opacity only: the row keeps its size, position and click target, so
+         a dimmed row is still one click from becoming the active one. */
+      .triage-row-inactive-unit { opacity: 0.45; }
+      .triage-row-inactive-unit:hover { opacity: 1; }
+      /* COMPLETION OUTRANKS INACTIVE-UNIT DIMMING (AG, 2026-08-08).
+         Mixed categories use dimming to say "the focus pane is currently
+         acting on the other review-unit type." That is useful for unresolved
+         work, but it must never erase the stronger completed-state message:
+         a resolved singleton row or relationship row is green with a ✓ even
+         while the reviewer is standing on the other kind. Otherwise a
+         partially complete category makes finished proposal rows look
+         disabled/grey again -- exactly the state completion styling exists
+         to prevent. */
+      .triage-row-done.triage-row-inactive-unit { opacity: 1; }
+      .triage-row-dismissed {
+        color: var(--text-muted);
+        background: #f1f3f5;
+        border-color: var(--border-soft);
+      }
+      .triage-row-dismissed .triage-state,
+      .triage-row-dismissed .triage-arrow-done { color: var(--text-muted); }
+      /* The empty row separating a category's two unit groups. Height of a
+         row so the break reads as a deliberate gap rather than a rendering
+         accident -- "so the whole thing takes up five row". */
+      .triage-row-spacer { height: 1.6rem; }
+      /* The collection's own global buttons sit with the category's, but
+         name a different scope, so they carry the count and nothing else
+         distinguishes them -- one button vocabulary, one look. */
+      .collection-action { margin-left: 0; }
+      /* THE CONTINUATION QUEUE (AG, 2026-08-08). Quiet by construction:
+         it follows the active zone without a label or disclosure, because
+         those cells are simply later queue positions, not another kind of
+         work. The top rule is the visual pause between the bounded initial
+         review zone and the full-width continuation. */
+      .zone-rest { margin-top: 0.9rem; border-top: 1px solid var(--border-soft); padding-top: 0.6rem; }
+      .triage-grid { display: grid; grid-template-columns: minmax(0, 34rem); grid-auto-flow: row; gap: 0.4rem; }
+      .triage-grid.zone-two-col { grid-template-columns: repeat(2, minmax(0, 34rem)); grid-template-rows: repeat(var(--zone-rows, 1), auto); grid-auto-flow: column; column-gap: 1rem; }
+      /* CONTINUATION CELL WIDTH (AG, 2026-08-09, from a live screenshot:
+         "items cannot wrap like this under the checkbox").
+         `.triage-row` is `flex-wrap: wrap` -- correct for a row that may
+         carry chips -- so a cell narrower than its label drops the NAME onto
+         a second line beneath the checkbox, which reads as a broken cell
+         rather than as wrapped text. At 14rem the label had roughly 165px,
+         about 22 bold characters, and real institutional labels routinely
+         exceed that ("Enrollment Appointments" is 23, "Clearinghouse
+         Academy" 21, "Assigning Enrollment" 20 -- all three wrapped).
+         17rem leaves roughly 213px, comfortably past every observed label.
+         RAISED FOR THE WHOLE GRID rather than special-casing long labels:
+         `auto-fill` keeps the column count responsive, so the cost is one
+         fewer column on narrow windows and none on wide ones, and every
+         cell stays the same size -- which is the property that makes the
+         grid scannable. */
+      .triage-grid.triage-grid-continuation { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); grid-auto-flow: row; }
+      /* NO BACKGROUND TRANSITION BY DEFAULT (AG, 2026-08-06: "navigating
+         causes the white-leaning cells to pulse a darker grey momentarily
+         ... They go dark then come back light rapidly").
+
+         Not a state bug -- a paint-order one. `bandGridRows` assigns
+         `.triage-row-band` by MEASURED row (offsetTop), which it can only do
+         once the rows are in the document, and the measurement itself forces
+         a style resolution. So every row resolves once as the unbanded
+         default and only then becomes banded; with background-color under a
+         300ms transition, that one-frame correction played as a visible fade
+         from dark to light on half the rows, every single render.
+
+         The transition is kept for the case it was written for -- a decision
+         landing on a row, where the fade is the acknowledgement -- by moving
+         it onto `.decision-tinted`, which is applied during render from
+         durable state and never by a post-layout pass. Banding changes now
+         apply instantly; meaning changes still ease in.
+
+         Border-color keeps its transition unconditionally: nothing measures
+         its way into a border. */
+      .triage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; min-width: 0; padding: 0.5rem 0.7rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); font-size: 0.92rem; cursor: pointer; transition: border-color 0.3s ease; }
+      .triage-row.decision-tinted { transition: background-color 0.3s ease, border-color 0.3s ease; }
       /* Refinement: bare tokens; the state slot is fixed-width so tokens
          column-align whether it shows ✓, ▶, or nothing. Chips inside a
          row shrink a step to keep the grid tight. */
@@ -1177,21 +1886,112 @@
       .triage-selected-count { color: var(--accent); font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; }
       .triage-row .header-suggestions { font-size: 0.85rem; }
       .triage-row .header-suggestions .preferred-action { padding: 0.1rem 0.45rem; }
+      /* ROW BANDING. Deliberately NOT `var(--surface-muted)` (Type Check's
+         value): that token IS the page background, so a banded cell read as a
+         hole in the page rather than a tinted row -- Andrew, live: "lighten
+         the grey in the grey rows a little since it blends too much with the
+         bckg." #f9fafc sits ~30% of the way from the page back toward white,
+         which is the whole room available: white and the page are only nine
+         units apart, so the band has to be distinguishable from BOTH inside
+         that gap. */
+      .triage-row-band { background: #f9fafc; }
+      /* FLAT CELLS AND A FLAT FOCUS AREA (AG, 2026-08-06: "let's remove
+         border and different background color from the focus area and
+         cells") -- the same de-chroming as the pill bar, carried into the
+         list and the panel.
+         Every cell was a bordered, filled card, so a 24-cell zone drew 24
+         boxes and the panel drew a 25th around the thing the reviewer was
+         actually reading. Removing the base border and fill leaves the
+         page's own surface showing through, and the row banding alone
+         carries "these are separate rows" -- which is what banding was
+         introduced for.
+         STATE STILL PAINTS. This clears only the RESTING chrome; the
+         focused outline, the parked dashed outline, the decision hue on a
+         done row and the band all still draw, because each of those means
+         something. Written as an override after the base rule rather than
+         by editing it, so the resting look is one line to restore. */
+      .triage-row { border-color: transparent; }
+      .triage-row:not(.triage-row-band) { background: #e8ebf0; }
+      /* THE BAND SURVIVES THE FLATTENING (AG, 2026-08-06: "we did lose the
+         cell row color difference. we probably still need that").
+         My own regression, and an ordinary CSS one: `.triage-row-band` is
+         declared ABOVE the flattening rule at equal specificity, so the
+         later `background: transparent` simply won. Restated here with two
+         classes so it outranks the reset regardless of order -- the band is
+         the ONLY thing separating rows now that the card borders are gone,
+         which makes it load-bearing rather than decorative.
+         The reset above EXCLUDES banded rows rather than out-specifying
+         them: two rules competing for one property is what produced the bug
+         in the first place, and a `:not()` means they can never contend
+         again no matter what order a future edit puts them in. */
+      /* BANDING CONTRAST RAISED (AG, 2026-08-06: "let's pull the contrast up
+         on both types of rows - brighter on the lighter, darker on the..
+         darker"). The pair was #f9fafc against a transparent row sitting on
+         the grid's own #f6f8fa -- about four levels apart, which is not a
+         stripe, it is a rounding error. Both ends move: the light row goes
+         to pure white and the dark row takes an explicit fill instead of
+         inheriting the grid's, so the alternation is legible at a glance
+         while both stay far lighter than any decision tint (the banding must
+         never compete with the colour that carries meaning). */
+      .triage-row.triage-row-band { background: #ffffff; }
+      /* DECISION TINT BEATS ROW BANDING (AG, 2026-08-08). Proposal rows
+         correctly gained `decisionClass(...) + decision-tinted`, but the
+         alternating-row rules above are more specific than the generic
+         `.decision-tinted` surface rule below. Result: the decision border
+         showed while the fill stayed grey/white. Keep the standard color
+         mechanism; make the triage-row surface explicit so handled rows
+         are filled by the action color on both banded and unbanded rows. */
+      .triage-row.decision-tinted { background: var(--decision-tint); border-color: var(--decision-border); }
+      /* COMPLETED REVIEW CELLS USE THE COMPLETION SCHEME (AG, 2026-08-08).
+         The stored decision and summary pills still carry Keep/Change/
+         Redact/Ignore semantics, but a resolved row/card's outer cell is a
+         map of progress first. That makes mixed categories read uniformly:
+         every finished singleton or relationship proposal is green with a ✓,
+         instead of Change-completed proposal cells looking active-blue. */
+      .triage-row-done.decision-tinted,
+      .relationship-card-addressed.decision-tinted {
+        --decision-hue: var(--good);
+        --decision-tint: var(--good-soft);
+        --decision-tint-contrast: #dcefe3;
+        --decision-border: #bfe3cc;
+      }
+      /* The focus panel loses its tinted fill and border for the same
+         reason. `.decision-tinted` is app-wide (item rows, member rows,
+         not-quite panels), so this is scoped to the panel INSIDE the review
+         surface's panes rather than changing that class for every caller. */
+      .triage-expanded > .detail-panel.decision-tinted,
+      .triage-focus-pane > .triage-expanded > .detail-panel.decision-tinted,
+      .scope-inspector .triage-expanded > .detail-panel.decision-tinted { background: transparent; border-color: transparent; }
       .triage-row-focused { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-      /* UNIFIED DECISION COLOR SYSTEM (AG, 2026-08-03): this used to be a
-         flat --good-soft green for ANY decided row, which meant a row the
-         reviewer had just REDACTED rendered green -- the single most
-         direct contradiction of "the same color always means the same
-         thing" anywhere in the app. A done triage row now wears its own
-         decision (app.ts adds decisionClass + .decision-tinted), so the
-         fill comes from .decision-tinted and this class carries only the
-         completion treatment that is genuinely decision-independent. */
+      /* COMPLETED REVIEW UNITS WIN OVER CURSOR CHROME (AG, 2026-08-08).
+         Ambiguity categories can mix singleton candidates and relationship
+         proposals. Once either kind is resolved, the row's primary message is
+         completion (✓ + green scheme); focus is still navigable, but it must
+         not make a completed proposal read like an unresolved blue cell. */
+      .triage-row-done.triage-row-focused { border-color: var(--decision-border, var(--good)); box-shadow: 0 0 0 2px var(--decision-border, var(--good)); }
+      /* UNIFIED COMPLETION MARKER (AG, 2026-08-08): triage rows still carry
+         their durable decision classes for data-driven summaries and future
+         local affordances, but the visible completed-cell treatment is now
+         deliberately decision-independent: green scheme plus ✓. */
       .triage-state { color: var(--text-muted); flex-shrink: 0; }
       .triage-row-done .triage-state { color: var(--decision-hue, var(--text-muted)); font-weight: 700; }
       .triage-token { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* THE PAIR TOKEN'S SECOND VALUE (AG, 2026-08-06). Muted and a step
+         lighter than the candidate it resolves to, because on a candidate
+         row the two sides are NOT peers -- the token is the review unit and
+         the counterpart is the proposal about it. (On a relationship row the
+         pair genuinely is the unit, and both sides there stay at full
+         weight; same glyph, different relationship, deliberately.)
+
+         The practical payoff is scanning: a column of bold originals with
+         grey resolutions trailing them reads top-to-bottom in one pass,
+         which is the whole point -- decide the section without opening a
+         card. It also spends less of the width the second value costs, in a
+         grid whose cells already ellipsize. */
+      .triage-token-pair { font-weight: 500; color: var(--text-muted); }
       .triage-accept { font: inherit; font-size: 0.85rem; padding: 0.1rem 0.45rem; border: 1px solid var(--accent); border-radius: 5px; background: var(--surface); color: var(--accent); font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .triage-accept:hover { background: var(--accent-soft); }
-      .triage-arrow-done { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .triage-arrow-done { flex: 1 1 0; max-width: 100%; color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .triage-expand { margin-left: auto; flex-shrink: 0; border: none; background: none; padding: 0 0.15rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
       .triage-expand:hover { color: var(--accent); }
       /* ══ SIDE-BY-SIDE FOCUS PANE (AG, 2026-08-03) ═══════════════════
@@ -1210,46 +2010,318 @@
          2/5 measures ~30rem (two). 60/40 is the widest panel that still
          clears the two-column bar at ordinary laptop widths.
 
-         The 1240px breakpoint is that same bar, solved for the viewport:
-         page padding (2rem x2) + stage padding (1rem x2) + this gap take
-         ~110px, so two 14rem tracks plus their 0.25rem gutter need about
-         (452 / 0.4) + 110 ~= 1240px. BELOW that the split has nothing
-         left to preserve -- it would be a one-column strip of items
-         beside a panel -- so the regions stack instead and the grid gets
-         the full width back. Approximate by construction (chrome heights
-         wrap); the failure mode either side is one column of items, not
-         a broken layout.
+         The stack breakpoint is deliberately MOBILE-sized now (2026-08-08,
+         Ambiguity continuation correction). The active zone's first 24
+         cells belong beside the focus panel on desktop; only cells 25+
+         continue below the combined panel+grid region. The previous
+         1240px breakpoint made narrower desktop windows look like the
+         continuation design had moved the whole grid below the panel,
+         even though the DOM still had a side grid. A sub-900px breakpoint
+         keeps the desktop interpretation intact and leaves true narrow
+         screens with the existing stacked fallback.
 
          `minmax(0, …)` on both tracks so a long unbreakable string
          inside the panel cannot blow the column out past its share --
          the default `auto` minimum is min-content, not zero.
 
-         RESPONSIVENESS IS UNTOUCHED, deliberately: `.triage-grid` keeps
-         its own `repeat(auto-fill, minmax(14rem, 1fr))` verbatim, so the
-         item column re-wraps 2 -> 1 by exactly the mechanism it always
-         used, just inside a narrower container -- and because the track
-         minimum is unchanged, an individual cell is the SAME WIDTH it
-         was before (~238px at 1300px, two-up here vs. five-up
-         full-width); there are simply fewer per row. Below the
+         RESPONSIVENESS IS UNTOUCHED, deliberately: the continuation grid
+         keeps its own `auto-fill` track verbatim, so the item column
+         re-wraps 2 -> 1 by exactly the mechanism it always used, just
+         inside a narrower container; there are simply fewer per row.
+         (2026-08-09: the track minimum quoted here was 14rem and is now
+         17rem -- see `.triage-grid-continuation` for why. The mechanism
+         this paragraph describes is unchanged; only the figure moved, and
+         individual cells are correspondingly wider rather than the same
+         width the original text claimed.) Below the
          breakpoint the two regions stack (DOM order puts the pane on
          top) and the grid gets the full width back, which is the
          pre-change layout with the panel hoisted above the rows. */
+      /* ZONE BAND REVERTED (AG, 2026-08-06, same day): `align-items: stretch`
+         plus a separate "rest" grid below a rule was an attempt to DRAW the
+         24-item bound. It rendered wrong in the browser (band ~14 cells,
+         resizing as the cursor moved) and was withdrawn; `start` is the
+         long-standing behavior. The bound itself is unaffected -- it lives
+         in headingActionScope, not here. */
       .triage-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0.75rem; align-items: start; }
-      @media (max-width: 1239.98px) { .triage-split { grid-template-columns: minmax(0, 1fr); } }
+      @media (max-width: 899.98px) { .triage-split { grid-template-columns: minmax(0, 1fr); } }
       .triage-focus-pane { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+
+      /* ── THE FOCUS PANEL IS THE READING SURFACE ──────────────────────────
+         (AG, 2026-08-06.) One rule for all three inspector columns, keyed
+         off --focus-panel-max (see :root for the sizing reasoning).
+
+         Capped AND scrollable, together: the cap is what keeps the panel
+         from pushing the page long enough to shove the cells out of view,
+         and the internal scroll is what stops the cap from truncating a
+         tall item's evidence. A candidate with ten sources, four identity
+         options and an open Expert View exceeds any fixed height worth
+         setting -- so the panel's TAIL scrolls while the panel's BOX stays
+         put. This is deliberately the panel scrolling inside itself rather
+         than the page scrolling past it: the reviewer's spatial anchor is
+         the panel's frame, and a frame that stays still while its contents
+         move is a reading surface, whereas a frame that moves is a loss of
+         place.
+
+         Only above the split's own 1240px breakpoint. Below it the columns
+         stack, the panel sits above the grid with the full width, and a
+         height cap there would trap content behind a scrollbar for no
+         benefit -- there is no adjacent cell column left to protect.
+
+         ── FIXED, NOT CAPPED (AG, 2026-08-06) ────────────────────────────
+         "we need a fixed focus panel size. I am navigating and it's adding
+         and removing items from the 2-col section and completely
+         destroying continuity for nav."
+
+         `max-height` was only half the rule. It stops a TALL item from
+         pushing the page, but does nothing about a SHORT one: the panel
+         still collapsed to its own content, so every cursor move to a
+         sparser item shrank the box, shortened the page, and shifted the
+         cell column under the reviewer mid-navigation. The block comment
+         above already stated the intent -- "panel height is the
+         independent variable; block size follows" -- and `max-height`
+         simply did not implement it. `height` does.
+
+         WHY NOT A CONTENT-DERIVED FIXED HEIGHT (the "measure the file and
+         add 10%" approach, tested against Andrew's live 614-candidate
+         transcript and rejected on its numbers): occurrences per candidate
+         are median 2, mean 9.4, p90 11, p95 20 -- and max 741. The
+         distribution has no top, so there is no height that fits "all"
+         items; even p90 already exceeds a laptop viewport, which means the
+         internal scroll is carrying a large share of this document
+         whatever number is chosen. Sizing to the content would therefore
+         have bought a WORSE box (dead space on the 62% of candidates with
+         <= 2 occurrences, still scrolling above p85) than sizing to the
+         window does.
+
+         So --focus-panel-max is already the right number: the largest box
+         that fits without pushing the page. The defect was that it was a
+         ceiling rather than a floor as well. The tail still scrolls, which
+         is what makes a single fixed height safe at any content volume.
+
+         ── TWO ATTEMPTS AT A FIXED HEIGHT, BOTH WITHDRAWN (2026-08-06) ──
+         `height: var(--focus-panel-max)` (viewport-sized): stable, but a
+         typical item filled under half the box -- rejected on sight.
+         Sizing the panel to a 24-cell zone band via the split's
+         `align-items: stretch`: the band itself rendered wrong in the
+         browser and was reverted with it.
+
+         A content-derived fixed height was also evaluated against the live
+         614-candidate document and is impossible on the data: occurrences
+         per candidate are median 2, p90 11, max 741 -- the distribution has
+         no top, so no fixed height fits "all" items and the internal scroll
+         carries a large share of the document whatever number is chosen.
+
+         So this is back to `max-height` alone, which is the long-standing
+         behavior. IT IS KNOWN INCOMPLETE: it caps the tall case but lets
+         the panel collapse onto a sparse item, which is the page-shifting
+         Andrew reported ("adding and removing items from the 2-col
+         section"). Fixing that properly needs a browser to verify against;
+         guessing again on top of a broken screen is what produced the two
+         withdrawn attempts above. */
+      @media (min-width: 1240px) {
+        .triage-focus-pane,
+        .type-focus-pane,
+        .scope-inspector {
+          min-height: 0;
+          max-height: var(--focus-panel-max);
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          padding-right: 0.35rem;
+        }
+      }
+
+      /* MORE PRONOUNCED THAN THE CELLS (AG, 2026-08-06). The panel and a
+         cell were rendering at the same 14px base, so the surface carrying
+         the actual evidence read as no more important than a name in a box.
+         Scoped to the inspector columns rather than raised on `.detail-panel`
+         globally: the same panel renders inline on surfaces that have no
+         inspector column, and those have no room to spare. */
+      .triage-focus-pane .detail-panel,
+      .type-focus-pane .detail-panel,
+      .scope-inspector .detail-panel { font-size: 1.04rem; line-height: 1.5; }
+
+      /* ── IN THE PANEL vs. ON THE CELL ────────────────────────────────────
+         (AG, 2026-08-06: "once you are 'in' the focus panel, it should have
+         a dark blue highlight around the panel. And the active cell needs to
+         be less emphatic with its border.")
+
+         The two states used to look identical -- landing the grid cursor on
+         a proposal cell painted a blue border on the cell AND on the card,
+         so two things claimed to be "where you are" and neither said which
+         level you were on. This gives the level its own answer: exactly one
+         strong blue ring on screen, and it is around whatever currently
+         answers the keyboard.
+
+         ENTERED: the panel takes the ring. Drawn with box-shadow rather than
+         a border so nothing reflows on the way in -- a border would grow the
+         panel by 2px at the moment the reviewer's eye is moving to it, which
+         reads as a jump.
+
+         ON THE CELL, PANEL NOT ENTERED: the cell keeps its ring, the panel
+         has none. Unchanged from today; this is the state the reviewer is in
+         most of the time.
+
+         The cell's ring is not removed when entered, only quieted -- it is
+         still the reviewer's place in the list, and they need it to know
+         where Escape returns them to. Opacity rather than a lighter colour
+         so it is visibly the SAME marker, turned down. */
+      /* The ring is on the PANEL, not on the card inside it: the reviewer
+         entered the panel, and ringing one card within it would say they had
+         entered something smaller than they had. box-shadow rather than a
+         border so entering costs no reflow -- a border would grow the column
+         by 3px exactly as the eye arrives. */
+      /* THE ENTIRE PANEL (AG, 2026-08-06, emphasised: "the *entire* focus
+         panel. blue border."). On the column itself, so the ring encloses
+         everything the panel contains -- title, decision buttons, evidence,
+         identities -- rather than one card within it.
+
+         A real border AND the ring: the border is the line he asked for, the
+         box-shadow thickens it without affecting layout. Border-colour alone
+         would have been too quiet against the tinted surface at 1px, and
+         growing the border to 3px would reflow the column by 4px at the
+         moment the reviewer's eye moves to it. */
+      .focus-pane-entered {
+        border: 1px solid var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+        /* ABOVE ITS NEIGHBOURS (AG, 2026-08-06: "the top border is lost
+           under the section above it"). `.triage-section-titleline` is
+           `position: relative` -- it has to be, to hang the enclosure's
+           bottom-edge pseudo-element -- and a positioned element paints
+           above a non-positioned one whatever the DOM order. So the heading
+           was covering the ring's top edge. Positioning the entered pane
+           puts it back in the same stacking conversation, and z-index 2
+           clears the heading rather than merely tying with it. */
+        position: relative;
+        z-index: 2;
+      }
+      /* THE BORDER DULLS, THE CELL DOES NOT (AG, 2026-08-06: "the muting you
+         applied makes it look like the active item is disabled. I just
+         wanted the blue border to be reduced opacity, not the entire cell!").
+
+         Fading the whole row was the wrong instrument: opacity on the
+         container took the TEXT with it, and greyed-out text is this app's
+         (and every app's) word for "unavailable" -- so a row the reviewer
+         can return to at any moment claimed it could not be used.
+
+         Only the ring is turned down now, and only its colour: the row's
+         name, its pair, its checkbox and its count all stay at full
+         strength, because none of them became less true when focus moved
+         into the panel. The marker says "your place is still here, but the
+         keyboard is over there," which is exactly the amount of information
+         the state change carries. */
+      .triage-section:has(.focus-pane-entered) .triage-row-focused {
+        border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+        box-shadow: none;
+      }
+
+      /* "Esc exit" -- on the action row, proportionate but still secondary
+         to the K/C/R/I buttons. It remains visible even before the reviewer
+         enters the panel; see app.ts for the keyboard rationale. */
+      .detail-esc-hint { display: inline-flex; align-items: center; gap: 0.35rem; margin-left: auto; color: var(--text-muted); font-size: 0.9rem; font-weight: 650; white-space: nowrap; align-self: center; }
+      .detail-esc-hint .keycap { font-size: 0.82rem; }
+      /* Full strength once the reviewer is actually in the panel -- that is
+         the moment the key is live and the moment they may want out. Quiet
+         the rest of the time, so it stays a reminder rather than a control
+         competing with the decision buttons below it. */
+      .focus-pane-entered .detail-esc-hint { color: var(--accent); }
+
+      /* The reading surface, tinted (AG, 2026-08-06). See
+         --focus-panel-surface for the value and for why it lands on the
+         column instead of the panel. Padding and radius so the tint reads as
+         a surface the panel sits ON rather than as a stripe behind it; the
+         white chips, identity options and source lines inside now separate
+         by contrast alone, which is the same "no borders needed" reasoning
+         --surface-canvas was introduced for. */
+      .triage-focus-pane,
+      .type-focus-pane,
+      .scope-inspector {
+        background: var(--focus-panel-surface);
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+      }
+      .triage-focus-pane .detail-title-name,
+      .type-focus-pane .detail-title-name,
+      .scope-inspector .detail-title-name { font-size: 1.5rem; }
+      .triage-focus-pane .detail-summary,
+      .type-focus-pane .detail-summary,
+      .scope-inspector .detail-summary { font-size: 1.04rem; }
       /* A grid can hold two open panels at once -- the focused row plus a
          row held open by Space/chevron. Both live here, in row order; the
          gap above is what keeps them legible as two. */
       .triage-expanded { min-width: 0; }
 
       /* REVIEW SCOPE, Pass 1 (AG, 2026-08-03): the workspace-level
-         inspector split -- Item Check's triage view only. Same geometry
-         and same breakpoint reasoning as .triage-split above (60/40 is
-         the widest inspector that keeps two item columns at ordinary
-         laptop widths), but wrapping the WHOLE queue rather than one
-         section: the inspector is permanent, so the layout never reflows
-         as focus moves. Ambiguity Check keeps .triage-split unchanged. */
-      .scope-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0.75rem; align-items: start; }
+         inspector split -- Item Check's triage view only. Wraps the WHOLE
+         queue rather than one section: the inspector is permanent, so the
+         layout never reflows as focus moves. Ambiguity Check keeps
+         .triage-split unchanged.
+
+         ── WIDTH-CAPPED, NOT PROPORTIONAL (AG, 2026-08-09) ───────────────
+         This was `minmax(0, 3fr) minmax(0, 2fr)` -- a 60/40 PROPORTIONAL
+         split, chosen when 60/40 was "the widest inspector that keeps two
+         item columns at ordinary laptop widths".
+
+         The trouble is what proportional does with a big monitor: every
+         pixel of extra width was split 60/40 too, so the reading surface
+         kept growing while the work surface stayed relatively starved.
+         `.triage-grid` caps a cell at 34rem and draws two columns from 15
+         cells, so two columns want ~68rem; at 40% of the viewport that
+         needs a ~2700px window before it can happen. The reviewer was
+         paying for a wider display and getting a wider panel.
+
+         The inspector is a READING/DECISION surface: past a comfortable
+         measure, extra width makes it worse, not better. The Zone is the
+         VARIABLE WORKSPACE and is the thing that should absorb the
+         window. So the panel gets a fixed track and the queue gets `1fr`
+         -- all additional width flows right.
+
+         WHY 38rem (608px). Bounded on both sides by existing facts rather
+         than picked, and the arithmetic was run rather than estimated:
+           - UPPER: it must stay a comfortable measure for the panel's own
+             1.04rem body text and its action row; wider starts reading as
+             a page rather than a panel.
+           - LOWER: at the 1240px breakpoint where this split first
+             applies, the queue must still fit one full 34rem (544px) cell
+             column. 1240 - 64(body padding) - 12(gap) - 608 = 556px, so
+             one column fits with 12px to spare. 39rem was the first
+             candidate and lands 4px SHORT of that -- harmless, since the
+             cell track is `minmax(0, 34rem)` and simply renders narrower,
+             but there is no reason to spend width the panel does not need
+             and the queue does.
+         A FIXED track, not `minmax(0, 39rem)`: a minmax track sizes to
+         content, so a sparse item would render a narrower panel than a
+         dense one and the column would twitch as the reviewer navigated.
+         "Stable while navigating" is the requirement, so the track does
+         not consult its content at all.
+
+         Long content is already handled VERTICALLY -- see the
+         `min-width: 1240px` block above, which gives this column
+         `max-height: var(--focus-panel-max)` and `overflow-y: auto`. That
+         is why capping the width costs nothing: nothing here needed the
+         horizontal room to remain readable.
+
+         Below 1240px the columns still stack, unchanged. */
+      /* PROPORTIONS COME FROM AMBIGUITY (AG, 2026-08-09): "I'd like the
+         sizing of this to align with the Ambiguity design unless there is
+         some reason not to." There is not one, so `.scope-split` declares
+         no columns of its own and inherits `.triage-split`'s 3fr/2fr --
+         one number, one place, both stages.
+
+         THIS SUPERSEDES the fixed `--scope-inspector-width` cap added
+         earlier the same day, and the reason it can is structural rather
+         than a change of mind: the cap existed because extra window width
+         went 60% to the panel while the cells stayed cramped. The two-row
+         layout answered that directly -- the continuation grid now spans
+         the FULL page beneath both columns, so wide displays feed the work
+         surface without taking anything from the panel. With the cap in
+         place the panel read as cramped and the top-row cells as stretched,
+         which is the complaint that produced this change.
+
+         What is NOT inherited is the breakpoint: Item Check keeps stacking
+         at 1240px (below) rather than Ambiguity's 900px, because its
+         inspector carries denser content -- scope header, counts, footer --
+         and gets uncomfortable in a narrow column sooner. */
+      .scope-split { display: grid; gap: 0.75rem; align-items: start; }
       @media (max-width: 1239.98px) { .scope-split { grid-template-columns: minmax(0, 1fr); } }
       .scope-inspector { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
       .scope-queue { min-width: 0; }
@@ -1281,11 +2353,15 @@
 
       /* 2026-07-30: expanded full view header -- bold name, small (x)
          count. */
-      .detail-title { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+      .detail-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
       /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): larger name, smaller
          muted count -- the expanded view leads with the item itself. */
       .detail-title-name { font-weight: 700; font-size: 1.3rem; }
       .detail-title-count { color: var(--text-muted); font-weight: 500; font-size: 0.82rem; }
+      /* UNDETERMINED (AG, 2026-08-10): the one section whose name does not
+         carry its own meaning. Muted and italic so it reads as an
+         explanation of the heading, not as a second heading. */
+      .detail-title-note { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
       /* AG response (2026-07-30): pills share the title line. */
       .detail-title .detail-badges { margin-bottom: 0; }
       /* RECOMMENDATION IS THE ANCHOR (AG, 2026-08-03): the decision bar
@@ -1344,19 +2420,149 @@
          leaving the band as a slim workspace top edge -- the active tab
          still terminates into it, unchanged geometry, just no content. */
       .workspace-top-slim { min-height: 0.55rem; padding: 0; }
-      .chrome-status-row { display: flex; align-items: flex-start; gap: 1.25rem; }
-      .chrome-status-left { flex: 1 1 auto; min-width: 0; }
-      .chrome-status-row > .command-card { flex: 0 1 auto; margin-left: auto; }
-      .command-card { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.4rem 0.65rem; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; font-size: 0.82rem; max-width: 100%; }
-      .command-card-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.3rem 0.65rem; }
-      .command-card-label { color: var(--text-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-right: auto; padding-right: 0.7rem; white-space: nowrap; }
+      /* CHROME STATUS ROW -- metrics on the left, command card on the right.
+         WIDTH FLOORS (AG, 2026-08-06). Both halves used to be freely
+         elastic with no minimum, so the row's geometry was EMERGENT: as the
+         window narrowed the card shrank, its wrapping rows re-flowed to a
+         different height, the diagnostic beside it was crushed, the strip
+         grew, and the Decision Tracker was dragged down with it. Every
+         misalignment and overlap in Andrew's 2026-08-06 shots traces to
+         that one property. Now each half declares a floor and the ROW
+         wraps -- below roughly 62rem of content the card drops beneath the
+         metrics at full width, which is a layout, not a collapse. */
+      .chrome-status-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.6rem 1.25rem; }
+      .chrome-status-left { flex: 1 1 26rem; min-width: 22rem; }
+      /* SHRINK-TO-FIT, PINNED RIGHT (AG, 2026-08-06: "make it narrower so
+         it is closer to the right").
+         It was a FIXED 46rem, so the white box ran left across empty space
+         no matter how little it contained -- the widest row set the useful
+         width and the rest of the box was padding pretending to be layout.
+         `fit-content` sizes it to its longest row instead, `margin-left:
+         auto` keeps it against the right edge, and `max-width` stops it
+         crowding the status block on a narrow window. The card is now
+         exactly as wide as the shortcuts in it. */
+      .chrome-status-row > .command-card { flex: 0 1 auto; width: fit-content; max-width: min(46rem, 100%); margin-left: auto; }
+      /* COMMAND CARD -- A GRID, NOT A WRAPPING FLEX ROW (AG, 2026-08-06),
+         per "can it be made into 3-4 rows and presented cleaner?"
+
+         WHAT WAS WRONG. The card was one flex row per section with
+         `flex-wrap` deciding where lines broke and `justify-content:
+         flex-end` packing them right. Both are content-dependent, so the
+         number of rows, the start of each row, and the card's height all
+         changed with the stage, the focus context, and the window width --
+         and the keycaps never formed columns, because nothing lined them
+         up. "Cleaner" here is mostly just: make the rows stop moving.
+
+         WHAT THIS IS. A two-column grid -- a fixed label column, then the
+         keycaps -- with one grid row per semantic group, and a fixed card
+         width so wrapping inside a row is bounded and repeatable rather
+         than emergent. Keycaps are LEFT-aligned: with a fixed width and a
+         shared left edge, the caps of successive rows form vertical
+         columns, which is most of what reads as "cleaner." Right-alignment
+         was actively working against that -- it moved every row's start
+         whenever any row's content changed.
+
+         WHY LABELS ARE BACK. They were cut on 2026-08-03 for a real
+         reason: `.command-card-label`'s `margin-right: auto` pinned them
+         to the card's far left while the caps packed right, so a growing
+         shortcut list stranded each label across an ever-widening gutter.
+         A GRID COLUMN CANNOT DO THAT -- the label column is sized to its
+         own content and the keycaps begin immediately after it, at the
+         same x on every row, at any width. The failure mode that justified
+         removing them is structurally absent here, which is the only
+         reason it is defensible to bring them back.
+
+         WHY GROUPS, NOT JUST LINE BREAKS. Andrew: "maybe by global vs
+         local or something." The card already knew about global vs local
+         (its two sections). The rows below split the local half further,
+         by WHAT THE KEYS ACT ON -- the focused item, the cursor, or the
+         surrounding scope. That distinction was already real and already
+         load-bearing in this app (it is why the legend says "Keep member"
+         rather than "Keep"), it was just invisible: ⇧A Accept section sat
+         inline among K/C/R/I even though it acts on a different object
+         entirely. See segmentGroup() in app.ts for the classification. */
+      /* ONE COLUMN now that the DECIDE/MOVE/SCOPE/APP captions are gone --
+         the rows span the full width instead of starting at a second track
+         that no longer has anything in the first. */
+      /* HEIGHT COMES FROM WRAPPING, NOT FROM PADDING (AG, 2026-08-06: "the
+         command bar is still far too tall. there's tons of white space").
+         Each row was wrapping onto a second line inside a 38rem card, so a
+         3-row card drew 6 rows with ragged gaps -- the whitespace was the
+         wrap, not the spacing. Three things shrink it, in order of effect:
+         the card gets wider (the header no longer competes for that band),
+         the keycaps and their labels tighten, and the row gap drops to a
+         hairline. Target is Andrew's spreadsheet sketch: one line per
+         group, five-ish pairs across. */
+      /* SQUEEZED (AG, 2026-08-06: "we can squeeze the white background a
+         lot"). With three tight rows the card was mostly margin -- the
+         padding and the row leading were both sized back when it had four
+         rows and captions to separate. Now the keycaps set the row height
+         and the box just has to contain them. */
+      /* The squeeze that was wanted was HORIZONTAL (see the width rule
+         above). Vertically it needs the opposite -- "it needs to breathe a
+         bit" -- so the rows keep real leading and the box keeps real
+         padding. Narrow and airy, not small: three rows of keycaps read as
+         a reference card, and a reference card that is cramped is harder to
+         scan than one that is merely large. */
+      /* THE CARD, PER ANDREW'S TEMPLATE (2026-08-06). Seven entries, three
+         rows, a soft grey slab with no border, and real space between
+         everything. It is a quiet reference, not a control surface -- so it
+         gets the page's muted tone rather than a raised white panel with a
+         rule through it, and the keys inside it stop being drawn as keys.
+         The generous gaps ARE the design: with only seven entries there is
+         nothing to compress, and the previous versions read as cramped
+         precisely because they were still sized for fourteen. */
+      .command-card { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 0; padding: 0.75rem 1.1rem; background: var(--surface-muted); border: 1px solid var(--border-soft); border-radius: 8px; font-size: 0.82rem; max-width: 100%; }
+      /* RIGHT-ALIGNED (AG, 2026-08-06). With the arrows gone the rows are
+         short and ragged; hanging them off the right edge means the card
+         shrinks to its content on the side it is already pinned to, so the
+         whole thing collapses toward the corner instead of leaving a wedge
+         of grey to the left of three stubby lines. */
+      .command-card-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.4rem 1.8rem; line-height: 1.9; }
+      .command-card-row + .command-card-row { margin-top: 0.55rem; }
+      /* Keys read as TEXT here, not as pressable objects: no box, no fill,
+         no border -- weight and colour carry "this is a key" and the label
+         beside it stays muted. The faux-key visual is still the app's idiom
+         everywhere it sits ON a control; this card fires nothing. */
+      .command-card .keycap { min-width: 0; height: auto; padding: 0; border: none; background: transparent; color: var(--text); font-weight: 700; font-size: 1em; letter-spacing: 0; }
+      .command-card .legend-entry { gap: 0.4rem; }
+      .command-card .legend-label { color: var(--text-muted); }
+      .command-card-rule { display: none; }
+      .command-card-label { grid-column: 1; color: var(--text-muted); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+      /* GLOBAL VS LOCAL is the one boundary in this card that is a
+         difference in KIND rather than in degree: everything above acts
+         inside the review, this row moves around the application. One
+         hairline says that; tinting all four rows would have made the card
+         read as a data table and added exactly the visual busyness the
+         request was trying to remove.
+
+         ITS OWN FULL-WIDTH GRID ITEM, not a border-top on the two cells of
+         the App row. The card is baseline-aligned, and the label (0.62rem)
+         and the keycaps (0.82rem) have different first-line metrics -- so
+         a border on each cell would be positioned by each cell's own
+         baseline offset and the hairline would arrive in two pieces a
+         pixel or two apart. One element spanning both columns cannot do
+         that. */
+      .command-card-rule { grid-column: 1 / -1; height: 0; border-top: 1px solid var(--border-soft); margin: 0.35rem 0 0.3rem; }
       .legend-entry { display: inline-flex; align-items: center; gap: 0.28rem; white-space: nowrap; }
       .legend-label { color: var(--text-muted); }
       .legend-text { color: var(--text-muted); }
       /* Keycaps in the card read as keys: their own surface does the
          separating; text a step darker than the labels so the key is the
          anchor of each pair. */
-      .command-card .keycap { color: var(--text); background: var(--surface-muted); }
+      /* Tighter inside the card only -- the keycap is the app's one faux-key
+         visual and is sized for reading elsewhere (stage tabs, panels).
+         Here there are ~14 of them on one card, so a fifth of an em each
+         way is the difference between three rows and six. */
+      .command-card .keycap { color: var(--text); background: var(--surface-muted); min-width: 1.35em; height: 1.35em; padding: 0 0.2em; border-bottom-width: 1px; }
+      /* The arrow cluster is four glyphs in one cap, so it is the widest
+         thing on the card by a wide margin. Arrow glyphs carry a lot of
+         built-in side bearing -- tightening the tracking claws back most of
+         its width without shrinking the glyphs themselves, which are the
+         part that has to stay legible. */
+      .command-card .keycap { letter-spacing: -0.06em; }
+      .command-card .legend-entry { gap: 0.22rem; }
+      .command-card .legend-label { white-space: nowrap; }
       .command-bar-selection { font-weight: 600; color: var(--accent); }
       .command-card button { padding: 0.14rem 0.45rem; font-size: 0.8rem; }
 
@@ -1465,6 +2671,34 @@
         .group-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
         .group-cell-wide { grid-column: 1 / -1; }
       }
+      /* GROUP CHECK STANDARDIZATION PASS (2026-08-10). Group Check keeps
+         its own semantics -- one group is the decision unit, K/C/R/I/F act
+         on that focused group, and the member split workflow remains under
+         the same wrapper. These classes only adapt the existing row/member
+         markup to the shared review language: focused group = focus-panel
+         surface; remaining groups = compact cells. */
+      .group-review-cell { min-width: 0; }
+      .group-focus-panel {
+        order: -1;
+        grid-column: 1 / -1;
+        background: var(--focus-panel-surface);
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+        margin-bottom: 0.35rem;
+      }
+      .group-focus-panel > .group-row {
+        padding: 0.72rem 0.78rem;
+        background: var(--surface);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft);
+      }
+      .group-focus-panel > .group-row.decision-tinted { background: var(--decision-tint); border-color: var(--decision-border); }
+      .group-focus-panel > .group-row .group-row-label { font-size: 1.32rem; }
+      .group-review-cell:not(.group-focus-panel) > .group-row {
+        min-width: 0;
+        cursor: pointer;
+      }
+      .group-review-cell:not(.group-focus-panel) > .group-row:hover { border-color: var(--accent); }
       /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the name is the row.
          Counts (and the "n of m selected" note) sit beside it small and
          muted -- same primary/secondary split as the result cells. */
@@ -1577,7 +2811,9 @@
       .primary-action { background: var(--accent); border-color: var(--accent); color: #fff; }
       .primary-action:hover:not(:disabled) { background: #1e4a91; border-color: #1e4a91; }
       .recent-documents { margin-top: 1rem; }
+      .recent-documents-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
       .recent-documents-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+      .recent-document-empty { margin: 0.5rem 0 0; color: var(--text-muted); }
       .recent-document-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.5rem 0.65rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); }
       .recent-document-name { font-weight: 600; }
       .recent-document-meta { color: var(--text-muted); font-size: 0.82rem; flex: 1 0 auto; }
@@ -1658,6 +2894,7 @@
          nothing but the animation. */
       @media (prefers-reduced-motion: reduce) {
         .row-acknowledged-pulse { animation: none; }
+        .completion-acknowledged { animation: none; }
       }
 
       /* Workspace Analysis (standalone subsystem, src/workspace-analysis/).
@@ -1694,6 +2931,63 @@
       .wsa-merge-select { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); max-width: 16rem; }
       .wsa-unrelated-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
       .wsa-unrelated-item { padding: 0.35rem 0.6rem; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--surface); color: var(--text-muted); font-size: 0.88rem; }
+
+      /* QUICK APPROVAL (AG, 2026-08-10) -- the exception-scanning surface.
+         See src/ui/quickApproval.ts for the interaction it serves.
+
+         NO DECISION HUE ANYWHERE IN THIS BLOCK, and that is the whole point
+         of the styling. The decision color system (2026-08-03) reserves red/
+         blue/green/purple for Redact/Change/Keep/Ignore, and an EXCLUSION IS
+         NOT A DECISION -- it means only "rejected from this proposed group".
+         Tinting an excluded row red would say Redact, tinting it green would
+         say Keep, and both would be lies the reviewer might act on. So an
+         exclusion is drawn the only honest way available: struck through and
+         dimmed, i.e. "not part of this set", with no hue claim at all.
+         Focus is a ring, never a fill -- the same eviction that moved focus
+         off accent-as-background everywhere else.
+
+         The list is a real two-column grid at width, because ~50 short values
+         read faster as two dozen-ish columns than as one long ribbon (the
+         same reading argument the zone grid's 12+11 split rests on). */
+      .quick-approval-offers { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+      .quick-approval-offers-lead { font-size: 0.82rem; color: var(--text-muted); }
+      .quick-approval-offer { font: inherit; font-size: 0.85rem; padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; }
+      .quick-approval-offer:hover { background: var(--surface-muted); }
+
+      .quick-approval { display: flex; flex-direction: column; gap: 0.75rem; }
+      .quick-approval-header { display: flex; flex-direction: column; gap: 0.3rem; }
+      .quick-approval-title { margin: 0; font-size: 1.05rem; }
+      .quick-approval-claim { margin: 0; font-size: 0.85rem; color: var(--text-muted); max-width: 62ch; }
+      .quick-approval-counts { display: flex; gap: 0.75rem; font-size: 0.82rem; }
+      .quick-approval-count { color: var(--text-muted); }
+      .quick-approval-count-in { font-weight: 600; color: var(--text); }
+      .quick-approval-count-out { font-weight: 600; }
+      .quick-approval-instruction { margin: 0.1rem 0 0; font-size: 0.85rem; color: var(--text); }
+
+      .quick-approval-list { display: grid; grid-template-columns: 1fr; gap: 0.1rem; border: 1px solid var(--border-soft); border-radius: 8px; padding: 0.35rem; background: var(--surface); }
+      @media (min-width: 60rem) { .quick-approval-list { grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(var(--qa-rows, 25), auto); } }
+      .quick-approval-row { display: grid; grid-template-columns: 1.1rem 1fr auto auto; align-items: center; gap: 0.4rem; padding: 0.12rem 0.45rem; border-radius: 5px; font-size: 0.9rem; cursor: pointer; }
+      .quick-approval-row:hover { background: var(--surface-muted); }
+      .quick-approval-row-focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .quick-approval-row-excluded .quick-approval-value { text-decoration: line-through; color: var(--text-muted); }
+      .quick-approval-row-excluded { opacity: 0.62; }
+      .quick-approval-mark { font-size: 0.75rem; color: var(--text-muted); text-align: center; }
+      .quick-approval-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .quick-approval-occ { font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+      /* The one non-neutral mark on the surface, and it is --warn rather than
+         a decision hue because it reports a DEFECT, not a verdict: this span
+         looks like DocScrub cut it. Amber's reserved meaning ("an open Fix
+         this session") is a review-state claim on a card; this is a glyph on
+         a row and does not compete for that channel. */
+      .quick-approval-defect { color: var(--warn); font-size: 0.8rem; cursor: help; }
+
+      .quick-approval-why { font-size: 0.8rem; color: var(--text-muted); min-height: 1.2rem; }
+      .quick-approval-why-label { font-weight: 600; }
+      .quick-approval-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+      .quick-approval-apply-lead { font-size: 0.9rem; font-weight: 600; }
+      .quick-approval-done, .quick-approval-apply { font: inherit; font-size: 0.88rem; padding: 0.3rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+      .quick-approval-done { border-color: var(--accent); }
+      .quick-approval-done:hover, .quick-approval-apply:hover { background: var(--surface-muted); }
     </style>
   </head>
   <body>
@@ -1706,32 +3000,68 @@
          .app-save-status) written by app.ts's syncAppHeader() on every
          render rather than rebuilt. The old subtitle line (an
          implementation pointer, not reviewer information) is gone. -->
+    <!-- ONE TOP LINE (AG, 2026-08-06). His layout: "Left side: + New,
+         Documents. Center: DocScrub v... Right side: [doc name] All Changes
+         Saved [hamburger]".
+         Three zones, and each one now holds a single KIND of thing: actions
+         left, identity centre, status right. Before this the brand sat left
+         and the document name sat centre, which gave the file the most
+         prominent slot on screen -- and a reviewer who has one document
+         open needs to be reminded of its name far less often than they need
+         the controls. The name moves right and shrinks accordingly.
+         This also RETIRES the separate .top-bar band: its buttons live here
+         now, which is what makes the command card able to align with them
+         (there is no second toolbar row left to align against). -->
     <div class="app-header">
-      <div class="app-header-left">
-        <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="28" />
+      <div class="app-header-left"></div>
+      <div class="app-brand">
+        <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="24" />
         <span class="app-version" title="See docs/architecture/design-notes.md for what changed in this version"></span>
       </div>
-      <div class="app-document">
-        <span class="app-document-title"></span>
-        <div class="app-document-panel" hidden></div>
-      </div>
       <div class="app-header-right">
+        <div class="app-document">
+          <span class="app-document-title"></span>
+          <div class="app-document-panel" hidden></div>
+        </div>
         <span class="app-save-status"></span>
-        <button class="app-settings-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="menu">⚙</button>
+        <!-- 2026-08-06: the standalone Admin button is gone. It was gated
+             on exactly the same is_internal_admin flag as the Admin item
+             inside the menu below (wireAccountMenu sets both), so for the
+             only people who could see it, it was a second door to the same
+             room sitting permanently in the application frame. The menu
+             item is the one that stays: it is where the other account-level
+             destinations already live. -->
+        <!-- HAMBURGER, NOT A GEAR (AG, 2026-08-06): "the gear icon now is a
+             menu, so it should be the hamburger icon." A gear promises
+             settings; this list is Workspace Metrics, Account, Admin, Sign
+             out and the roadmap items -- an application menu. The title and
+             aria-label move WITH the glyph: leaving them at "Settings"
+             would have a screen reader announce the thing the icon stopped
+             saying, which is worse than either alone. The .app-settings-*
+             class names are deliberately NOT renamed -- ~14 selectors
+             across two files churned to match a glyph, with no user-visible
+             effect and a merge conflict for anyone mid-edit. -->
+        <button class="app-settings-button" type="button" title="Menu" aria-label="Menu" aria-haspopup="menu">☰</button>
         <div class="app-settings-menu" role="menu" hidden>
           <!-- WORKSPACE METRICS (AG, 2026-08-02): read-only telemetry for
                the active workspace in a separate window -- wired in
                app.ts's one-time header block. -->
+          <!-- THE DISABLED ITEMS STAY VISIBLE TO EVERYONE, deliberately
+               (AG, 2026-08-06, overruling the suggestion to hide them):
+               "I want to see the extra items as a reminder of potential new
+               features." They are a roadmap in the place the feature will
+               eventually live, which is a different purpose from an
+               unimplemented control -- and reasonable people would cut
+               them, so the reasoning is recorded rather than left to be
+               rediscovered. Only Admin is gated (wireAccountMenu). -->
           <button class="app-settings-item app-settings-metrics" role="menuitem" type="button">Workspace Metrics</button>
           <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Preferences</div>
-          <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">User account</div>
+          <button class="app-settings-item app-settings-account" role="menuitem" type="button">Account</button>
+          <button class="app-settings-item app-settings-admin" role="menuitem" type="button" hidden>Admin</button>
           <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">DocScrub Vault</div>
           <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Licensing</div>
           <div class="app-settings-item app-settings-item-disabled" role="menuitem" aria-disabled="true">Updates</div>
-          <!-- PREVIEW GATE (AG, 2026-08-01): the one interactive item for
-               now -- clears the preview-session flag and returns to the
-               access screen (wired in previewGate.ts, not app.ts). -->
-          <button class="app-settings-item app-settings-exit-preview" type="button" role="menuitem">Exit Preview</button>
+          <button class="app-settings-item app-settings-sign-out" type="button" role="menuitem">Sign out</button>
           <div class="app-settings-item app-settings-about" role="menuitem"></div>
         </div>
       </div>
@@ -1760,52 +3090,250 @@
          shift page layout. -->
     <div class="status-region" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="toast-host" aria-hidden="true"></div>
-    <!-- PREVIEW GATE (AG, 2026-08-01): a TEMPORARY shared-password access
-         screen, the visual foundation of a future login. All behavior
-         lives in previewGate.ts (the module below), which defers the
-         application module's import until access is granted -- app.ts
-         knows nothing about the gate. See previewGate.ts's doc comment
-         for the replacement seam and the deliberate scope restraint. -->
+    <!-- ACCOUNT GATE (2026-08-06): Supabase authentication replaces the
+         temporary shared preview password through the same static shell
+         seam. previewGate.ts keeps its original filename because index.html
+         already loads that compiled module, but its behavior is now real
+         account/session handling plus the minimal account panel below. -->
     <div class="preview-gate" hidden>
       <div class="preview-gate-card">
         <div class="preview-gate-brand">
           <img class="app-logo" src="assets/docscrub.png" alt="DocScrub" height="30" />
-          <span class="preview-badge">Private Preview</span>
+          <span class="preview-badge">Sign in</span>
         </div>
-        <h1 class="preview-gate-heading">DocScrub Preview</h1>
-        <p class="preview-gate-supporting">Individual accounts are not yet enabled. Enter the shared preview password to continue.</p>
-        <!-- onsubmit="return false" (2026-08-02): a MARKUP-LEVEL hard stop
-             on native form submission. Root cause of "type password, press
-             Enter, dots disappear": in some page states (observed live)
-             the module's submit handler wasn't attached, so Enter fell
-             through to a NATIVE GET submit -- the page navigated to
-             index.html?, wiping the field and re-showing a fresh gate,
-             indistinguishable from rejection. The inline attribute exists
-             the instant the form exists, needs no module, and cannot be
-             lost to any script race: the module's listener still handles
-             the real submit; native navigation is simply impossible. -->
+        <h1 class="preview-gate-heading">
+          <span>Your data. Your computer. Your decisions.</span>
+          <span>Your account respects that.</span>
+        </h1>
+        <button type="button" class="preview-google">
+          <span class="preview-google-mark" aria-hidden="true">G</span>
+          <span>Continue with Google</span>
+        </button>
+        <div class="preview-auth-divider">Or sign in with email</div>
         <form class="preview-gate-form" onsubmit="return false">
           <label class="preview-field">
             <span class="preview-field-label">Email</span>
-            <input type="text" value="Preview account" disabled />
+            <input type="email" class="preview-email" autocomplete="email" autofocus />
           </label>
-          <label class="preview-field">
+          <label class="preview-field preview-password-field">
             <span class="preview-field-label">Password</span>
-            <!-- SHARED preview password, not a personal credential
-                 (2026-08-02, root cause of "the password does not work!"):
-                 autocomplete="current-password" INVITED password managers
-                 to attach, and 1Password's inline overlay was capturing
-                 the user's keystrokes -- typing went into its search box,
-                 Enter searched the vault, and the page never received a
-                 single key. The opt-outs below tell 1Password/LastPass/
-                 Dashlane to stand down; re-invite managers only when this
-                 becomes a real per-user login. -->
-            <input type="password" class="preview-password" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" autofocus />
+            <input type="password" class="preview-password" autocomplete="current-password" />
           </label>
-          <p class="preview-gate-error" hidden>Incorrect preview password.</p>
-          <button type="submit" class="primary-action preview-submit">Enter DocScrub</button>
+          <p class="preview-gate-error" hidden></p>
+          <p class="preview-gate-status" hidden></p>
+          <button type="submit" class="primary-action preview-submit">Sign In</button>
+          <p class="preview-account-switch">
+            <span class="preview-account-switch-text">No Account?</span>
+            <button class="preview-link-button preview-account-mode" type="button">Create an account</button>
+          </p>
         </form>
       </div>
+    </div>
+    <div class="setup-wizard" hidden>
+      <section class="setup-wizard-frame" aria-labelledby="setup-wizard-title">
+        <div class="setup-wizard-header">
+          <img class="setup-wizard-logo" src="assets/docscrub.png" alt="DocScrub" height="26" />
+          <div class="setup-wizard-progress" aria-label="Setup progress">
+            <button class="setup-wizard-pill setup-wizard-pill-active" type="button" data-setup-step="0">Welcome</button>
+            <button class="setup-wizard-pill" type="button" data-setup-step="1">Account</button>
+            <button class="setup-wizard-pill" type="button" data-setup-step="2">Ready</button>
+            <button class="setup-wizard-pill" type="button" data-setup-step="3" data-setup-extended hidden>Invite Team</button>
+            <button class="setup-wizard-pill" type="button" data-setup-step="4" data-setup-extended hidden>Complete</button>
+          </div>
+          <button class="setup-wizard-close" type="button" aria-label="Close setup preview">&times;</button>
+        </div>
+        <div class="setup-wizard-body">
+          <section class="setup-wizard-step setup-welcome-center" data-setup-panel="0">
+            <div>
+              <h2 id="setup-wizard-title">Welcome to DocScrub</h2>
+              <p class="setup-wizard-copy">
+                <strong>Your data. Your computer. Your decisions.</strong>
+              </p>
+              <p class="setup-wizard-copy">
+                DocScrub reviews documents on <strong>your computer</strong>. Creating an account gives you access to your settings, subscriptions, and team features without changing where your documents are processed.
+              </p>
+            </div>
+          </section>
+          <section class="setup-wizard-step" data-setup-panel="1" hidden>
+            <h2>Account</h2>
+            <form class="setup-profile-form" onsubmit="return false">
+              <label class="preview-field">
+                <span class="preview-field-label">First name</span>
+                <input class="setup-profile-first-name" type="text" autocomplete="given-name" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Last name</span>
+                <input class="setup-profile-last-name" type="text" autocomplete="family-name" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Email</span>
+                <input class="setup-profile-email" type="email" autocomplete="email" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Password</span>
+                <input type="password" value="password" disabled />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Organization</span>
+                <input class="setup-profile-organization" type="text" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Company</span>
+                <input class="setup-profile-company" type="text" autocomplete="organization" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Job title</span>
+                <input class="setup-profile-job-title" type="text" autocomplete="organization-title" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Phone</span>
+                <input class="setup-profile-phone" type="tel" autocomplete="tel" />
+              </label>
+              <label class="preview-field setup-field-wide">
+                <span class="preview-field-label">Address</span>
+                <textarea class="setup-profile-address" rows="2" autocomplete="street-address"></textarea>
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">City</span>
+                <input class="setup-profile-city" type="text" autocomplete="address-level2" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">State / Province</span>
+                <input class="setup-profile-state-province" type="text" autocomplete="address-level1" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Postal Code</span>
+                <input class="setup-profile-postal-code" type="text" autocomplete="postal-code" />
+              </label>
+              <label class="preview-field">
+                <span class="preview-field-label">Country</span>
+                <input class="setup-profile-country" type="text" autocomplete="country-name" />
+              </label>
+            </form>
+          </section>
+          <section class="setup-wizard-step setup-ready-center" data-setup-panel="2" hidden>
+            <div>
+              <h2>You're ready.</h2>
+              <button class="primary-action setup-start-button" type="button" data-setup-start>Start using DocScrub</button>
+              <button class="preview-link-button setup-ready-invite" type="button" disabled>Coming Soon: Invite others to join your Organization.</button>
+            </div>
+          </section>
+          <section class="setup-wizard-step" data-setup-panel="3" hidden>
+            <h2>Invite your team</h2>
+            <p class="setup-invite-copy">Invite colleagues to join your organization. They can create their accounts whenever they're ready.</p>
+            <div class="setup-invite-table">
+              <div class="setup-invite-row setup-invite-head" aria-hidden="true">
+                <span>Name</span>
+                <span>Email</span>
+              </div>
+              <div class="setup-invite-row" data-invite-row>
+                <input class="setup-invite-name" type="text" autocomplete="name" aria-label="Name" />
+                <input class="setup-invite-email" type="email" autocomplete="email" aria-label="Email" />
+              </div>
+              <div class="setup-invite-row" data-invite-row>
+                <input class="setup-invite-name" type="text" autocomplete="name" aria-label="Name" />
+                <input class="setup-invite-email" type="email" autocomplete="email" aria-label="Email" />
+              </div>
+              <div class="setup-invite-row" data-invite-row>
+                <input class="setup-invite-name" type="text" autocomplete="name" aria-label="Name" />
+                <input class="setup-invite-email" type="email" autocomplete="email" aria-label="Email" />
+              </div>
+              <button class="preview-link-button setup-invite-add" type="button">Add another person</button>
+            </div>
+            <p class="setup-invite-error" hidden></p>
+          </section>
+          <section class="setup-wizard-step setup-ready-center" data-setup-panel="4" hidden>
+            <div>
+              <h2>You're ready.</h2>
+              <button class="primary-action setup-start-button" type="button" data-setup-start>Start using DocScrub</button>
+            </div>
+          </section>
+        </div>
+        <div class="setup-wizard-footer">
+          <div class="setup-wizard-footer-left">
+            <button class="setup-wizard-back" type="button">Back</button>
+          </div>
+          <div class="setup-wizard-footer-right">
+            <button class="setup-wizard-skip" type="button" hidden>Skip</button>
+            <button class="setup-wizard-secondary" type="button" hidden>Back to sign in</button>
+            <button class="primary-action setup-wizard-next" type="button">Continue</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="account-panel" hidden>
+      <section class="account-panel-card" aria-labelledby="account-panel-title">
+        <div class="account-panel-header">
+          <div>
+            <h2 class="account-panel-title" id="account-panel-title">Account</h2>
+            <p class="account-panel-subtitle account-panel-email"></p>
+          </div>
+          <button class="account-panel-close" type="button" aria-label="Close account panel">&times;</button>
+        </div>
+        <div class="account-section">
+          <h3>Organization</h3>
+          <div class="account-line">
+            <strong class="account-panel-org-name"></strong>
+            <span class="account-panel-role"></span>
+          </div>
+        </div>
+        <div class="account-section">
+          <h3>Members</h3>
+          <div class="account-members"></div>
+        </div>
+        <div class="account-section">
+          <h3>Invite</h3>
+          <form class="account-invite-form">
+            <label class="preview-field">
+              <span class="preview-field-label">Email</span>
+              <input class="account-invite-email" type="email" autocomplete="email" />
+            </label>
+            <label class="preview-field">
+              <span class="preview-field-label">Role</span>
+              <select class="account-invite-role">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button class="primary-action" type="submit">Invite</button>
+          </form>
+          <p class="account-invite-output"></p>
+        </div>
+        <div class="account-section">
+          <h3>Pending Invitations</h3>
+          <div class="account-invitations"></div>
+        </div>
+      </section>
+    </div>
+    <div class="admin-panel account-panel" hidden>
+      <section class="admin-panel-card account-panel-card" aria-labelledby="admin-panel-title">
+        <div class="account-panel-header">
+          <div>
+            <h2 class="account-panel-title" id="admin-panel-title">Admin</h2>
+            <p class="account-panel-subtitle">Internal DocScrub metrics only.</p>
+          </div>
+          <button class="admin-panel-close account-panel-close" type="button" aria-label="Close admin panel">&times;</button>
+        </div>
+        <div class="admin-nav" role="tablist" aria-label="Admin sections">
+          <button class="admin-nav-button admin-nav-button-active" type="button" data-admin-tab="metrics">Metrics</button>
+          <button class="admin-nav-button" type="button" data-admin-tab="users">Users</button>
+          <button class="admin-nav-button" type="button" data-admin-tab="organizations">Organizations</button>
+          <button class="admin-nav-button" type="button" data-admin-tab="setup">Setup / System Status</button>
+        </div>
+        <div class="admin-filters">
+          <label class="preview-field admin-filter-field">
+            <span class="preview-field-label">From</span>
+            <input class="admin-range-start" type="date" />
+          </label>
+          <label class="preview-field admin-filter-field">
+            <span class="preview-field-label">To</span>
+            <input class="admin-range-end" type="date" />
+          </label>
+          <button class="primary-action admin-refresh" type="button">Refresh</button>
+        </div>
+        <p class="admin-status"></p>
+        <div class="admin-content"></div>
+      </section>
     </div>
     <!-- Supabase config: browser-safe project URL + publishable key only.
          env-config.js is gitignored; env-config.example.js is the checked-in

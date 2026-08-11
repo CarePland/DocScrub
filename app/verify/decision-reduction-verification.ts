@@ -679,12 +679,12 @@ async function main(): Promise<void> {
       check("imported decisions add no samples either", individualDecisionRate(withImport)?.samples === 3, JSON.stringify(individualDecisionRate(withImport)));
     }
 
-    console.log("  the estimate multiplies UNITS avoided, never occurrences");
+    console.log("  the estimate multiplies the tracker Avoided count");
     {
       const s = session([individual(0, "a"), individual(10, "b"), individual(20, "c"), individual(30, "d")]);
-      // 100 units resolved by 4 decisions -> 96 avoided, at 10s each.
-      const e = estimateTimeSaved(s, 100, 4)!;
-      check("96 units avoided", e.unitsAvoided === 96);
+      // 96 avoided occurrence-level reviews, at 10s each.
+      const e = estimateTimeSaved(s, 96)!;
+      check("96 avoided reviews", e.unitsAvoided === 96);
       check("at the observed 10s pace = 960s", e.totalSeconds === 960);
       check("rendered as 16.0 minutes", e.value === 16 && e.unit === "minutes", `${e.value} ${e.unit}`);
       check("label is the phrase beside the number", e.label === "minutes of work avoided", e.label);
@@ -695,10 +695,10 @@ async function main(): Promise<void> {
     console.log("  suppressed rather than fabricated");
     {
       const s = session([individual(0, "a"), individual(10, "b"), individual(20, "c"), individual(30, "d")]);
-      check("nothing avoided -> no estimate", estimateTimeSaved(s, 4, 4) === null);
-      check("more decisions than units -> no estimate, never negative", estimateTimeSaved(s, 2, 9) === null);
-      check("no observable rate -> no estimate", estimateTimeSaved(session([individual(0, "a")]), 100, 1) === null);
-      check("a null session -> no estimate", estimateTimeSaved(null, 100, 1) === null);
+      check("nothing avoided -> no estimate", estimateTimeSaved(s, 0) === null);
+      check("negative avoided -> no estimate, never negative", estimateTimeSaved(s, -7) === null);
+      check("no observable rate -> no estimate", estimateTimeSaved(session([individual(0, "a")]), 100) === null);
+      check("a null session -> no estimate", estimateTimeSaved(null, 100) === null);
     }
 
     console.log("  the unit ladder, including promotion at the boundaries");
@@ -712,7 +712,7 @@ async function main(): Promise<void> {
           individual(secondsPerDecision * 2, "c"),
           individual(secondsPerDecision * 3, "d"),
         ]);
-        return estimateTimeSaved(s, unitsAvoided + 4, 4)!;
+        return estimateTimeSaved(s, unitsAvoided)!;
       };
       const ladder: [number, number, string, string][] = [
         [30, 2, "minutes", "1.0"], //      60s
@@ -733,11 +733,11 @@ async function main(): Promise<void> {
     console.log("  the plain-language explanation is generated from the same figures");
     {
       const s = session([individual(0, "a"), individual(10, "b"), individual(20, "c"), individual(30, "d")]);
-      const e = estimateTimeSaved(s, 100, 4)!;
+      const e = estimateTimeSaved(s, 96)!;
       const paragraphs = explainTimeSaved(e);
       check("three short paragraphs", paragraphs.length === 3);
       check("names the measured pace and its sample size", paragraphs[0]!.includes("10 seconds") && paragraphs[0]!.includes("3"), paragraphs[0]);
-      check("names the units avoided and the resulting figure", paragraphs[1]!.includes("96") && paragraphs[1]!.includes("16.0 minutes"), paragraphs[1]);
+      check("names the avoided reviews and the resulting figure", paragraphs[1]!.includes("96") && paragraphs[1]!.includes("16.0 minutes"), paragraphs[1]);
       check("states the direction of the error rather than hiding it", /larger/.test(paragraphs[2]!) && /cautious/.test(paragraphs[2]!), paragraphs[2]);
       check("claims no time was 'saved' -- only that work was avoided", !/\bsaved\b/i.test(paragraphs.join(" ")));
       check("makes no productivity or money claim", !paragraphs.join(" ").match(/productiv|efficien|\$|cost|faster/i));
@@ -753,6 +753,21 @@ async function main(): Promise<void> {
     check("Fewer Decisions renders a whole percent", /^~?\d{1,3}%$/.test(percentLabel), percentLabel);
     check("the strip's percent never exceeds 100", Math.round(global.fewerDecisionPercent) <= 100);
     check("the strip shows figures even though local suppression exists", global.avoidedDecisionCount >= 0);
+  }
+
+  console.log("--- Decision Tracker time uses the same Avoided count the panel displays ---");
+  {
+    const session = (events: { kind: string; at: string; payload: Record<string, unknown> }[]): ReviewSession =>
+      ({ events: events.map((e, i) => ({ id: `panel-e${i}`, ...e })) }) as unknown as ReviewSession;
+    const at = (seconds: number) => new Date(Date.UTC(2026, 7, 3, 12, 0, seconds)).toISOString();
+    const individual = (secondsIn: number, id: string) => ({ kind: "candidate-decided", at: at(secondsIn), payload: { candidateId: id, decision: "Keep" } });
+    const s = session([individual(0, "a"), individual(10, "b"), individual(20, "c"), individual(30, "d")]);
+    const resolved: ReviewUnit[] = [unit("a", 583), unit("b", 1), unit("c", 1), unit("d", 1)];
+    const tracker = decisionTrackerFigures(s, resolved);
+    check("made comes from the event log", tracker.decisionsMade === 4, String(tracker.decisionsMade));
+    check("avoided is covered occurrences minus made", tracker.avoidedDecisionCount === 582, String(tracker.avoidedDecisionCount));
+    check("time estimate prices the displayed avoided count", tracker.timeSaved?.unitsAvoided === tracker.avoidedDecisionCount, JSON.stringify(tracker.timeSaved));
+    check("582 avoided reviews at 10s promotes to 1.6 hours", tracker.timeSaved?.display === "1.6" && tracker.timeSaved.unit === "hours", `${tracker.timeSaved?.display} ${tracker.timeSaved?.unit}`);
   }
 
   console.log("--- local figures: scoped to what REMAINS, shrinking to nothing ---");

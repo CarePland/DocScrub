@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "occurrences": [
+    {
+      "id": "cin:123456789:body paragraph 2:18:1",
+      "candidateKey": "cin:123456789",
+      "text": "123456789",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 2",
+      "start": 18,
+      "end": 27,
+      "context": "Please verify ID: [123456789]."
+    },
+    {
+      "id": "cin:781237504:body paragraph 1:12:1",
+      "candidateKey": "cin:781237504",
+      "text": "781237504",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 1",
+      "start": 12,
+      "end": 21,
+      "context": "Student CIN [781237504] was updated in the system."
+    },
+    {
+      "id": "cin:781237504:body paragraph 7:45:2",
+      "candidateKey": "cin:781237504",
+      "text": "781237504",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 7",
+      "start": 45,
+      "end": 54,
+      "context": "Join at https://teams.microsoft.com/l/meetup/[781237504]d3f8a9b today."
+    },
+    {
+      "id": "cin:987654321:body paragraph 3:12:1",
+      "candidateKey": "cin:987654321",
+      "text": "987654321",
+      "detectedType": "cin",
+      "source": "regex",
+      "location": "body paragraph 3",
+      "start": 12,
+      "end": 21,
+      "context": "The record ([987654321]) is now closed."
+    },
+    {
+      "id": "long_numeric_id:01200067742:body paragraph 9:10:1",
+      "candidateKey": "long_numeric_id:01200067742",
+      "text": "01200067742",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 9",
+      "start": 10,
+      "end": 21,
+      "context": "Batch ref [01200067742]E5B was rejected."
+    },
+    {
+      "id": "long_numeric_id:123456789012:body paragraph 5:10:1",
+      "candidateKey": "long_numeric_id:123456789012",
+      "text": "123-456-789-012",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 5",
+      "start": 10,
+      "end": 26,
+      "context": "Reference [123-456-789-012 ]for the transfer."
+    },
+    {
+      "id": "long_numeric_id:1234567890123:body paragraph 4:8:1",
+      "candidateKey": "long_numeric_id:1234567890123",
+      "text": "1234567890123",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 4",
+      "start": 8,
+      "end": 22,
+      "context": "Account [1234567890123 ]has a hold."
+    },
+    {
+      "id": "long_numeric_id:18900663687:body paragraph 8:14:1",
+      "candidateKey": "long_numeric_id:18900663687",
+      "text": "18900663687",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 8",
+      "start": 14,
+      "end": 25,
+      "context": "The upload id=[18900663687]e4c1a99 failed to process."
+    },
+    {
+      "id": "long_numeric_id:82601229711:body paragraph 6:12:1",
+      "candidateKey": "long_numeric_id:82601229711",
+      "text": "826 0122 9711",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "location": "body paragraph 6",
+      "start": 12,
+      "end": 26,
+      "context": "Meeting ID: [826 0122 9711 ]Passcode: aB3xy9"
+    },
+    {
+      "id": "person:andrew goodloe:body paragraph 14:0:1",
+      "candidateKey": "person:andrew goodloe",
+      "text": "Andrew Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 14",
+      "start": 0,
+      "end": 14,
+      "context": "[Andrew Goodloe] sent the report to Tamara Yamada."
+    },
+    {
+      "id": "person:appt nbr:body paragraph 12:33:1",
+      "candidateKey": "person:appt nbr",
+      "text": "Appt Nbr",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 12",
+      "start": 33,
+      "end": 41,
+      "context": "Open the Term Session Appt Block [Appt Nbr] field."
+    },
+    {
+      "id": "person:background process:body paragraph 11:35:1",
+      "candidateKey": "person:background process",
+      "text": "Background Process",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 11",
+      "start": 35,
+      "end": 53,
+      "context": "Post Enrollment Requisite Checking [Background Process] runs nightly."
+    },
+    {
+      "id": "person:contact mary jane watson:body paragraph 10:0:1",
+      "candidateKey": "person:contact mary jane watson",
+      "text": "Contact Mary Jane Watson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 10",
+      "start": 0,
+      "end": 24,
+      "context": "[Contact Mary Jane Watson] Parker about the transfer."
+    },
+    {
+      "id": "person:post enrollment requisite checking:body paragraph 11:0:1",
+      "candidateKey": "person:post enrollment requisite checking",
+      "text": "Post Enrollment Requisite Checking",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 11",
+      "start": 0,
+      "end": 34,
+      "context": "[Post Enrollment Requisite Checking] Background Process runs nightly."
+    },
+    {
+      "id": "person:registrar and enrollment services:body paragraph 13:18:1",
+      "candidateKey": "person:registrar and enrollment services",
+      "text": "Registrar And Enrollment Services",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 13",
+      "start": 18,
+      "end": 51,
+      "context": "The Office Of The [Registrar And Enrollment Services] Team met."
+    },
+    {
+      "id": "person:tamara yamada:body paragraph 14:34:1",
+      "candidateKey": "person:tamara yamada",
+      "text": "Tamara Yamada",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 14",
+      "start": 34,
+      "end": 47,
+      "context": "Andrew Goodloe sent the report to [Tamara Yamada]."
+    },
+    {
+      "id": "person:term session appt block:body paragraph 12:9:1",
+      "candidateKey": "person:term session appt block",
+      "text": "Term Session Appt Block",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 12",
+      "start": 9,
+      "end": 32,
+      "context": "Open the [Term Session Appt Block] Appt Nbr field."
+    },
+    {
+      "id": "person:the:body paragraph 3:0:1",
+      "candidateKey": "person:the",
+      "text": "The",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 3",
+      "start": 0,
+      "end": 3,
+      "context": "[The] record (987654321) is now closed."
+    },
+    {
+      "id": "person:the:body paragraph 8:0:2",
+      "candidateKey": "person:the",
+      "text": "The",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "location": "body paragraph 8",
+      "start": 0,
+      "end": 3,
+      "context": "[The] upload id=18900663687e4c1a99 failed to process."
+    },
+    {
+      "id": "person:the office of the:body paragraph 13:0:1",
+      "candidateKey": "person:the office of the",
+      "text": "The Office Of The",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "location": "body paragraph 13",
+      "start": 0,
+      "end": 17,
+      "context": "[The Office Of The] Registrar And Enrollment Services Team met."
+    },
+    {
+      "id": "phone:18900663687:body paragraph 8:14:1",
+      "candidateKey": "phone:18900663687",
+      "text": "18900663687",
+      "detectedType": "phone",
+      "source": "regex",
+      "location": "body paragraph 8",
+      "start": 14,
+      "end": 25,
+      "context": "The upload id=[18900663687]e4c1a99 failed to process."
+    }
+  ]
+}

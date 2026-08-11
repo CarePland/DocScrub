@@ -20,7 +20,7 @@
 
 ## Reviewer workflow
 
-Proposal cards: kind label (`Possible acronym relationship` / `…numeric identifier pattern` / `…alphanumeric identifier pattern`), the observation, the deterministic evidence, member rows with checkboxes (Group Check's unchecked-set pattern; name + occurrence count + circled ✓ once decided), and actions **Keep All/Selected · Change All/Selected · Redact All/Selected · Unrelated** (labels adapt to selection, matching the group-row convention). Change/Redact open the standard inline editor (new `relationship` scope) with the pending-decision preview on the card, per the item-scheme paradigm; the acknowledgement pulse fires on the card. "Unrelated" narrates via the status region: *"Relationship dissolved — its candidates continue through review individually."* Addressed proposals stay visible with the circled ✓; dismissed ones disappear.
+Proposal cards: kind label (`Possible acronym relationship` / `…numeric identifier pattern` / `…alphanumeric identifier pattern`), the observation, the deterministic evidence, member rows with checkboxes (Group Check's unchecked-set pattern; name + occurrence count + circled ✓ once decided), and actions **[K] Keep All/Selected · [C] Change All/Selected · [R] Redact All/Selected · [U] Unrelated** (labels adapt to selection, matching the group-row convention). Change/Redact open the standard inline editor (new `relationship` scope) with the pending-decision preview on the card, per the item-scheme paradigm; the acknowledgement pulse fires on the card. "Unrelated" narrates via the status region and leaves the proposal visible as a resolved grey **Marked unrelated** item. Dismissed proposals remain inspectable and reversible via **Recombine**; if members have since been edited individually, recombining requires an explicit confirmation and clears those member decisions before restoring the proposal to ordinary relationship review.
 
 ## Judgment calls (assumption · why · alternatives · reviewer impact)
 
@@ -28,8 +28,8 @@ Proposal cards: kind label (`Possible acronym relationship` / `…numeric identi
 2. **Minimum pattern group = 2 distinct candidates; minimum token length 4; single-token only.** Below these, shape collisions are coincidence, not structure. Impact: conservative proposals; thresholds are constants, trivially tunable.
 3. **No relationship-level "accepted" record.** Acceptance is expressed by the decisions it produces (plus `viaBulkApply` events); storing a parallel acceptance flag would duplicate derived truth. Alternative (an `appliedRelationships` record) rejected per derive-don't-duplicate. Impact: audit shows *what happened* (decisions + batch events + dismissals); "this proposal was used" is inferable, not stamped.
 4. **Proposals are not FocusNavigator items.** Teaching `stages.ts`/`navigator.ts` a second ambiguity item kind would extend the domain traversal model for items that don't gate anything (stage counts/readiness are entity-ambiguity/Item-Check based, unchanged). The section is part of the review surface; its controls are tabbable under the existing region/Escape grammar. Impact: arrows/Tab move through entity ambiguities exactly as before.
-5. **Keyboard letters deferred** (see below).
-6. **No "restore dismissed relationship" affordance** — not in the proposal; dismissals are durable and audited. A future "show dismissed" toggle is a cheap extension.
+5. **Relationship card letters are card-scoped.** K/C/R/U act only while a relationship proposal card is the selected working object, and route to the same operations as the visible card buttons. U was added for Unrelated after confirming no existing app binding used U. I remains deliberately refused on relationship cards because Ignore is a per-candidate action, not a relationship action.
+6. **Dismissed relationships stay visible and reversible** (revised 2026-08-08). The original implementation made dismissed proposals disappear; that proved bad review practice because the reviewer could not inspect or reverse an "Unrelated" choice. Dismissal is still durable and audited, but now renders as a resolved state on the proposal itself. Recombine removes the dismissal; when member decisions exist, the UI warns that recombining will cancel those changes and the reducer records ordinary candidate-reset events before the relationship-restored audit event.
 7. **Re-detection stability**: dismissals key on content-derived ids, so a re-load re-proposes exactly what was dismissed and the dismissal still applies. If the document changes such that the same id means a different member set, the dismissal still suppresses it — acceptable for v1 (the id embeds the structural key), noted for future revision-awareness.
 
 ## Proposal details adjusted
@@ -43,9 +43,9 @@ Proposal cards: kind label (`Possible acronym relationship` / `…numeric identi
 |---|---|
 | `src/domain/StructuralRelationship.ts` | new — proposal/dismissal types + design principles |
 | `src/engines/StructuralRelationshipEngine.ts` | new — detector framework + acronym & identifier detectors |
-| `src/domain/Commands.ts` | `review.dismissRelationship` |
-| `src/domain/ReviewSession.ts` | optional `relationshipDismissals`; `relationship-dismissed` event kind |
-| `src/engines/review/session.ts` | `dismissRelationship` reducer case (touches no candidate state) |
+| `src/domain/Commands.ts` | `review.dismissRelationship`; `review.restoreRelationship` |
+| `src/domain/ReviewSession.ts` | optional `relationshipDismissals`; `relationship-dismissed` / `relationship-restored` event kinds |
+| `src/engines/review/session.ts` | `dismissRelationship` reducer case (touches no candidate state); `restoreRelationship` inverse with optional member-decision reset |
 | `src/workspace/Workspace.ts` | engine wiring; `WorkspaceState.structuralRelationships` |
 | `src/ui/app.ts` | Ambiguity-stage section; `relationship` inline-editor scope; bulk/dismiss handlers; status narration |
 | `index.html` | card styling (monospace evidence, member list) |
@@ -61,11 +61,11 @@ Proposal cards: kind label (`Possible acronym relationship` / `…numeric identi
 1. Load a document containing an org name + its acronym and several same-shape identifiers → Ambiguity shows the section with correct observations/evidence; version label reads v2026-07-30.03.
 2. Keep All on a proposal → members decided (visible in Item Check with circled ✓), card pulses, shows addressed ✓; status narrates.
 3. Uncheck a member → buttons flip to "…Selected"; Change Selected → editor opens in the card with the blue pending preview; confirm → only selected members renamed.
-4. Unrelated → card disappears; status reads the dissolution message; members still present and undecided in Item Check; save + resume → still dismissed.
+4. Unrelated → card remains as a grey "Marked unrelated" resolved item; members still present and undecided in Item Check; save + resume → still marked unrelated; Recombine restores it, warning first if member decisions must be cancelled.
 5. Redact Selected with and without text; verify output rebuild redacts normally.
 6. Escape/Tab behave per the existing region grammar around the new controls; no letter keys changed meaning anywhere.
 
 ## Intentionally deferred
 
-- Dedicated keyboard letters / focus-list membership for proposal cards — pending the in-flight keyboard interaction language; the natural follow-up is registering the section as a region or folding proposals into a roving grid.
-- A "show dismissed relationships" toggle; dotted-acronym variants ("U.S.C."); revision-aware dismissals; additional detectors (dates, addresses…) — the framework accepts them as registry entries.
+- Focus-list membership for proposal cards — pending the in-flight keyboard interaction language; the natural follow-up is registering the section as a region or folding proposals into a roving grid.
+- Dotted-acronym variants ("U.S.C."); revision-aware dismissals; additional detectors (dates, addresses…) — the framework accepts them as registry entries.

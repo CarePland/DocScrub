@@ -174,10 +174,25 @@ const emptyDismiss = applyReviewCommand(
   "2026-07-30T00:00:02.000Z"
 );
 check("an empty member list is rejected, not silently recorded", emptyDismiss.result.ok === false);
+const restored = applyReviewCommand(
+  session,
+  { family: "review", type: "restoreRelationship", proposalId: "rel-pattern-#########", relationshipKind: "numeric-identifier", candidateIds: ["n1", "n2"] },
+  context,
+  "2026-07-30T00:00:02.500Z"
+);
+check("restoreRelationship reverses a stored Unrelated dismissal", restored.result.ok === true && restored.session.relationshipDismissals?.["rel-pattern-#########"] === undefined);
+check("relationship-restored is audited", restored.session.events.some((e) => e.kind === "relationship-restored" && e.payload.proposalId === "rel-pattern-#########"));
 
 console.log("--- members remain fully reviewable after dismissal ---");
 const keepAfter = applyReviewCommand(session, { family: "review", type: "keepCandidate", candidateId: "n1" }, context, "2026-07-30T00:00:03.000Z");
 check("a dismissed proposal's member still takes an ordinary Keep in Item Review", keepAfter.result.ok === true && keepAfter.session.candidateDecisions["n1"]?.decision === "Keep");
+const recombinedAfterEdits = applyReviewCommand(
+  keepAfter.session,
+  { family: "review", type: "restoreRelationship", proposalId: "rel-pattern-#########", relationshipKind: "numeric-identifier", candidateIds: ["n1", "n2"], resetCandidateIds: ["n1", "n2"] },
+  context,
+  "2026-07-30T00:00:04.000Z"
+);
+check("restoreRelationship can clear member decisions after confirmation", recombinedAfterEdits.result.ok === true && recombinedAfterEdits.session.candidateDecisions["n1"] === undefined);
 
 console.log("--- serialization: additive & backward compatible ---");
 const serialized = serializeReviewSession(session);

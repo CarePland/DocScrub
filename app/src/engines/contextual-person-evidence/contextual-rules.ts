@@ -1,3 +1,11 @@
+import { QUALITY_DICTIONARIES_DATA } from "../quality/quality-dictionaries.data.js";
+
+/** One lexicon from the shared data module. Read from the DATA module, not
+ *  from scoring.ts: scoring imports this file, so going the other way would
+ *  be a cycle (and was -- caught at first run). */
+function lexicon(key: string): readonly string[] {
+  return (QUALITY_DICTIONARIES_DATA as Record<string, readonly string[]>)[key] ?? [];
+}
 /**
  * contextual-rules.ts -- the seven sentence-level rules of the Contextual
  * Person Evidence pass (AG, 2026-08-05).
@@ -295,7 +303,49 @@ const ADVERB_LIKE_RE = /ly$/;
  * like "Review Jordan" is genuinely ambiguous in a document that also
  * contains a file, a form or a campus named Jordan.
  */
+/**
+ * Words whose trailing period is an ABBREVIATION MARK, not a sentence end.
+ *
+ * Needed because Guard 2 broke a legitimate control on its first run:
+ * "Ask Dr. [Garcia] about it" stopped firing, since "Dr." ends in a period
+ * like any sentence. Built from the pipeline's own honorific and
+ * abbreviation lexicons rather than a hand-written list, for the same
+ * reason Guard 1 is: a list invented here would drift from the one the rest
+ * of the app uses.
+ */
+const ABBREVIATION_NOT_SENTENCE_END: ReadonlySet<string> = new Set<string>([
+  ...(lexicon("honorific_title") ),
+  ...(lexicon("common_abbreviation") ),
+  ...(lexicon("professional_credential") ),
+].map((t) => t.replace(/\.$/, "").toLowerCase()));
+
 function humanObject(parts: ContextParts): boolean {
+  /*
+   * GUARD 2 -- A SENTENCE BOUNDARY BREAKS THE RELATION (AG, 2026-08-09).
+   *
+   * The rule reads the token immediately before the candidate and asks
+   * whether it is a verb directed at a person. `bare()` strips punctuation,
+   * so a full stop between the two was invisible and these scored alike:
+   *
+   *     "Please email [Tamara] about it"            <- a real object
+   *     "...sent an email.  [The] first sentence"   <- two sentences
+   *
+   * The second was a live false positive on Andrew's document ("The"
+   * retained as a person). An object relation cannot cross a sentence
+   * boundary: the verb belongs to the previous sentence and the candidate
+   * begins the next one.
+   *
+   * Checked on the RAW tail rather than the tokenised form precisely
+   * because tokenising is what destroyed the evidence. An abbreviation
+   * ("Dr.", "Inc.") ends in a period too, so the test requires the period
+   * to terminate a word of at least two letters -- "email." breaks the
+   * relation, "Dr." does not.
+   */
+  const tail = parts.before.replace(/\s+$/, "");
+  if (/[!?]$/.test(tail)) return false;
+  const trailingPeriodWord = /(?:^|\s)([\p{L}\p{M}]{2,})\.$/u.exec(tail);
+  if (trailingPeriodWord && !ABBREVIATION_NOT_SENTENCE_END.has(trailingPeriodWord[1]!.toLowerCase())) return false;
+
   const previous = bare(trailingTokens(parts.before, 1)[0]);
   if (!previous) return false;
   return matchesVerb(previous, DIRECTED_AT_PERSON_SET);

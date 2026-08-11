@@ -23,6 +23,7 @@
 
 import {
   adjacentReviewTarget,
+  advanceWithinCategoryScope,
   advanceWithinReviewTargets,
   advanceWithinVisibleList,
   candidateReviewTarget,
@@ -502,6 +503,110 @@ console.log("--- paint order and target order are one derivation ---");
     sectionDisplayTargets(tieredWithProposals),
     ["candidate:strong-1", "candidate:weak-1"],
     "proposal:pair-1"
+  );
+}
+
+
+/* ==========================================================================
+ * THE CATEGORY BOUNDARY IS A HARD STOP (AG, 2026-08-08).
+ *
+ * These reproduce the defect captured in a live instrumented run rather than
+ * a hypothetical one. The trace excerpt that produced them:
+ *
+ *   seq 68  advance.visible     proposal:rel-acronym-ITS -> proposal:rel-acronym-PERC
+ *   seq 70  advance.completion  anchor proposal:rel-acronym-QBU -> candidate:person:civitas
+ *                               {sectionId: "acronyms", remaining: 2}
+ *
+ * The acronyms category held one candidate and three proposals. The reviewer
+ * decided ITS; the correct landing was PERC; the completion advance instead
+ * left the category with two units still unresolved, because its anchor was
+ * QBU -- the LAST unit of the zone scope -- and the forward scan walked
+ * straight out of the category from there.
+ *
+ * Fixture below mirrors that exact shape.
+ * ========================================================================== */
+{
+  const acronyms: ReviewDisplayTarget[] = [
+    candidateReviewTarget("person:may"),
+    proposalReviewTarget("rel-acronym-ITS"),
+    proposalReviewTarget("rel-acronym-PERC"),
+    proposalReviewTarget("rel-acronym-QBU"),
+  ];
+  const institutional: ReviewDisplayTarget[] = [
+    candidateReviewTarget("person:civitas"),
+    candidateReviewTarget("person:enrollment"),
+  ];
+  const stage: ReviewDisplayTarget[] = [...acronyms, ...institutional];
+
+  // The live state at seq 70: person:may and ITS decided, PERC and QBU not.
+  const resolvedIds = new Set(["person:may", "rel-acronym-ITS"]);
+  const isResolved = (t: ReviewDisplayTarget): boolean => resolvedIds.has(t.id);
+
+  const anchorKey = reviewDisplayTargetKey(proposalReviewTarget("rel-acronym-QBU"));
+
+  check(
+    "REGRESSION (seq 70): the OLD unscoped advance leaves the category with work remaining",
+    reviewDisplayTargetKey(advanceWithinReviewTargets(anchorKey, stage, isResolved)!) === "candidate:person:civitas",
+    "the defect this guard exists to stop is no longer reproducible -- re-check the fixture before trusting the fix"
+  );
+
+  const landing = advanceWithinCategoryScope(anchorKey, acronyms, stage, isResolved);
+  check(
+    "a trailing anchor advances BACKWARD to unresolved work rather than leaving the category",
+    landing !== null && reviewDisplayTargetKey(landing) === "proposal:rel-acronym-PERC",
+    `got ${landing ? reviewDisplayTargetKey(landing) : "null"}`
+  );
+  check(
+    "the landing is never a resolved unit",
+    landing !== null && !isResolved(landing)
+  );
+  check(
+    "the landing stays inside the anchor's own category",
+    landing !== null && acronyms.some((t) => reviewDisplayTargetKey(t) === reviewDisplayTargetKey(landing))
+  );
+
+  // An anchor that is not in the category at all (a stale/foreign cursor --
+  // the Failure 1 shape) must still land on the category's own work.
+  const foreign = advanceWithinCategoryScope("candidate:person:nowhere", acronyms, stage, isResolved);
+  check(
+    "a FOREIGN anchor lands on the category's first unresolved unit, not outside it",
+    foreign !== null && reviewDisplayTargetKey(foreign) === "proposal:rel-acronym-PERC",
+    `got ${foreign ? reviewDisplayTargetKey(foreign) : "null"}`
+  );
+
+  // Mid-category anchor: ordinary forward advance is unchanged.
+  const midAnchor = reviewDisplayTargetKey(proposalReviewTarget("rel-acronym-ITS"));
+  const forward = advanceWithinCategoryScope(midAnchor, acronyms, stage, isResolved);
+  check(
+    "an ordinary mid-category anchor still advances FORWARD to the next unresolved unit",
+    forward !== null && reviewDisplayTargetKey(forward) === "proposal:rel-acronym-PERC",
+    `got ${forward ? reviewDisplayTargetKey(forward) : "null"}`
+  );
+
+  // COMPLETION: once the category is genuinely resolved, the advance is
+  // released to the whole stage -- the documented completion behavior, now
+  // conditional on completion rather than assumed.
+  const allResolved = new Set(["person:may", "rel-acronym-ITS", "rel-acronym-PERC", "rel-acronym-QBU"]);
+  const completedLanding = advanceWithinCategoryScope(anchorKey, acronyms, stage, (t) => allResolved.has(t.id));
+  check(
+    "a COMPLETED category releases the advance to the next category",
+    completedLanding !== null && reviewDisplayTargetKey(completedLanding) === "candidate:person:civitas",
+    `got ${completedLanding ? reviewDisplayTargetKey(completedLanding) : "null"}`
+  );
+
+  // Every unit resolved everywhere: no landing, and no crash.
+  const everything = advanceWithinCategoryScope(anchorKey, acronyms, stage, () => true);
+  check("a fully resolved stage yields no landing rather than a wrong one", everything === null);
+
+  // Candidate-only category obeys the identical contract (invariant I8).
+  const candidateOnly: ReviewDisplayTarget[] = ["a1", "a2", "a3", "a4"].map(candidateReviewTarget);
+  const candStage = [...candidateOnly, ...institutional];
+  const candResolved = new Set(["a1", "a4"]);
+  const candLanding = advanceWithinCategoryScope("candidate:a4", candidateOnly, candStage, (t) => candResolved.has(t.id));
+  check(
+    "candidate units obey the same boundary contract as proposal units",
+    candLanding !== null && reviewDisplayTargetKey(candLanding) === "candidate:a3",
+    `got ${candLanding ? reviewDisplayTargetKey(candLanding) : "null"}`
   );
 }
 

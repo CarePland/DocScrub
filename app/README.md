@@ -67,6 +67,10 @@ npm run serve    # then open http://localhost:8000/index.html
 served over http, not opened via `file://`. `start-server.command` (repo
 root) does build + serve on double-click.
 
+Account setup lives in `docs/setup/auth-and-accounts.md`. It covers the
+Supabase migration, browser-safe `env-config.js`, Google OAuth dashboard
+steps, and the no-document-content cloud boundary for account metadata.
+
 Every suite in `verify/` runs the same way:
 
 ```

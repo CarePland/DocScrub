@@ -171,32 +171,21 @@ Made   Avoided   Fewer          avoided
 **The multiplicand is the whole design.**
 
 ```
-time avoided = decision UNITS avoided × observed individual pace
+time avoided = avoided occurrence-level reviews × observed individual pace
 ```
 
-*Not occurrences.* Pricing ~2,300 avoided occurrences at the reviewer's
-per-decision rate yields "3 weeks" from an afternoon, because repeated
-occurrences are cheap **precisely because they repeat** — the 30th sighting
-of a name costs a fraction of the first. That recognition effect is the
-same phenomenon producing the reduction, so multiplying it at full price
-is worst exactly where the number would look most impressive. Units are
-~15× smaller on a repetitive document.
-
-**It is knowingly low**, and that is the intended direction of error. It
-concedes all of the *discovery* saving — the genuinely large cost DocScrub
-removes — because discovery never enters the observed rate: the reviewer is
-handed items already found. AG's own framing settled this: the naive-manual
-counterfactual is dominated by discovery, so a unit-based figure understates;
-the competent-manual counterfactual (Ctrl+F, replace-all) is dominated by
-repetition, so an occurrence-based figure overstates. Which dominates turns
-on the occurrence-to-item ratio — i.e. on the very number the panel displays.
-Understating is the survivable error.
+2026-08-08 correction: this originally used avoided decision *units*.
+That made the time estimate answer a different question than the visible
+`Avoided` cell. The reviewer-facing metric now prices the same count the
+panel shows: covered occurrences minus decisions made. The figure is still
+knowingly low because it ignores discovery time entirely and measures pace
+only from already-presented individual decisions.
 
 **Conservatism, itemized:**
 
 | Choice | Alternative rejected | Effect |
 | --- | --- | --- |
-| Units avoided | Occurrences avoided | ~15× smaller |
+| Avoided occurrence-level reviews | Avoided decision units | matches the panel's exact Avoided count |
 | Individual decisions only | All gestures | one bulk keystroke says nothing about one decision's cost |
 | Pace is a **median** | Mean | see below — the largest single correction |
 | Idle gaps **discarded** | Capped at the ceiling | capping drags any average toward 120s |

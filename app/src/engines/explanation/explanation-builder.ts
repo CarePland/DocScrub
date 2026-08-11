@@ -110,6 +110,133 @@ export function confidenceOpener(likelihood: number, entityType: string): string
   return `Unlikely to be ${entity}`;
 }
 
+/**
+ * ============================ ORACLE DEVIATION #7 ============================
+ * SHAPE CONFIDENCE IS NOT SEMANTIC CONFIDENCE (AG, 2026-08-09).
+ *
+ * `confidenceOpener` takes its NOUN from the detector's `entityType` and only
+ * its ADVERB from the score. The score measures name-LIKENESS -- a weighted
+ * sum over capitalization structure and frequency -- so on a candidate whose
+ * only positive evidence is shape, the sentence attaches a confident adverb
+ * to a claim nothing ever assessed:
+ *
+ *     Degree Planner   99  positiveReasons ["strong_name_structure"]
+ *                          -> "Almost certainly a person's name."
+ *     Grade Rosters    79  positiveReasons ["strong_name_structure"]
+ *                          -> "Likely a person's name."
+ *     Amy Miller       79  positiveReasons ["strong_name_structure"]
+ *                          -> "Likely a person's name."
+ *
+ * The third line is the tell: a real person and an interface label receive
+ * the identical sentence, because the evidence behind them is identical. The
+ * copy is not merely optimistic -- it is reporting a distinction the pipeline
+ * has not made.
+ *
+ * ---------------------------------------------------------------------
+ * WHAT CHANGES, AND WHAT DELIBERATELY DOES NOT
+ * ---------------------------------------------------------------------
+ *
+ * Only the NOUN moves, and only when the positive evidence is entirely shape
+ * or frequency. The score is untouched, the bands are untouched, the
+ * `<opener> because <evidence>` grammar is untouched, and every candidate
+ * carrying real name evidence keeps the original wording. A high score on a
+ * shape-only candidate is not WRONG -- the engine really is confident the
+ * string is name-shaped -- so the fix is to let the sentence say that, not to
+ * suppress the number.
+ *
+ * This does NOT decide anything. Routing, sectioning and membership are
+ * untouched; a shape-only candidate is exactly as reviewable as before. It is
+ * a truthfulness fix to displayed text, deliberately kept separate from the
+ * classification work it was discovered by.
+ *
+ * NOTE, as the module header already warns of the four ported strings: this
+ * reaches AUDIT NARRATIVE as well as panel text, since both come from
+ * `buildStandardSummary`. That is intended -- an audit record asserting
+ * personhood on capitalization evidence is precisely the artifact worth not
+ * writing -- and is called out rather than buried.
+ *
+ * Python has no equivalent branch, so this is a deviation and is recorded as
+ * one. Classification: **truthfulness fix**. The oracle's sentence is a claim
+ * about the document that the oracle's own evidence does not support.
+ * ============================================================================
+ */
+
+/**
+ * Positive scoring reasons that describe the STRING rather than its meaning.
+ *
+ * Two families, and both are here for the same reason: neither can
+ * distinguish `Amy Miller` from `Grade Rosters`, because neither looks at
+ * anything but the characters and how often they appear.
+ *
+ *   SHAPE      capitalization structure -- `TWO_NAME_RE`, `LAST_FIRST_RE`,
+ *              initials, single-token shape
+ *   FREQUENCY  how often the string occurs, which says nothing at all about
+ *              what it denotes
+ *
+ * `heading_context` is included as a third kind: it is a statement about
+ * where the string sits, and the scoring layer already treats it as reducing
+ * certainty rather than establishing identity.
+ *
+ * Everything ABSENT from this list is evidence that legitimately speaks to
+ * personhood -- known name tokens, honorifics, email and signature evidence,
+ * the contextual person rules -- and any candidate carrying one keeps the
+ * original semantic wording.
+ */
+export const SHAPE_OR_FREQUENCY_REASONS: readonly string[] = [
+  "strong_name_structure",
+  "surname_given_structure",
+  "initials_with_surname",
+  "single_name_candidate",
+  "single_token_reviewable_without_negative_evidence",
+  "small_frequency_bonus",
+  "moderate_frequency_bonus",
+  "frequency_saturated",
+  "heading_context",
+];
+
+/**
+ * True when a person-typed candidate's positive evidence is ENTIRELY shape
+ * or frequency -- i.e. nothing in it speaks to personhood.
+ *
+ * Requires at least one positive reason on purpose. "No positive evidence at
+ * all" is a different situation with its own existing wording, and quietly
+ * folding it in here would change a second thing under cover of the first.
+ */
+export function isShapeOnlyPersonClaim(entityType: string, positiveReasons: readonly string[]): boolean {
+  if (entityType !== "person") return false;
+  if (positiveReasons.length === 0) return false;
+  // Both vocabularies reach this function: scoring emits snake_case reasons,
+  // Evidence.category is kebab. Normalized on both sides so a caller cannot
+  // silently miss by picking the wrong one.
+  const shape = new Set(SHAPE_OR_FREQUENCY_REASONS.map((r) => r.replace(/_/g, "-")));
+  return positiveReasons.every((reason) => shape.has(reason.replace(/_/g, "-")));
+}
+
+/**
+ * The opener, faithful to what the evidence establishes.
+ *
+ * Identical to `confidenceOpener` in every case except the shape-only person
+ * one, where the noun becomes the thing actually assessed. `confidenceOpener`
+ * is deliberately left intact and still exported: it is a direct port, the
+ * parity suite pins it, and a deviation is clearer as an added branch than as
+ * an edit to the ported function.
+ */
+export function evidenceFaithfulOpener(
+  likelihood: number,
+  entityType: string,
+  positiveReasons: readonly string[]
+): string {
+  if (!isShapeOnlyPersonClaim(entityType, positiveReasons)) return confidenceOpener(likelihood, entityType);
+  if (likelihood >= 95) return "Almost certainly name-shaped text";
+  if (likelihood >= 80) return "Likely name-shaped text";
+  if (likelihood >= 50) return "Possibly name-shaped text";
+  return "Unlikely to be name-shaped text";
+}
+
+/** The clause that states the absence explicitly, rather than leaving the
+ *  reviewer to infer it from an evidence list that simply omits it. */
+export const NO_NAME_EVIDENCE_CLAUSE = "No name evidence was found.";
+
 /** Direct port of Python's `_join_phrases()` -- correct Oxford-comma joining
  *  for 0/1/2/3+ items. */
 export function joinPhrases(phrases: readonly string[]): string {
@@ -142,13 +269,24 @@ export function buildStandardSummary(context: ExplanationContext): string {
   const { positive, negative, neutral } = splitEvidence(context.evidence);
   const positives = joinPhrases(positive.slice(0, 3).map((item) => item.standard));
   const negatives = joinPhrases(negative.slice(0, 3).map((item) => item.standard));
-  const opener = confidenceOpener(context.likelihood, context.entityType);
-  if (positives && negatives) return `${opener} because ${positives}, but ${negatives}.`;
-  if (positives) return `${opener} because ${positives}.`;
-  if (negatives) return `${opener} because ${negatives}.`;
+  /*
+   * DEVIATION #7 (see evidenceFaithfulOpener). The positive evidence RULES
+   * are read from `diagnosticCategories`/`evidence` the context already
+   * carries -- no new input, no new computation, and the branch collapses to
+   * the ported behaviour whenever any real name evidence is present.
+   */
+  const positiveReasons = context.evidence.filter((item) => item.kind === "positive").map((item) => item.category);
+  const shapeOnly = isShapeOnlyPersonClaim(context.entityType, positiveReasons);
+  const opener = evidenceFaithfulOpener(context.likelihood, context.entityType, positiveReasons);
+  // Stated rather than left to inference: the reviewer should not have to
+  // notice which evidence is MISSING from a list.
+  const tail = shapeOnly ? ` ${NO_NAME_EVIDENCE_CLAUSE}` : "";
+  if (positives && negatives) return `${opener} because ${positives}, but ${negatives}.${tail}`;
+  if (positives) return `${opener} because ${positives}.${tail}`;
+  if (negatives) return `${opener} because ${negatives}.${tail}`;
   if (neutral.length > 0) {
     const neutralPhrase = joinPhrases(neutral.slice(0, 3).map((item) => item.standard));
-    return `${opener} based on deterministic evidence: ${neutralPhrase}.`;
+    return `${opener} based on deterministic evidence: ${neutralPhrase}.${tail}`;
   }
   return `${opener}. No explanatory evidence was recorded.`;
 }

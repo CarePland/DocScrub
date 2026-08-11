@@ -1,3 +1,11 @@
+import { QUALITY_DICTIONARIES_DATA } from "../quality/quality-dictionaries.data.js";
+
+/** One lexicon from the shared data module. Read from the DATA module, not
+ *  from scoring.ts: scoring imports this file, so going the other way would
+ *  be a cycle (and was -- caught at first run). */
+function lexicon(key: string): readonly string[] {
+  return (QUALITY_DICTIONARIES_DATA as Record<string, readonly string[]>)[key] ?? [];
+}
 /**
  * contextual-person-evidence.ts -- the Contextual Person Evidence pass
  * (AG, 2026-08-05).
@@ -222,6 +230,136 @@ export function emptyContextualPersonEvidence(): ContextualPersonEvidenceResult 
  * noise. Same deliberate, disclosed narrowing normalization.ts makes, for
  * the same reason.
  */
+/**
+ * Tokens that cannot themselves name a person -- determiners, pronouns and
+ * the sentence-fragment function words. Built from the pipeline's OWN
+ * lexicons rather than declared here, so this guard tracks the dictionaries
+ * instead of drifting from them. See the Guard 1 note below for why
+ * `common_verb` is deliberately excluded.
+ */
+/**
+ * CLAUSE-SUBJECT FUNCTION WORDS the generated dictionaries do not carry
+ * (AG, 2026-08-09). Two entries, and both are justified individually below
+ * rather than by the fact that they turned up in a log.
+ *
+ * ---------------------------------------------------------------------
+ * WHY THIS EXISTS SEPARATELY, WHICH IS THE PART WORTH READING
+ * ---------------------------------------------------------------------
+ *
+ * These belong in `pronoun_or_determiner`. They cannot be put there:
+ * quality-dictionaries.data.ts is GENERATED from the Python oracle's config
+ * and says "do not hand-edit" -- an addition would be silently reverted by
+ * the next regeneration and would make the port diverge from the oracle
+ * invisibly, which is the exact failure AGENTS.md exists to prevent.
+ *
+ * The correct home is Python's config/candidate-quality, from which it would
+ * flow into the generated file. That is an ORACLE change rather than a port
+ * deviation, it is outside this pass's scope, and it is flagged for AG
+ * rather than made unilaterally.
+ *
+ * ---------------------------------------------------------------------
+ * WHY THIS IS NOT THE DICTIONARY-WIDENING THIS CODEBASE KEEPS REFUSING
+ * ---------------------------------------------------------------------
+ *
+ * ui/recommendations.ts is right that widening a NAME dictionary "makes the
+ * failure rarer without changing its shape" -- names are an open class, so
+ * there is always a next unlisted one.
+ *
+ * Function words are a CLOSED class. Completing one is finite work with an
+ * end state, and the failure shape really does terminate. That difference is
+ * the whole justification for this block, and if a future addition here is
+ * ever an open-class word, this reasoning does not cover it.
+ *
+ *   "it"    The third-person singular neuter pronoun. The lexicon already
+ *           carries he, she, they, them -- the rest of its own paradigm.
+ *           Its absence is a gap in an enumeration, not a distinction.
+ *
+ *   "here"  The lexicon already carries "there", which is likewise not a
+ *           pronoun or a determiner but a locative/expletive adverb, present
+ *           because "There's a problem" behaves the way this list is used
+ *           for. "Here's the roster" is the identical construction.
+ *
+ * Deliberately NOT completed further: us, me, him, her, my, your, our and
+ * the rest were not observed, and each addition should be earned by evidence
+ * rather than by symmetry. Adding them "for consistency" would be the same
+ * speculative move in the opposite direction.
+ *
+ * Asserted in verify/contextual-clitic-guard-verification.ts to contain no
+ * name/word collision, alongside the existing 33.
+ */
+const CLAUSE_SUBJECT_FUNCTION_WORDS: readonly string[] = ["it", "here"];
+
+const INCAPABLE_OF_BEING_A_PERSON: ReadonlySet<string> = new Set<string>([
+  ...(lexicon("pronoun_or_determiner") ),
+  ...(lexicon("sentence_fragment_word") ),
+  ...CLAUSE_SUBJECT_FUNCTION_WORDS,
+]);
+
+/**
+ * ENGLISH CLITICS, stripped before the capability lookup (AG, 2026-08-09).
+ *
+ * ---------------------------------------------------------------------
+ * THE DEFECT THIS FIXES
+ * ---------------------------------------------------------------------
+ *
+ * Guard 1 asks whether the candidate is capable of being a person by looking
+ * its surface form up in two lexicons. The lookup was performed on the
+ * INFLECTED form, so a base that IS in the lexicon did not protect the
+ * contracted form built on it:
+ *
+ *     "we"      in sentence_fragment_word     ->  suppressed
+ *     "we'll"   not in any lexicon            ->  NOT suppressed
+ *
+ * On the live document that produced contextual_human_subject for `We'll`,
+ * `I'm` and `I'll`, and contextual_possessive for `Here's`, `That's`,
+ * `It's` and `It's` -- where the `'s` is a contracted copula ("here IS the
+ * roster") that the possessive rule read as possession.
+ *
+ * ---------------------------------------------------------------------
+ * WHY THIS FIXES THE POSSESSIVE CASE TOO, WITH NO POSSESSIVE-SPECIFIC RULE
+ * ---------------------------------------------------------------------
+ *
+ * Guard 1 suppresses every USAGE rule, and contextual_possessive is one.
+ * Once `here's` normalizes to `here` and `here` is recognized as incapable,
+ * the false possessive disappears through the mechanism that already exists.
+ * A second, possessive-specific "is this really possession?" test was
+ * written and then deleted: it would have been a parallel authority on the
+ * same question, and two authorities drift.
+ *
+ * GENUINE POSSESSIVES ARE UNTOUCHED because stripping decides nothing --
+ * the LEXICON decides. `Amy's` -> `amy`, `Berhanu's` -> `berhanu`,
+ * `Sonoma's` -> `sonoma`: none is in either lexicon, so none is suppressed
+ * and all keep their person evidence. That property is what makes this safe,
+ * and it is asserted directly rather than argued.
+ *
+ * SCOPE. Anchored to the END of the surface, so `O'Brien` and `D'Angelo` are
+ * untouched -- their apostrophe is not followed by a clitic in final
+ * position. Both apostrophe characters are accepted; the live document
+ * contains `It's` and `It's` as two separate candidates.
+ */
+const CLITIC_SUFFIX_RE = /['’](?:s|ll|m|d|re|ve)$/i;
+
+/** The grammatical base of a clitic form, or the input unchanged. Exported
+ *  for direct verification rather than inferred through the guard. */
+export function clitcBase(surface: string): string {
+  return surface.replace(CLITIC_SUFFIX_RE, "");
+}
+
+/** The candidate's own surface form, lower-cased. Taken from an occurrence
+ *  because this pass receives occurrences rather than candidates. */
+function candidateSurfaceOf(candidateId: string, occurrences: readonly { text: string }[]): string {
+  void candidateId;
+  return (occurrences[0]?.text ?? "").trim().toLowerCase();
+}
+
+/** Guard 1's test: the surface, or the base it contracts, names no person. */
+function structurallyIncapableOfBeingAPerson(surface: string): boolean {
+  if (surface.length === 0) return false;
+  if (INCAPABLE_OF_BEING_A_PERSON.has(surface)) return true;
+  const base = clitcBase(surface);
+  return base !== surface && base.length > 0 && INCAPABLE_OF_BEING_A_PERSON.has(base);
+}
+
 export function evaluateContextualPersonEvidence(
   document: DocumentModel,
   detection: DetectionResult
@@ -243,6 +381,41 @@ export function evaluateContextualPersonEvidence(
   const byCandidate: Record<string, CandidateContextualEvidence> = {};
 
   for (const [candidateId, occurrences] of occurrencesByCandidate) {
+    /*
+     * GUARD 1 -- THE CANDIDATE MUST BE CAPABLE OF BEING A PERSON
+     * (AG, 2026-08-09).
+     *
+     * Every rule in this family reads the NEIGHBOURHOOD and never the
+     * candidate. That is fine for "Jordan said" and wrong for "The schedule
+     * will be visible": a determiner cannot be a human subject, because the
+     * subject is the noun phrase it introduces, not the article in front of
+     * it. On Andrew's live document "The" accumulated
+     * contextual_human_subject on three occurrences and
+     * contextual_human_object on a fourth, and was retained as a person.
+     *
+     * NOT A BLACKLIST OF THE OBSERVED WORDS, at Andrew's explicit
+     * instruction. The test is membership of two lexicons this pipeline
+     * already maintains and already uses to classify these very tokens:
+     * `pronoun_or_determiner` (he, i, she, that, them, there, these, they,
+     * this, those, you, ...) and `sentence_fragment_word` (a, an, and, are,
+     * be, been, being, but, for, is, of, or, the, was, we, were).
+     *
+     * WHY THOSE TWO AND NOT `common_verb`, which was the obvious third:
+     * `common_verb` contains "will". Using it would suppress person
+     * evidence for Will -- exactly the collision Andrew required be
+     * preserved. The chosen union of 33 tokens contains no name at all;
+     * asserted against a list of name/word collisions in
+     * verify/contextual-person-guards-verification.ts so a future lexicon
+     * edit that admits one fails loudly.
+     *
+     * ANCHOR RULES ARE NOT SUPPRESSED. A signature block or a name-with-
+     * email is a claim about IDENTITY rather than about usage, and if a
+     * document really does contain "The <you@example.edu>" that is worth a
+     * reviewer's attention. Only the neighbourhood/usage rules are gated.
+     */
+    const surface = candidateSurfaceOf(candidateId, occurrences);
+    const structurallyIncapable = structurallyIncapableOfBeingAPerson(surface);
+
     const perOccurrence: OccurrenceContextualEvidence[] = [];
     const union = new Set<ContextualEvidenceRuleId>();
     let withoutEvidence = 0;
@@ -250,7 +423,9 @@ export function evaluateContextualPersonEvidence(
     for (const occurrence of occurrences) {
       const rules: ContextualEvidenceRuleId[] = [
         ...evaluateOccurrenceAnchors(occurrence, anchorContext),
-        ...evaluateOccurrenceContext(occurrence.context),
+        // Guard 1: usage rules are suppressed for a structurally incapable
+        // candidate; anchor rules above are not (see the note on the guard).
+        ...(structurallyIncapable ? [] : evaluateOccurrenceContext(occurrence.context)),
       ];
       if (rules.length === 0) {
         withoutEvidence++;

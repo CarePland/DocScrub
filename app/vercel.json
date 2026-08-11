@@ -2,7 +2,7 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": ".",
-  "rewrites": [
+  "redirects": [
     {
       "source": "/",
       "has": [
@@ -11,6 +11,24 @@
           "value": "www.docscrub.app"
         }
       ],
+      "destination": "https://docscrub.app/landing.html",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.docscrub.app"
+        }
+      ],
+      "destination": "https://docscrub.app/landing.html",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
       "destination": "/landing.html"
     }
   ]

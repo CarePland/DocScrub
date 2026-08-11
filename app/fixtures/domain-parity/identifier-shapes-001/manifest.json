@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "identifier-shapes-001",
+  "family": "domain-parity",
+  "sourceDocument": {
+    "fileName": "identifier_shapes.docx",
+    "sha256": "d05c12de87a15e429d10900485a673bd3367957a5179aa50176548eeb07e74b3"
+  },
+  "pythonAppBuild": "web build 2026.07.26.93",
+  "capturedAt": "2026-08-09T20:17:46.741515+00:00",
+  "expectedFiles": [
+    "expected/candidates.json",
+    "expected/occurrences.json",
+    "expected/occurrence-groups.json",
+    "expected/entity-groups.json",
+    "expected/ambiguity-proposals.json"
+  ],
+  "notes": "Built by scripts/build_identifier_shape_fixture.py to close the parity-corpus gap identified on 2026-08-09: the existing 52 fixture candidates contained ZERO 9-digit CIN shapes, ZERO 10+ digit LONG_ID shapes and ZERO 5+ token phrases, so every parity suite passed against deviations #4/#5 because it could not fail. Expected output is the ORACLE's, including its defects; verify/identifier-shape-parity.ts asserts agreement everywhere except the deviations recorded above, asserts the intended divergence at them, and FAILS on any undeclared difference in either direction.",
+  "deviations": [
+    {
+      "field": "candidates,occurrences",
+      "deviation": "#4a",
+      "reason": "CIN_RE/LONG_ID_RE guard against neighbouring DIGITS only, so a digit run inside a longer alphanumeric token matches. Redacting it corrupts the document (proven: https://teams.microsoft.com/l/meetup/781237504d3f8a9b -> .../[REDACTED]d3f8a9b). DocScrub widens both guards to exclude letters as well. Genuine identifiers delimited by whitespace/punctuation are unaffected.",
+      "affects": [
+        "cin 781237504 (URL occurrence only)",
+        "long_numeric_id 18900663687",
+        "long_numeric_id 01200067742"
+      ]
+    },
+    {
+      "field": "candidates,occurrences",
+      "deviation": "#4b",
+      "reason": "LONG_ID_RE's (?:\\d[\\s-]?){10,18} lets the final repetition consume a trailing space, so 'Meeting ID: 826 0122 9711 Passcode' matched INCLUDING the space and redaction yielded '[REDACTED]Passcode'. Restructured to \\d(?:[\\s-]?\\d){9,18}, same 10..19 digit span, cannot end on a separator.",
+      "affects": [
+        "long_numeric_id 826 0122 9711 (span, not value)"
+      ]
+    },
+    {
+      "field": "candidates,occurrences",
+      "deviation": "#4c",
+      "reason": "PHONE_RE carried the identical digit-only guard. FOUND BY THIS FIXTURE on its first run, after #4a/#4b had landed and a prior suite had explicitly asserted PHONE_RE was not implicated. An 11-digit run inside a hex blob matched as a phone and redaction corrupted the text. Same guards applied.",
+      "affects": [
+        "phone 18900663687"
+      ]
+    },
+    {
+      "field": "candidates",
+      "deviation": "#5",
+      "reason": "FALLBACK_PERSON_RE's {1,3} caps a match at four tokens; a longer capitalized phrase is CUT and the remainder emitted as a second candidate, producing two review units and two replacement spans for one phrase. Raised to {1,5} (six tokens), chosen by measurement against the live document. The ceiling still exists at seven-plus tokens.",
+      "affects": [
+        "person Post Enrollment Requisite Checking (+ Background Process)",
+        "person Term Session Appt Block (+ Appt Nbr)",
+        "person Contact Mary Jane Watson",
+        "person The Office Of The (+ Registrar And Enrollment Services)"
+      ]
+    }
+  ]
+}

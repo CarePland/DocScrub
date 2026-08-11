@@ -91,6 +91,7 @@
  * shows where it ends.
  */
 export const ZONE_CAPACITY = 24;
+export const ZONE_HALF_CAPACITY = 12;
 
 export interface ReviewZone {
   /** The ids the zone holds, in display order -- the materialized
@@ -187,6 +188,286 @@ export function partitionByZone<T>(
   const zoneEnd = unresolved[bound - 1]!;
   const endIndex = cells.indexOf(zoneEnd);
   return { band: cells.slice(0, endIndex + 1), rest: cells.slice(endIndex + 1), banded: true };
+}
+
+export interface ActiveQueuePartition<T> {
+  /** The cells currently inside the bounded review zone. */
+  active: T[];
+  /** The continuous queue after the active zone, including retired cells. */
+  rest: T[];
+  /** Active followed by rest: the full painted order. */
+  ordered: T[];
+  /** Whole half-zone chunks that have completed and moved to the end. */
+  retired: T[];
+  bounded: boolean;
+}
+
+/**
+ * Ambiguity Check's conveyor-belt queue (AG, 2026-08-08).
+ *
+ * The older Review Zone compacted after every individual decision because
+ * it was defined as "the next 24 unresolved." That was correct for the
+ * original bulk-safety problem, but wrong for Ambiguity's manual-review
+ * rhythm: a reviewer deciding cells one at a time needs the map to hold
+ * still until a meaningful block of work is done.
+ *
+ * So this helper retires cells in 12-cell chunks, derived strictly from
+ * completion state. A half-zone whose every target is resolved moves to the
+ * end of the queue; unfinished chunks keep their internal order and remain
+ * ahead of the retired portion. Bulk actions naturally retire a whole
+ * 24-cell active zone because the unresolved members they mutate become
+ * resolved while any preexisting decisions in that zone were resolved
+ * already. No interaction counter or persisted cursor is needed.
+ *
+ * `anchor` is a display-only category-arrival correction. Some category
+ * cursors intentionally land on "the first unreviewed item for this
+ * category" even when that item would otherwise sit past the first 24
+ * cells in the current grouped/tiered display order. Without an anchor the
+ * focus panel can show that item while the side active-zone grid starts
+ * somewhere else, putting the selected cell down in the continuation. The
+ * anchor rotates only the still-open queue, keeps the same 24-cell bound,
+ * and does not serialize anything; completed categories still use
+ * completedQueuePartition's canonical first-24 presentation.
+ */
+export function activeQueuePartition<T>(
+  cells: readonly T[],
+  isResolved: (cell: T) => boolean,
+  size: number = ZONE_CAPACITY,
+  halfSize: number = ZONE_HALF_CAPACITY,
+  anchor?: T
+): ActiveQueuePartition<T> {
+  const activeSize = Math.max(1, Math.floor(size));
+  const chunkSize = Math.max(1, Math.floor(halfSize));
+  const chunks: T[][] = [];
+  for (let i = 0; i < cells.length; i += chunkSize) chunks.push(cells.slice(i, i + chunkSize));
+
+  const open: T[][] = [];
+  const retired: T[][] = [];
+  for (const chunk of chunks) {
+    if (chunk.length > 0 && chunk.every(isResolved)) retired.push(chunk);
+    else open.push(chunk);
+  }
+
+  const rawOpenCells = open.flat();
+  const anchorIndex = anchor === undefined ? -1 : rawOpenCells.indexOf(anchor);
+  const openCells = anchorIndex > 0 ? [...rawOpenCells.slice(anchorIndex), ...rawOpenCells.slice(0, anchorIndex)] : rawOpenCells;
+  const retiredCells = retired.flat();
+  const active = openCells.slice(0, activeSize);
+  const rest = [...openCells.slice(activeSize), ...retiredCells];
+  const ordered = [...active, ...rest];
+  return { active, rest, ordered, retired: retiredCells, bounded: rest.length > 0 };
+}
+
+/**
+ * ONE ZONE ENTRY POINT, PARAMETERIZED BY RHYTHM (AG, 2026-08-09,
+ * migration prerequisite D3). PREPARED, NOT YET SWITCHED ON.
+ *
+ * ---------------------------------------------------------------------
+ * THE PROBLEM THIS EXISTS TO CLOSE
+ * ---------------------------------------------------------------------
+ *
+ * DocScrub currently runs TWO Zone algorithms behind one call-site facade.
+ * `orderedReviewTargetsForGrid`, `activeReviewTargetsForGrid`,
+ * `restReviewTargetsForGrid`, `activeZoneAnchorForGrid` and
+ * `headingActionScope` in app.ts each read
+ *
+ *     if (stage !== "ambiguity-check") { ...compacting... }
+ *     ...conveyor...
+ *
+ * so Item Check Triage gets `partitionByZone`/`reviewZone` -- "the next N
+ * unresolved, recompacted after EVERY decision" -- while Ambiguity gets
+ * `activeQueuePartition` -- the conveyor, which retires whole half-zone
+ * chunks and holds the map still in between.
+ *
+ * That is not a stage difference. It is a RHYTHM difference, and the
+ * conveyor's own doc comment says so: it exists because "a reviewer
+ * deciding cells one at a time needs the map to hold still until a
+ * meaningful block of work is done." Item Check Triage is the same
+ * one-at-a-time rhythm. The divergence is history, not design.
+ *
+ * ---------------------------------------------------------------------
+ * WHY A PARAMETER AND NOT A THIRD BRANCH
+ * ---------------------------------------------------------------------
+ *
+ * `if (stage !== "ambiguity-check")` inside a shared helper is exactly how
+ * the two algorithms came to be one facade in the first place. A caller
+ * reading the shared function's name reasonably believes both stages get
+ * the same rule. So the seam moves OUT of the helper and INTO the caller's
+ * declared intent: a caller states which rhythm it wants, and the helper
+ * has no opinion about stages at all.
+ *
+ * `"conveyor"` -- chunk-retiring, stable map. Manual one-at-a-time review.
+ * `"compacting"` -- recomputed from the unresolved set on every consult.
+ *                   The original bulk-safety model.
+ *
+ * ---------------------------------------------------------------------
+ * DELIBERATELY NOT WIRED UP YET
+ * ---------------------------------------------------------------------
+ *
+ * Switching Item Check Triage from "compacting" to "conveyor" changes what
+ * a bulk button covers, and the Review Zone design doc §11 reserves
+ * changes to the bulk bound for Andrew rather than for whoever is holding
+ * the file. This function and its tests land first so the switch, when
+ * approved, is a one-line argument change against already-pinned
+ * behavior -- rather than a refactor and a product decision arriving
+ * together.
+ *
+ * Byte-identical to the two existing functions for their respective
+ * rhythms; pinned as such by verify/review-zone-verification.ts.
+ */
+/**
+ * ═══════════════ THE ROLLING RHYTHM (AG, 2026-08-10) ═══════════════
+ *
+ * THE DEFECT BOTH EXISTING RHYTHMS SHARE. Neither moves a decided row out of
+ * the working area:
+ *
+ *   `compacting`  `partitionByZone` returns `cells.slice(0, endIndex + 1)`,
+ *                 so resolved cells stay exactly where they were, interleaved
+ *                 among the unresolved ones.
+ *   `conveyor`    retires a 12-cell chunk only when EVERY cell in it is
+ *                 resolved, so a half-finished chunk keeps its decided rows
+ *                 scattered through the zone -- by design, to hold the map
+ *                 still, but at the cost Andrew named.
+ *
+ * Rolling separates the two things those rhythms conflated: the map should
+ * hold still ENOUGH to keep the cursor predictable, while completed work
+ * should stop occupying the reviewer's attention.
+ *
+ *     active  the first `size` UNRESOLVED cells, in canonical order
+ *     rest    the remaining unresolved cells, then every resolved cell
+ *
+ * ═══════════════ WHY THIS NEEDS NO TRANSIENT STATE ═══════════════
+ *
+ * The obvious implementation keeps a `transientZoneOrder` array and mutates it
+ * on each decision. This does not, and the reason matters:
+ *
+ *   CANONICAL ORDER CANNOT BE REWRITTEN BY ZONE INTERACTION, because zone
+ *   arrangement is never stored. It is a pure function of (canonical cells,
+ *   resolved set, size), recomputed on every consult.
+ *
+ * So "items keep their home position" is not a rule anyone has to obey -- it
+ * is a property of the shape. Returning to canonical order (§8: leaving a
+ * section, changing a filter, reload, stage navigation) needs no reset path
+ * and no invalidation hook, because there is nothing to invalidate. This is
+ * the same "derive, don't duplicate" property `reviewZone` already relies on
+ * to survive save/resume.
+ *
+ * ═══════════════ AND WHY THE CONTIGUOUS-RUN RULE STILL MATTERS ═══════════════
+ *
+ * A retirement rule expressed over the CURRENT arrangement (retire only the
+ * contiguous completed run touching the acted-on cell) and this derived rule
+ * reach the SAME resting arrangement: previously-retired cells are already at
+ * the tail, so a newly completed run joins them, and canonical order within
+ * the retired region is deterministic either way.
+ *
+ * Where the contiguous run genuinely matters is MOTION, not state -- which
+ * cells should pulse and travel together as one group. That is what
+ * `contiguousCompletedRun` below is for, and keeping it out of the ordering
+ * rule is what makes the ordering verifiable without a browser.
+ */
+export type ZoneRhythm = "conveyor" | "compacting" | "rolling";
+
+/**
+ * The rolling partition: fresh unresolved work rises, completed work settles.
+ *
+ * INVARIANTS, all pinned by verify/review-zone-verification.ts:
+ *   - `active` contains no resolved cell, ever -- so completed work from
+ *     anywhere, inside the old zone or below it, cannot bubble upward (§4).
+ *   - `[...active, ...rest]` is a permutation of `cells`; nothing is dropped
+ *     or hidden (§12).
+ *   - the unresolved subsequence of `ordered` equals the unresolved
+ *     subsequence of `cells` -- the same invariant `partitionByZone`'s post-
+ *     decision advance depends on, so the advance keeps traversing a stable
+ *     sequence and cannot skip a candidate (§10).
+ *   - resolved cells keep canonical relative order in `rest` (§5).
+ *   - identical inputs give an identical partition (§10 determinism).
+ */
+export function rollingQueuePartition<T>(
+  cells: readonly T[],
+  isResolved: (cell: T) => boolean,
+  size: number = ZONE_CAPACITY
+): ActiveQueuePartition<T> {
+  const bound = Math.max(1, Math.floor(size));
+  const unresolved: T[] = [];
+  const resolved: T[] = [];
+  for (const cell of cells) (isResolved(cell) ? resolved : unresolved).push(cell);
+  const active = unresolved.slice(0, bound);
+  const rest = [...unresolved.slice(bound), ...resolved];
+  return { active, rest, ordered: [...active, ...rest], retired: resolved, bounded: rest.length > 0 };
+}
+
+/**
+ * The contiguous completed run containing `decided`, in the CURRENT display
+ * order -- the group that should pulse and travel together (§5).
+ *
+ * DISPLAY-ONLY. Nothing about ordering depends on this; it exists so the
+ * animation moves `B C D E` as one unit rather than teleporting `D` and
+ * stranding its neighbours.
+ *
+ * Returns an empty array when `decided` is not resolved or not present, so a
+ * caller can treat "no run" and "no animation" identically. A resolved cell
+ * separated from `decided` by an unresolved cell does NOT join the run, which
+ * is the rule that stops unrelated completed work being gathered up.
+ */
+export function contiguousCompletedRun<T>(
+  displayOrder: readonly T[],
+  isResolved: (cell: T) => boolean,
+  decided: T
+): T[] {
+  const index = displayOrder.indexOf(decided);
+  if (index === -1 || !isResolved(decided)) return [];
+  let start = index;
+  while (start - 1 >= 0 && isResolved(displayOrder[start - 1]!)) start -= 1;
+  let end = index;
+  while (end + 1 < displayOrder.length && isResolved(displayOrder[end + 1]!)) end += 1;
+  return displayOrder.slice(start, end + 1);
+}
+
+
+export function zonePartition<T>(
+  cells: readonly T[],
+  isResolved: (cell: T) => boolean,
+  rhythm: ZoneRhythm,
+  size: number = ZONE_CAPACITY,
+  halfSize: number = ZONE_HALF_CAPACITY,
+  anchor?: T
+): ActiveQueuePartition<T> {
+  if (rhythm === "rolling") return rollingQueuePartition(cells, isResolved, size);
+  if (rhythm === "conveyor") {
+    return anchor === undefined
+      ? activeQueuePartition(cells, isResolved, size, halfSize)
+      : activeQueuePartition(cells, isResolved, size, halfSize, anchor);
+  }
+  // COMPACTING: expressed through partitionByZone so the band/rest split
+  // stays byte-identical to what Item Check paints today. Note the
+  // inverted predicate -- partitionByZone takes `isUnresolved`, a signature
+  // difference that is itself a small trap this wrapper now absorbs.
+  const partition = partitionByZone(cells, (cell) => !isResolved(cell), size);
+  const rest = partition.banded ? partition.rest : [];
+  return {
+    active: partition.band,
+    rest,
+    ordered: [...partition.band, ...rest],
+    retired: [],
+    bounded: rest.length > 0,
+  };
+}
+
+/**
+ * Completed-category presentation for Ambiguity Check (AG, 2026-08-08).
+ *
+ * This is intentionally NOT the live conveyor. Once the UI has advanced a
+ * category into its completed presentation, the reviewer needs an
+ * inspectable finished view: canonical order, first 24 beside the focus
+ * panel, and any remaining cells continuing below. Decisions stay intact;
+ * this helper only partitions display cells.
+ */
+export function completedQueuePartition<T>(cells: readonly T[], size: number = ZONE_CAPACITY): ActiveQueuePartition<T> {
+  const activeSize = Math.max(1, Math.floor(size));
+  const active = cells.slice(0, activeSize);
+  const rest = cells.slice(activeSize);
+  const ordered = [...active, ...rest];
+  return { active, rest, ordered, retired: [], bounded: rest.length > 0 };
 }
 
 /**

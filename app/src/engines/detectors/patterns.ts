@@ -74,26 +74,121 @@ export const NAME_RUN = String.raw`[\p{L}\p{M}'’-]`;
  *  One definition, so the two cannot disagree about what a name token is. */
 export { UNICODE_WORD_END };
 
+/** Not a digit and not a letter -- see DEVIATION #4. Declared here because
+ *  PHONE_RE, CIN_RE and LONG_ID_RE all consume it. */
+const ID_BOUNDARY_BEFORE = String.raw`(?<![\p{L}\d])`;
+const ID_BOUNDARY_AFTER = String.raw`(?![\p{L}\d])`;
+
 // EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 export const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
 // PHONE_RE = re.compile(
 //     r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"
 // )
-export const PHONE_RE = /(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)/g;
+// DEVIATION #4c (AG, 2026-08-09): the SAME digit-only guard defect as CIN_RE
+// and LONG_ID_RE, found by the identifier-shapes-001 parity fixture AFTER
+// #4a/#4b landed. The first pass judged PHONE_RE "not implicated" and
+// asserted it unchanged; the fixture disproved that in its first run:
+//
+//     "The upload id=18900663687e4c1a99 failed to process."
+//        PHONE_RE matches -> 18900663687
+//        redacted -> "The upload id=[REDACTED]e4c1a99 failed to process."
+//
+// An eleven-digit run inside a hex blob is not a phone number, and redacting
+// it corrupts the document exactly as the CIN case did. Same guards, same
+// rationale, same classification (correctness fix, not behaviour change).
+// This is why the fixture was built.
+export const PHONE_RE = new RegExp(
+  `${ID_BOUNDARY_BEFORE}(?:\\+?1[\\s.-]?)?(?:\\(?\\d{3}\\)?[\\s.-]?)\\d{3}[\\s.-]?\\d{4}${ID_BOUNDARY_AFTER}`,
+  "gu"
+);
+
+/*
+ * ============================================================================
+ * DELIBERATE ORACLE DEVIATION #4 -- IDENTIFIER BOUNDARIES (AG, 2026-08-09)
+ *
+ * Python guards these two patterns against DIGITS only: `(?<!\d)` / `(?!\d)`.
+ * A nine- or eleven-digit run sitting inside a longer ALPHANUMERIC token
+ * therefore matches, because the neighbouring character is a letter and the
+ * digit guard does not see it.
+ *
+ * That is not a queue-noise problem, it is an OUTPUT CORRECTNESS problem,
+ * and it was demonstrated on Andrew's live document rather than reasoned
+ * about (7 severed occurrences, `__docscrub.truncations()` 2026-08-09):
+ *
+ *     https://teams.microsoft.com/l/meetup/781237504d3f8a9b
+ *              CIN_RE matches -----------> 781237504
+ *     redacted -> https://teams.microsoft.com/l/meetup/[REDACTED]d3f8a9b
+ *
+ * A URL is destroyed and the document is silently wrong. The same shape
+ * appeared as `18900663687e...` and `01200067742E...` -- hex blobs and
+ * meeting identifiers, none of them a Campus ID.
+ *
+ * THE DEVIATION: both guards widen from "not a digit" to "not a digit and
+ * not a letter". A real CIN is delimited by whitespace or punctuation, so
+ * genuine detections are unaffected (asserted in
+ * verify/identifier-boundary-verification.ts); what stops matching is
+ * exactly the case where the digits are part of a larger token.
+ *
+ * WHY NOT NARROWER. Restricting only to hex letters [a-fA-F] would fix the
+ * observed cases and miss `781237504zz`. The claim being made is "these
+ * digits are part of a bigger word", and a letter -- any letter -- is what
+ * makes that true.
+ *
+ * SECOND DEVIATION, SAME LINE -- LONG_ID_RE's TRAILING SEPARATOR.
+ * `(?:\d[\s-]?){10,18}` lets the FINAL repetition consume a trailing space,
+ * so "826 0122 9711 Passcode" matched "826 0122 9711 " INCLUDING the space
+ * (live case 1 of the same 7). Redacting it eats the separator and yields
+ * "[REDACTED]Passcode". Restructured to `\d(?:[\s-]?\d){9,18}` -- digit,
+ * then separator-then-digit -- which cannot end on a separator and spans the
+ * same 10..19 digits the original did.
+ *
+ * Both are classified as CORRECTNESS FIXES rather than behaviour changes:
+ * the Python oracle produces output that corrupts the document, and
+ * `AGENTS.md`'s "preserve the stated reviewer behavior" does not extend to
+ * preserving a defect that damages the artifact being protected.
+ * ============================================================================
+ */
 
 // CIN_RE = re.compile(r"(?<!\d)\d{9}(?!\d)")
-export const CIN_RE = /(?<!\d)\d{9}(?!\d)/g;
+// DEVIATION #4: digit-only guards -> digit-or-letter guards.
+export const CIN_RE = new RegExp(`${ID_BOUNDARY_BEFORE}\\d{9}${ID_BOUNDARY_AFTER}`, "gu");
 
 // LONG_ID_RE = re.compile(r"(?<!\d)(?:\d[\s-]?){10,18}\d?(?!\d)")
-export const LONG_ID_RE = /(?<!\d)(?:\d[\s-]?){10,18}\d?(?!\d)/g;
+// DEVIATION #4: digit-or-letter guards, and the trailing separator can no
+// longer be consumed (10..19 digits either way).
+export const LONG_ID_RE = new RegExp(`${ID_BOUNDARY_BEFORE}\\d(?:[\\s-]?\\d){9,18}${ID_BOUNDARY_AFTER}`, "gu");
 
 // FALLBACK_PERSON_RE = re.compile(
 //     r"\b(?:[A-Z][a-z]{1,30})(?:\s+(?:[A-Z][a-z]{1,30})){1,3}\b"
 // )
 // DEVIATION #1: `\b` -> UNICODE_WORD_*, `[A-Z]` -> \p{Lu}, `[a-z]` -> \p{Ll}|\p{M}.
+/*
+ * DELIBERATE ORACLE DEVIATION #5 -- TOKEN CEILING (AG, 2026-08-09).
+ *
+ * Python's `{1,3}` caps a match at FOUR tokens. A longer capitalized phrase
+ * is not skipped, it is CUT, and the remainder becomes its own candidate --
+ * two review units and, worse, two replacement spans covering one phrase.
+ * Confirmed on the live document (`__docscrub.truncations()`, 2 cases):
+ *
+ *     "Post Enrollment Requisite Checking Background Process"
+ *          -> "Post Enrollment Requisite Checking" + "Background Process"
+ *     "Term Session Appt Block Appt Nbr"
+ *          -> "Term Session Appt Block" + "Appt Nbr"
+ *
+ * Redacting the first half leaves "[REDACTED] Background Process" -- a
+ * dangling fragment of a phrase the reviewer thought they had handled.
+ *
+ * THE DEVIATION: `{1,3}` -> `{1,5}` (max six tokens). Chosen by measurement,
+ * not preference: `{1,5}` merges both live cases, and `{1,7}` merges nothing
+ * further on this document while over-joining long institutional headings
+ * ("The Office Of The Registrar And Enrollment Services"). Four-token person
+ * names ("Mary Jane Watson Parker") are unaffected at every bound tested.
+ *
+ * Any bound has a boundary; this one is placed where the evidence put it.
+ */
 export const FALLBACK_PERSON_RE = new RegExp(
-  `${UNICODE_WORD_START}(?:${UPPER}${LOWER_RUN}{1,30})(?:\\s+(?:${UPPER}${LOWER_RUN}{1,30})){1,3}${UNICODE_WORD_END}`,
+  `${UNICODE_WORD_START}(?:${UPPER}${LOWER_RUN}{1,30})(?:\\s+(?:${UPPER}${LOWER_RUN}{1,30})){1,5}${UNICODE_WORD_END}`,
   "gu"
 );
 

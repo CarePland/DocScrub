@@ -187,17 +187,18 @@ export function reviewableItemIdsForStage(stage: WorkflowStage, context: Detecti
  */
 
 /** Artifact identity per stage, stable and content-derived (proposalId --
- *  see StructuralRelationship.ts). Dismissed proposals are omitted, not
- *  reported resolved: a dismissal DISSOLVES the proposal, so it is not
- *  work that exists. */
+ *  see StructuralRelationship.ts). Dismissed proposals remain present and
+ *  resolved: the reviewer's "Unrelated" decision is itself a reversible
+ *  state on the relationship proposal, not a reason for the proposal to
+ *  vanish from the review surface. */
 export function reviewArtifactIdsForStage(stage: WorkflowStage, context: DetectionGroupingContext, session: ReviewSession): string[] {
   if (stage !== "ambiguity-check") return [];
-  const dismissals = session.relationshipDismissals ?? {};
-  return (context.structuralRelationships ?? []).filter((p) => !dismissals[p.proposalId]).map((p) => p.proposalId);
+  return (context.structuralRelationships ?? []).map((p) => p.proposalId);
 }
 
 export function isArtifactResolved(stage: WorkflowStage, artifactId: string, context: DetectionGroupingContext, session: ReviewSession): boolean {
   if (stage !== "ambiguity-check") return true;
+  if (session.relationshipDismissals?.[artifactId]) return true;
   const proposal = (context.structuralRelationships ?? []).find((p) => p.proposalId === artifactId);
   if (!proposal) return true; // no such proposal anymore -- not reviewable, matching the item rules' own posture
   return proposal.candidateIds.every((candidateId) => candidateId in session.candidateDecisions);

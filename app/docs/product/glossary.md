@@ -251,20 +251,20 @@ the completed work would otherwise have required.
 "Fewer Decisions" before the Decision Tracker panel gave it a title.)
 
 **Work avoided (time)** — the tracker's fourth figure, and the only
-**estimate** in the product. Avoided decision *units* × the reviewer's own
-observed pace on individual per-item decisions, rendered one-decimal in the
-largest sensible unit ("3.4 days of work avoided"). Deliberately low: it
-prices only the items themselves, never their repeated occurrences, and
-ignores the discovery cost DocScrub removes entirely. Suppressed until at
-least three individual decisions have been observed. Distinguished from the
-exact counts by its layout, and explained on demand via the "i" control —
-the claim is meant to survive a skeptic.
+**estimate** in the product. The same avoided occurrence-level review count
+shown in the `Avoided` cell × the reviewer's own observed pace on
+individual per-item decisions, rendered one-decimal in the largest sensible
+unit ("3.4 days of work avoided"). Deliberately low: it ignores the
+discovery cost DocScrub removes entirely. Suppressed until at least three
+individual decisions have been observed. Distinguished from the exact
+counts by its tilde and explained on demand via the "i" control — the
+claim is meant to survive a skeptic.
 
-**Observed pace** — mean seconds between consecutive *individual* per-item
+**Observed pace** — median seconds between consecutive *individual* per-item
 decisions. Bulk, group and imported decisions are excluded: one keystroke
 over forty items says nothing about how long one decision takes. Gaps over
-two minutes are discarded rather than capped, since capping would drag the
-mean upward and inflate the estimate.
+two minutes are discarded rather than capped, and the median keeps shorter
+distractions from inflating the estimate.
 
 **Floor** — the unit-based reduction over every detected candidate: what
 this document avoids if reviewed item by item. Because working by category

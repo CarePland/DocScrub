@@ -29,6 +29,7 @@
 import type { Candidate } from "../domain/DocumentModel.js";
 import type { CandidateDecision } from "../domain/ReviewSession.js";
 import { decisionDisplayLabel } from "./decisionLabels.js";
+import type { ReviewNecessity } from "../engines/review/reviewNecessity.js";
 
 export type FilterPreset =
   | "unreviewed"
@@ -38,7 +39,10 @@ export type FilterPreset =
   | "organizations"
   | "ignored"
   | "renamed"
-  | "redacted";
+  | "redacted"
+  /* REVIEW NECESSITY (AG, 2026-08-10). Unlike every other preset, this one
+   * REVEALS rather than narrows -- see UNLIKELY_PRESET's note below. */
+  | "unlikely";
 
 export const FILTER_PRESETS: readonly { key: FilterPreset; label: string }[] = [
   { key: "unreviewed", label: "Unreviewed only" },
@@ -53,7 +57,21 @@ export const FILTER_PRESETS: readonly { key: FilterPreset; label: string }[] = [
   // preset keys are ephemeral UI state, not worth churning.
   { key: "renamed", label: "Changed" },
   { key: "redacted", label: "Redacted" },
+  { key: "unlikely", label: "Unlikely" },
 ];
+
+/**
+ * THE ONE PRESET THAT REVEALS INSTEAD OF NARROWING (AG, 2026-08-10).
+ *
+ * Every other preset filters DOWN from a population the reviewer can already
+ * see. Unlikely candidates are excluded from the active-review conveyor by
+ * default -- they are the population this preset exists to bring BACK.
+ *
+ * That asymmetry is handled in exactly one place (`queryItemCheck`), so no
+ * consumer can accidentally get a list that disagrees with navigation: the
+ * candidate list, the navigable id list and every count all flow through it.
+ */
+export const UNLIKELY_PRESET: FilterPreset = "unlikely";
 
 /**
  * Threshold for "High confidence" -- reuses app.ts's OWN existing
@@ -128,6 +146,20 @@ export interface CandidateQueryFacts {
   /** Evidence-category rule ids (already kebab-case-normalized -- see
    *  candidateCategories() in app.ts). */
   categories: string[];
+  /**
+   * REVIEW NECESSITY (AG, 2026-08-10), computed by
+   * `engines/review/reviewNecessity.ts` from the already-derived
+   * interpretation profile. NOT recomputed here and NOT derivable from the
+   * other fields on this record -- the UI layer owns no semantic logic.
+   *
+   * Optional so every existing caller and test that builds these facts keeps
+   * compiling and keeps behaving exactly as before: absent means
+   * "review-required", which is the safe default.
+   */
+  reviewNecessity?: ReviewNecessity;
+  /** The single surviving reading when Unlikely, for display and search.
+   *  Absent otherwise. */
+  unlikelyExplanation?: string;
 }
 
 /** Case-insensitive substring match across every field Andrew's "Item Check
@@ -178,6 +210,8 @@ export function matchesPreset(facts: CandidateQueryFacts, preset: FilterPreset):
       return facts.decision?.decision === "Rename";
     case "redacted":
       return facts.decision?.decision === "Redact";
+    case "unlikely":
+      return facts.reviewNecessity === "unlikely";
     default: {
       const exhaustive: never = preset;
       return exhaustive;
@@ -282,6 +316,28 @@ export function queryRequestsDecidedItems(query: ItemCheckQueryState): boolean {
 /** Filters by search text AND every active preset, then sorts -- the one
  *  entry point app.ts calls. Pure function of its inputs; no hidden state. */
 export function queryItemCheck(facts: CandidateQueryFacts[], query: ItemCheckQueryState): CandidateQueryFacts[] {
-  const filtered = facts.filter((f) => matchesSearch(f, query.searchText) && matchesAllActivePresets(f, query.activePresets));
+  /*
+   * THE ONE PLACE UNLIKELY IS EXCLUDED (AG, 2026-08-10).
+   *
+   * Unlikely candidates are held out of the active-review conveyor unless the
+   * reviewer asks for them. Doing it here -- rather than at each call site --
+   * is what keeps the rendered list, the navigable id list and every count
+   * derived from them in agreement. A second exclusion elsewhere would be a
+   * bug, not a defence.
+   *
+   * THE CANDIDATE IS NOT REMOVED FROM ANYTHING ELSE. It stays in
+   * WorkspaceState, in the audit, in entity resolution and in the exported
+   * document; only this list narrows.
+   */
+  const revealUnlikely = query.activePresets.has(UNLIKELY_PRESET);
+  const visible = revealUnlikely ? facts : facts.filter((f) => f.reviewNecessity !== "unlikely");
+  const filtered = visible.filter((f) => matchesSearch(f, query.searchText) && matchesAllActivePresets(f, query.activePresets));
   return [...filtered].sort((a, b) => compareCandidates(a, b, query.sortOrder));
+}
+
+/** How many of these facts are held out of active review. Counted from the
+ *  SAME field the exclusion reads, so a count can never disagree with the
+ *  list it describes. */
+export function unlikelyCount(facts: readonly CandidateQueryFacts[]): number {
+  return facts.filter((f) => f.reviewNecessity === "unlikely").length;
 }

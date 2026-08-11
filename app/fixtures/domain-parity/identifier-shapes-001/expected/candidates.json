@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "key": "cin:123456789",
+      "text": "123456789",
+      "detectedType": "cin",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "cin:123456789:body paragraph 2:18:1"
+      ]
+    },
+    {
+      "key": "cin:781237504",
+      "text": "781237504",
+      "detectedType": "cin",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "cin:781237504:body paragraph 1:12:1",
+        "cin:781237504:body paragraph 7:45:2"
+      ]
+    },
+    {
+      "key": "cin:987654321",
+      "text": "987654321",
+      "detectedType": "cin",
+      "source": "regex",
+      "confidence": "high",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "cin:987654321:body paragraph 3:12:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:01200067742",
+      "text": "01200067742",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:01200067742:body paragraph 9:10:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:123456789012",
+      "text": "123-456-789-012",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:123456789012:body paragraph 5:10:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:1234567890123",
+      "text": "1234567890123",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:1234567890123:body paragraph 4:8:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:18900663687",
+      "text": "18900663687",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:18900663687:body paragraph 8:14:1"
+      ]
+    },
+    {
+      "key": "long_numeric_id:82601229711",
+      "text": "826 0122 9711",
+      "detectedType": "long_numeric_id",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "long_numeric_id:82601229711:body paragraph 6:12:1"
+      ]
+    },
+    {
+      "key": "person:andrew goodloe",
+      "text": "Andrew Goodloe",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 86,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure",
+        "known_personal_name_token"
+      ],
+      "occurrenceIds": [
+        "person:andrew goodloe:body paragraph 14:0:1"
+      ]
+    },
+    {
+      "key": "person:appt nbr",
+      "text": "Appt Nbr",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 56,
+      "qualityReasons": [
+        "single_occurrence",
+        "common_abbreviation",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:appt nbr:body paragraph 12:33:1"
+      ]
+    },
+    {
+      "key": "person:background process",
+      "text": "Background Process",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Possible",
+      "qualityStatus": "To Review",
+      "candidateScore": 66,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure"
+      ],
+      "occurrenceIds": [
+        "person:background process:body paragraph 11:35:1"
+      ]
+    },
+    {
+      "key": "person:contact mary jane watson",
+      "text": "Contact Mary Jane Watson",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 86,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure",
+        "known_personal_name_token"
+      ],
+      "occurrenceIds": [
+        "person:contact mary jane watson:body paragraph 10:0:1"
+      ]
+    },
+    {
+      "key": "person:post enrollment requisite checking",
+      "text": "Post Enrollment Requisite Checking",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "institution_term",
+        "department_organization",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:post enrollment requisite checking:body paragraph 11:0:1"
+      ]
+    },
+    {
+      "key": "person:registrar and enrollment services",
+      "text": "Registrar And Enrollment Services",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "institution_term",
+        "department_organization",
+        "sentence_fragment_word",
+        "honorific_title",
+        "organization_suffix",
+        "legal_administrative_term",
+        "sentence_fragment",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:registrar and enrollment services:body paragraph 13:18:1"
+      ]
+    },
+    {
+      "key": "person:tamara yamada",
+      "text": "Tamara Yamada",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 86,
+      "qualityReasons": [
+        "single_occurrence",
+        "strong_name_structure",
+        "known_personal_name_token"
+      ],
+      "occurrenceIds": [
+        "person:tamara yamada:body paragraph 14:34:1"
+      ]
+    },
+    {
+      "key": "person:term session appt block",
+      "text": "Term Session Appt Block",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "season_or_academic_term",
+        "common_abbreviation",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:term session appt block:body paragraph 12:9:1"
+      ]
+    },
+    {
+      "key": "person:the",
+      "text": "The",
+      "detectedType": "person",
+      "source": "fallback-single-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "small_frequency_bonus",
+        "sentence_fragment_word",
+        "expanded_common_language_token",
+        "all_common_dictionary_words",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:the:body paragraph 3:0:1",
+        "person:the:body paragraph 8:0:2"
+      ]
+    },
+    {
+      "key": "person:the office of the",
+      "text": "The Office Of The",
+      "detectedType": "person",
+      "source": "fallback-name-regex",
+      "confidence": "low",
+      "quality": "Unlikely",
+      "qualityStatus": "Unlikely",
+      "candidateScore": 1,
+      "qualityReasons": [
+        "single_occurrence",
+        "sentence_fragment_word",
+        "organization_suffix",
+        "legal_administrative_term",
+        "sentence_fragment",
+        "no_positive_person_evidence"
+      ],
+      "occurrenceIds": [
+        "person:the office of the:body paragraph 13:0:1"
+      ]
+    },
+    {
+      "key": "phone:18900663687",
+      "text": "18900663687",
+      "detectedType": "phone",
+      "source": "regex",
+      "confidence": "medium",
+      "quality": "Strong",
+      "qualityStatus": "To Review",
+      "candidateScore": 99,
+      "qualityReasons": [
+        "deterministic_non_person_type"
+      ],
+      "occurrenceIds": [
+        "phone:18900663687:body paragraph 8:14:1"
+      ]
+    }
+  ]
+}

@@ -49,12 +49,32 @@ const blocksById = new Map([["b1", block("b1")], ["hdr", block("hdr", "header")]
 // used to generate these expectations) -- not hand-guessed.
 
 // "Smith, Jane" -- LAST_FIRST_RE
+//
+// ORACLE DEVIATION #8 (AG, 2026-08-10, representation defect #1). Python
+// emits ["single_occurrence", "surname_given_structure"] here because its
+// known-given-name lookup sits inside the TWO_NAME_RE branch, which the
+// last-first branch returns before reaching. "jane" IS in KNOWN_GIVEN_NAMES,
+// so the oracle's own lexicon had the answer and its own branch order hid it.
+//
+// This expectation is UPDATED rather than preserved: the previous value
+// depended on the defect. The deviation is documented at the hoisted lookup
+// in scoring.ts and pinned in both directions by
+// verify/last-first-name-evidence-verification.ts.
 {
   const c = candidate("Smith, Jane");
   const occs = [occ(c.id, "b1", "Smith, Jane", "...Smith, Jane...")];
   const result = scoreCandidateQuality(c, occs, blocksById);
   check("Smith, Jane quality", result.quality, "Strong");
-  check("Smith, Jane reasons", result.reasons, ["single_occurrence", "surname_given_structure"]);
+  check("Smith, Jane reasons (deviation #8)", result.reasons, ["single_occurrence", "surname_given_structure", "known_personal_name_token"]);
+}
+
+// "Smith, Zeeb" -- LAST_FIRST_RE, given name NOT in the lexicon. The control
+// that proves deviation #8 attaches evidence rather than inventing it.
+{
+  const c = candidate("Smith, Zeeb");
+  const occs = [occ(c.id, "b1", "Smith, Zeeb", "...Smith, Zeeb...")];
+  const result = scoreCandidateQuality(c, occs, blocksById);
+  check("Smith, Zeeb reasons (unchanged by deviation #8)", result.reasons, ["single_occurrence", "surname_given_structure"]);
 }
 
 // "Gustavo Reyes" -- TWO_NAME_RE + known given name token

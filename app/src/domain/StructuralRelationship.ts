@@ -12,21 +12,24 @@
  *   decides, merges, or reuses anything automatically.
  * - Observations are explainable and non-semantic: "Possible acronym
  *   relationship." -- never "this is a Student ID / SSN / Case Number."
- * - "Unrelated" dissolves the proposed relationship and NOTHING ELSE: it
- *   does not classify candidates as non-sensitive, does not remove them
- *   from later review, and every member continues through the normal
- *   per-candidate pipeline (Item Check's Keep/Change/Redact/Ignore).
+ * - "Unrelated" marks the proposed relationship unrelated and NOTHING
+ *   ELSE: it does not classify candidates as non-sensitive, does not remove
+ *   them from later review, and every member continues through the normal
+ *   per-candidate pipeline (Item Check's Keep/Change/Redact/Ignore). The
+ *   proposal remains visible as a reversible, resolved relationship state
+ *   because hiding it would make an accidental Unrelated choice impossible
+ *   to inspect or undo.
  *
  * ARCHITECTURE: proposals are DERIVED state -- recomputed deterministically
  * from DetectionResult by StructuralRelationshipEngine on every document
  * load, never serialized (same rule as GroupingResult/QualityResult). The
  * only DURABLE state is the reviewer's dismissals (RelationshipDismissal,
  * stored on ReviewSession keyed by the content-derived proposalId, so a
- * dismissal survives save/resume and re-detection). Accepting a proposal
- * needs no storage at all: "accepted" is expressed as ordinary per-candidate
- * decisions via the existing bulkApplyDecision command, and a proposal
- * reads as ADDRESSED when every member carries a decision -- derive, don't
- * duplicate.
+ * dismissal survives save/resume and re-detection until the reviewer
+ * chooses Recombine). Accepting a proposal needs no storage at all:
+ * "accepted" is expressed as ordinary per-candidate decisions via the
+ * existing bulkApplyDecision command, and a proposal reads as ADDRESSED
+ * when every member carries a decision -- derive, don't duplicate.
  */
 
 /** "inserted-word-name" added 2026-08-02 (AG: "Probable name with
@@ -43,7 +46,7 @@ export interface RelationshipProposal {
   /** Stable and CONTENT-DERIVED (kind + the deterministic key that formed
    *  the group), never positional -- the same proposal gets the same id on
    *  every load of the same document, which is what lets a stored
-   *  dismissal dissolve it durably. */
+   *  dismissal mark it unrelated durably. */
   proposalId: string;
   kind: RelationshipKind;
   /** In detection (document) order -- deterministic, like every other
@@ -72,9 +75,9 @@ export interface StructuralRelationshipResult {
 }
 
 /** The durable record of a reviewer choosing "Unrelated" -- the proposal
- *  is dissolved; its members continue through review individually. Carries
- *  the proposal's own facts (kind, members) so the session's audit trail
- *  stands alone without re-running detection. */
+ *  remains visible as marked unrelated; its members continue through review
+ *  individually. Carries the proposal's own facts (kind, members) so the
+ *  session's audit trail stands alone without re-running detection. */
 export interface RelationshipDismissal {
   proposalId: string;
   kind: RelationshipKind;

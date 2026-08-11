@@ -1,0 +1,18 @@
+const t0 = performance.now();
+const m = await import("./dist/engines/knowledge/CensusNameEvidence.js");
+const t1 = performance.now();
+global.gc?.();
+const b0 = process.memoryUsage().heapUsed;
+const ti0 = performance.now();
+m.censusRoleFor("MILLER");
+const ti1 = performance.now();
+global.gc?.();
+const b1 = process.memoryUsage().heapUsed;
+const names = ["Yazmine Guzmán","Amy Miller","Grade Rosters","Cobb, Christopher","Reason Code","Term Withdrawals"];
+const t3 = performance.now();
+for (let i=0;i<100000;i++) m.censusNameEvidenceFor(names[i%names.length]);
+const t4 = performance.now();
+console.log(`module import (parse asset)  ${(t1-t0).toFixed(0)} ms`);
+console.log(`lazy index build             ${(ti1-ti0).toFixed(0)} ms   heap delta ${((b1-b0)/1048576).toFixed(1)} MiB`);
+console.log(`evidence lookup              ${(((t4-t3)*1000)/100000).toFixed(2)} µs per candidate`);
+console.log(`569-candidate pass           ${(((t4-t3)/100000)*569).toFixed(2)} ms`);

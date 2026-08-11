@@ -183,21 +183,21 @@ export function decisionsMade(session: ReviewSession | null | undefined, current
  *
  * WHAT IT MULTIPLIES -- and this is the decision that matters most:
  *
- *     time saved  =  decision UNITS avoided  x  observed individual rate
+ *     time saved  =  avoided occurrence-level reviews  x  observed individual rate
  *
- * NOT occurrences avoided. Pricing all ~2,300 avoided occurrences at the
- * reviewer's per-decision rate produces "3 weeks" from an afternoon, because
- * repeated occurrences are cheap precisely BECAUSE they repeat -- the 30th
- * sighting of a name costs a fraction of the first, and that recognition
- * effect is the same phenomenon that produces the reduction in the first
- * place. Multiplying the cheapest work in the document at full price is
- * worst exactly where the number would look most impressive.
+ * The denominator deliberately matches the exact `Avoided` figure beside it:
+ * covered occurrences minus decisions made. Using resolved decision units
+ * here made the fourth number answer a different question than the visible
+ * tracker row. On a document showing `582 Avoided`, the time figure priced
+ * only the smaller item-level delta and could read around eight minutes,
+ * which made the modeled estimate look disconnected from the exact count it
+ * was supposed to explain.
  *
- * Units are roughly 15x smaller than occurrences on a repetitive document.
- * The unit-based figure silently concedes ALL of the discovery savings --
- * the genuinely large cost DocScrub removes, which never enters the
- * measured rate because the reviewer is handed items already found. So this
- * is knowingly low. That is the intended direction of error.
+ * This still understates: it prices each avoided occurrence at the reviewer's
+ * observed pace for an already-presented item and ignores the time DocScrub
+ * removed by locating those occurrences in the first place. The claim is
+ * therefore "this much repetitive review did not have to happen," not "this
+ * exact amount of calendar time was banked."
  *
  * THE RATE IS MEASURED, NOT ASSUMED, and only from gaps between consecutive
  * INDIVIDUAL per-item decisions -- the one act genuinely observed. Bulk and
@@ -254,7 +254,7 @@ const TIME_LADDER: readonly LadderStep[] = [
 ];
 
 export interface TimeSavedEstimate {
-  /** Decision units disposed of without an individual decision. */
+  /** Occurrence-level reviews disposed of without an individual decision. */
   unitsAvoided: number;
   /** Observed seconds per individual decision, and how many inter-decision
    *  gaps that average came from -- exposed so the figure can be audited
@@ -314,10 +314,9 @@ export function individualDecisionRate(session: ReviewSession | null | undefined
 
 export function estimateTimeSaved(
   session: ReviewSession | null | undefined,
-  resolvedUnitCount: number,
-  decisionsMadeCount: number
+  avoidedDecisionCount: number
 ): TimeSavedEstimate | null {
-  const unitsAvoided = Math.max(0, resolvedUnitCount - decisionsMadeCount);
+  const unitsAvoided = Math.max(0, avoidedDecisionCount);
   if (unitsAvoided === 0) return null;
   const rate = individualDecisionRate(session);
   if (!rate) return null;
@@ -385,8 +384,9 @@ export function decisionTrackerFigures(
   const units = resolvedUnits ?? [];
   const coverage = decisionReduction(units);
   const made = decisionsMade(session, new Set(units.map((u) => u.id)));
-  const timeSaved = estimateTimeSaved(session, coverage.decisionUnitCount, made);
   const coveredOccurrenceCount = coverage.occurrenceCount;
+  const avoidedDecisionCount = Math.max(0, coveredOccurrenceCount - made);
+  const timeSaved = estimateTimeSaved(session, avoidedDecisionCount);
   if (coveredOccurrenceCount === 0) return { ...EMPTY_DECISION_TRACKER, decisionsMade: made, timeSaved };
   // Floored for the same reason decisionReduction floors its own: a
   // negative "decisions avoided" is not a number the product should be
@@ -394,7 +394,6 @@ export function decisionTrackerFigures(
   // occurrences they cover -- i.e. every decided candidate is a
   // single-occurrence item decided individually, where the honest answer
   // really is "nothing was avoided."
-  const avoidedDecisionCount = Math.max(0, coveredOccurrenceCount - made);
   return {
     decisionsMade: made,
     avoidedDecisionCount,
@@ -459,7 +458,8 @@ export function explainTimeSavedPending(
   // than passed in: this must describe the SAME preconditions
   // estimateTimeSaved actually tested, and a caller-supplied count is a
   // second place for them to disagree.
-  const unitsAvoided = Math.max(0, decisionReduction(units).decisionUnitCount - decisionsMade(session, new Set(units.map((u) => u.id))));
+  const reduction = decisionReduction(units);
+  const unitsAvoided = Math.max(0, reduction.occurrenceCount - decisionsMade(session, new Set(units.map((u) => u.id))));
   if (unitsAvoided === 0) {
     return [
       "No items have been settled without an individual decision yet, so there is no avoided workload to put a time against.",
@@ -489,7 +489,7 @@ export function explainTimeSaved(estimate: TimeSavedEstimate): string[] {
   // stated -- now without a voice standing between the reader and it.
   return [
     `Measured pace: about ${pace} per decision, the middle value across ${estimate.sampleCount} items decided individually. Items decided one at a time are the only observable pace, and the median discounts pauses spent reading something else.`,
-    `${estimate.unitsAvoided.toLocaleString()} items settled without individual review, covered by a category or group action. At the measured pace, handling them individually would have taken about ${estimate.value.toFixed(1)} ${estimate.unit}.`,
+    `${estimate.unitsAvoided.toLocaleString()} occurrence-level reviews settled without individual review, covered by a category or group action. At the measured pace, handling them individually would have taken about ${estimate.value.toFixed(1)} ${estimate.unit}.`,
     // The word "saved" stays OUT, and that is a load-bearing constraint
     // rather than a wording preference: this figure measures work AVOIDED,
     // which is observable, not time saved, which is not. A tool-voice pass

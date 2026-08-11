@@ -94,7 +94,7 @@
  */
 
 import type { DocumentModel } from "../domain/DocumentModel.js";
-import type { ReviewSession } from "../domain/ReviewSession.js";
+import type { ReviewSession, AutomaticResolution } from "../domain/ReviewSession.js";
 import type { VerificationReport } from "../domain/VerificationReport.js";
 import type { FocusState, StageStatus } from "../domain/FocusState.js";
 import type { FocusResumePosition } from "../domain/FocusResumePosition.js";
@@ -115,11 +115,36 @@ import {
 import { RegexEntityResolutionEngine, type EntityResolutionEngine, type GroupingResult } from "../engines/EntityResolutionEngine.js";
 import { cleanupIdentityOptions, identityCleanupStats, insertedWordNameProposals, type IdentityCleanupStats } from "../engines/entity-resolution/identity-cleanup.js";
 import { normalizeDetection, type NormalizationResult } from "../engines/normalization/normalization.js";
-import { evaluateContextualPersonEvidence } from "../engines/contextual-person-evidence/contextual-person-evidence.js";
+import { evaluateContextualPersonEvidence, type ContextualPersonEvidenceResult } from "../engines/contextual-person-evidence/contextual-person-evidence.js";
+// CROSS-CANDIDATE COMPOSITION (AG, 2026-08-10). See its module header.
+import { evaluateCrossCandidateEvidence, emptyCrossCandidateEvidence, type CrossCandidateEvidenceResult } from "../engines/cross-candidate/cross-candidate-evidence.js";
+import { NAME_EVIDENCE_CATEGORIES, personEvidencedCandidateIds, type PersonEvidenceFacts } from "../engines/cross-candidate/person-evidence-gate.js";
+// CENSUS NAME EVIDENCE (AG, 2026-08-10). See its module header for why the
+// gate reads STRUCTURE and never token membership.
+import { censusNameEvidenceFor, censusRoleFor, normalizeForCensusLookup, type CensusNameEvidence } from "../engines/knowledge/CensusNameEvidence.js";
+// GNIS PLACE EVIDENCE (AG, 2026-08-10). Evidence only -- see the stop-condition
+// note on SemanticTypeFacts.gnisPlaceStrength for why nothing routes on it.
+import { gnisPlaceEvidenceFor, type GnisPlaceEvidence } from "../engines/knowledge/GnisPlaceEvidence.js";
+import { higherEdTerminologyFor, type HigherEdTerminologyEvidence } from "../engines/knowledge/HigherEdTerminologyEvidence.js";
+// Inert like the higher-ed family above -- computed, exposed and traced, but
+// read by no production decision. See domain/semanticTypes.ts's
+// `medicalTerminologyAttested` for why, and for the boundary specific to it.
+import { medicalEvidenceFor, type MedicalEvidence } from "../engines/knowledge/MedicalEvidence.js";
+// ALL reference evidence channels, gathered in one place. The next domain
+// pack should be added to ReferenceEvidence.ts, not to this file -- see
+// `getReferenceEvidence` for why.
+import { referenceEvidenceFor, type ReferenceEvidenceChannels } from "../engines/knowledge/ReferenceEvidence.js";
+// MULTI-INTERPRETATION PROFILES, Phase A (AG, 2026-08-10). Inert: computed,
+// exposed and traced, read by no production decision. See its module header
+// and `getInterpretationProfiles` below.
+import { interpretCandidate } from "../engines/interpretation/candidate-interpretation.js";
+import type { InterpretationProfile } from "../engines/interpretation/interpretation-model.js";
+// PHASE 2 (AG, 2026-08-09): the residual-review gate. See its module header.
+import { buildGateFacts, runResidualReviewGate, type GateRun } from "../engines/review/residualReviewGate.js";
 import { StructuralRelationshipEngine } from "../engines/StructuralRelationshipEngine.js";
 import { builtInSemanticRelationshipProviders } from "../engines/knowledge/RelatedNameProvider.js";
 import type { RelationshipKind, StructuralRelationshipResult } from "../domain/StructuralRelationship.js";
-import { buildSemanticTypeGroups, qualityCategoriesOf, semanticTypeFor, type SemanticTypeGroup, type SemanticTypeId } from "../domain/semanticTypes.js";
+import { buildSemanticTypeGroups, qualityCategoriesOf, semanticTypeFor, typeCheckSectionFor, type CandidateInterpretation, type SemanticTypeGroup, type SemanticTypeId, type TypeCheckSectionId } from "../domain/semanticTypes.js";
 import { RegexOccurrenceClassifier, type OccurrenceClassifier, type OccurrenceClassificationResult } from "../engines/OccurrenceClassifier.js";
 import type { QualityResult } from "../domain/Evidence.js";
 
@@ -373,6 +398,191 @@ export class ReviewWorkspace {
   private reviewEngine: DurableReviewEngine | null = null;
   private focusNavigator: FocusNavigator | null = null;
 
+  /** The contextual-person-evidence pass's output for the loaded document.
+   *  Held for provenance inspection (`__docscrub.why`): "why is this
+   *  candidate still in review" is usually a question about THIS, and
+   *  answering it needs the exact occurrence and rule. Read-only. */
+  private contextualEvidence: ContextualPersonEvidenceResult | null = null;
+
+  /** CROSS-CANDIDATE COMPOSITION (AG, 2026-08-10) -- derived, never
+   *  persisted, recomputed on every load like every other pipeline output. */
+  private crossCandidateEvidence: CrossCandidateEvidenceResult = emptyCrossCandidateEvidence();
+
+  getCrossCandidateEvidence(): CrossCandidateEvidenceResult {
+    return this.crossCandidateEvidence;
+  }
+
+  /** PROVENANCE (AG, 2026-08-10): per-candidate {detectedType, semanticType,
+   *  rejectedType, section}. Derived, never persisted -- the record that lets
+   *  Expert View and the audit say WHY an item stopped being a likely person
+   *  without re-deriving the interpretation. */
+  private candidateInterpretations: ReadonlyMap<string, CandidateInterpretation> = new Map();
+
+  getCandidateInterpretations(): ReadonlyMap<string, CandidateInterpretation> {
+    return this.candidateInterpretations;
+  }
+
+  /** CENSUS NAME EVIDENCE (AG, 2026-08-10) -- structural evidence per
+   *  candidate, present only where a structure was found. Derived, never
+   *  persisted. */
+  private censusNameEvidence: ReadonlyMap<string, CensusNameEvidence> = new Map();
+
+  getCensusNameEvidence(): ReadonlyMap<string, CensusNameEvidence> {
+    return this.censusNameEvidence;
+  }
+
+  /** GNIS PLACE EVIDENCE (AG, 2026-08-10) -- present only where a Standard
+   *  match was found. Derived, never persisted. Nothing routes on it yet;
+   *  see the stop-condition note in domain/semanticTypes.ts. */
+  private gnisPlaceEvidence: ReadonlyMap<string, GnisPlaceEvidence> = new Map();
+
+  getGnisPlaceEvidence(): ReadonlyMap<string, GnisPlaceEvidence> {
+    return this.gnisPlaceEvidence;
+  }
+
+  /**
+   * HIGHER-EDUCATION TERMINOLOGY EVIDENCE (AG, 2026-08-10) -- one entry per
+   * candidate whose phrase is attested in the higher-ed reference dataset,
+   * carrying every attesting provenance row. Derived, never persisted,
+   * recomputed on every load like every other pipeline output.
+   *
+   * SCOPE IS EVERY CANDIDATE, unlike `censusNameEvidence` above, which is
+   * computed only for `detectedType === "person"`. That narrowing is correct
+   * for Census (its only consumer is the person-protection gate) and would be
+   * wrong here: the point of a domain reference is to describe candidates the
+   * person pipeline never proposed -- `Cost of Attendance`, `Satisfactory
+   * Academic Progress`, `Financial aid` -- as well as the ones it did. The
+   * full pass is 1,373 keyed lookups against an in-memory Map built once, so
+   * the cost is not a consideration at this dataset size.
+   *
+   * NO PRODUCTION DECISION READS THIS MAP TODAY. It is deliberately a
+   * standalone getter rather than a scoring input; see
+   * domain/semanticTypes.ts's `higherEdTerminologyAttested` for why the
+   * combination question is deferred, and the implementation report for what
+   * was deliberately left for that layer.
+   */
+  private higherEdTerminology: ReadonlyMap<string, HigherEdTerminologyEvidence> = new Map();
+
+  getHigherEdTerminologyEvidence(): ReadonlyMap<string, HigherEdTerminologyEvidence> {
+    return this.higherEdTerminology;
+  }
+
+  /**
+   * MEDICAL/HEALTHCARE TERMINOLOGY EVIDENCE (AG, 2026-08-10) -- one entry per
+   * candidate whose phrase is attested in the medical reference dataset,
+   * carrying every attesting provenance row. Derived, never persisted,
+   * recomputed on every load like every other pipeline output.
+   *
+   * SCOPE IS EVERY CANDIDATE, for the same reason the higher-ed map's is: a
+   * domain reference earns its keep by describing candidates the person
+   * pipeline never proposed -- `Prior authorization`, `Medical Records`,
+   * `National Provider Identifier` -- as well as the ones it did. 378 keys in
+   * an in-memory Map built once; cost is not a consideration at this size.
+   *
+   * NO PRODUCTION DECISION READS THIS MAP TODAY, and for this family that is a
+   * stronger statement than convenience. Terminology attestation must never
+   * become an assertion about a person's health, so the safe order of
+   * operations is: expose it, trace it, benchmark it, and only then design
+   * what may consume it. See engines/knowledge/MedicalEvidence.ts.
+   */
+  private medicalTerminology: ReadonlyMap<string, MedicalEvidence> = new Map();
+
+  getMedicalEvidence(): ReadonlyMap<string, MedicalEvidence> {
+    return this.medicalTerminology;
+  }
+
+  /**
+   * ALL REFERENCE EVIDENCE CHANNELS, per candidate (AG, 2026-08-10).
+   *
+   * ═══════ THIS IS INTENDED TO BE THE LAST PER-FAMILY EDIT TO THIS FILE ═══════
+   *
+   * Above this line are five bespoke maps -- census, GNIS, higher-ed, medical
+   * -- each added by a different integration, each with its own field, its own
+   * getter and its own loop in `loadDocument`. Six domain packs were in flight
+   * on 2026-08-10 alone and more are coming. Continuing that pattern means
+   * every future pack edits the same three regions of this file, which is a
+   * guaranteed merge conflict per pack, forever, for zero behavioural gain.
+   *
+   * So this one map holds `ReferenceEvidenceChannels` -- every channel's
+   * answer for a candidate, gathered by
+   * `engines/knowledge/ReferenceEvidence.ts`. ADDING THE NEXT EVIDENCE FAMILY
+   * SHOULD TOUCH THAT FILE AND NOT THIS ONE: one field on the channels
+   * interface, one call in `referenceEvidenceFor`, and it appears here, in the
+   * console diagnostic, and in the overlap harness for free.
+   *
+   * The existing per-family maps are deliberately left alone rather than
+   * folded in. They have live consumers (the person-protection gate reads
+   * census; the diagnostic reads higher-ed) and rewriting them while three
+   * integrations are in flight would trade a merge conflict for a behavioural
+   * risk. Folding them in is a later, mechanical change.
+   *
+   * SCOPE IS EVERY CANDIDATE, and every channel is asked. That means census
+   * and GNIS are evaluated here for non-person candidates too, where the
+   * fields above evaluate them only for `detectedType === "person"`. The
+   * narrow scope above is correct for its consumer (the protection gate) and
+   * would be wrong here: the whole point of gathering channels is to see what
+   * a phrase looks like to datasets the pipeline never consulted. The cost is
+   * a few keyed Map lookups per candidate against indexes that are built once
+   * and lazily.
+   *
+   * NO PRODUCTION DECISION READS THIS MAP. Derived, never persisted,
+   * recomputed on every load like every other pipeline output. It exists so
+   * the channels can be traced, benchmarked and audited BEFORE anything is
+   * built that combines them.
+   */
+  private referenceEvidence: ReadonlyMap<string, ReferenceEvidenceChannels> = new Map();
+
+  getReferenceEvidence(): ReadonlyMap<string, ReferenceEvidenceChannels> {
+    return this.referenceEvidence;
+  }
+
+  /**
+   * MULTI-INTERPRETATION PROFILES, Phase A (AG, 2026-08-10) -- every reading
+   * the evidence affirmatively supports for a candidate, with nothing chosen
+   * between them. One entry per candidate, always; a candidate nothing
+   * supports carries an `unsupported` profile rather than being absent, so
+   * "asked and found nothing" stays distinguishable from "never asked".
+   *
+   * ═══════ NOT `getCandidateInterpretations()`, WHICH IS A DIFFERENT THING ═══════
+   *
+   * `candidateInterpretations` above holds `CandidateInterpretation` from
+   * domain/semanticTypes.ts: the SINGLE Type Check section a candidate routes
+   * to, plus the hypothesis that was rejected to get there. It is production
+   * routing and it is unchanged by this work.
+   *
+   * This map holds `InterpretationProfile`: the SET of readings the evidence
+   * supports, none of them chosen. The two names are uncomfortably close and
+   * the distinction is exactly the point of this layer, so it is stated here
+   * rather than left to be inferred.
+   *
+   * NO PRODUCTION DECISION READS THIS MAP. Derived, never persisted,
+   * recomputed on every load like every other pipeline output. Its only
+   * consumers are the console diagnostic and the verification suites.
+   */
+  private interpretationProfiles: ReadonlyMap<string, InterpretationProfile> = new Map();
+
+  getInterpretationProfiles(): ReadonlyMap<string, InterpretationProfile> {
+    return this.interpretationProfiles;
+  }
+
+  /** Candidate ids the person-protection gate excluded from cross-candidate
+   *  interpretation, with no reason attached -- the reasons themselves are
+   *  recomputed by the diagnostic, which is the only consumer that needs them. */
+  private personProtectedIds: ReadonlySet<string> = new Set<string>();
+
+  getPersonProtectedIds(): ReadonlySet<string> {
+    return this.personProtectedIds;
+  }
+
+  getContextualEvidence(): ContextualPersonEvidenceResult | null {
+    return this.contextualEvidence;
+  }
+
+  /** What the residual-review gate did on the last FRESH load -- exposed
+   *  for measurement and provenance inspection; null on a restored session,
+   *  where the gate deliberately does not run. */
+  private lastGateRun: GateRun | null = null;
+
   private verification: VerificationReport | null = null;
   private verifiedSessionUpdatedAt: string | null = null;
   private rebuiltOutput: Blob | null = null;
@@ -590,16 +800,209 @@ export class ReviewWorkspace {
         kindsByCandidate.set(candidateId, kinds);
       }
     }
-    const semanticAssignments = new Map<string, SemanticTypeId>();
+    /* ===== CROSS-CANDIDATE COMPOSITION (AG, 2026-08-10) ==================
+     * The protection gate is assembled here, from the engines that already
+     * own each question, and handed to the pass as a conclusion -- see
+     * engines/cross-candidate/person-evidence-gate.ts for why it is not
+     * computed inside that module.
+     *
+     * ROUTING IS ENABLED (AG, 2026-08-10, second pass) through
+     * `typeCheckSectionFor`, which routes a rejected person hypothesis with
+     * no supported replacement to UNDETERMINED rather than to `other`. See
+     * domain/semanticTypes.ts for why Undetermined is a routing state and
+     * not a tenth SemanticTypeId.
+     */
+    const ambiguityCandidateIds = new Set(grouping.ambiguityProposals.map((p) => p.candidateId));
+    const groupMembersById = new Map<string, string[]>();
+    for (const group of grouping.entityGroupProposals) {
+      for (const candidateId of group.candidateIds) {
+        groupMembersById.set(candidateId, group.candidateIds.filter((other) => other !== candidateId));
+      }
+    }
+    const directPersonEvidence = (candidateId: string): boolean => {
+      const categories = categoriesOf(candidateId).map((c) => c.replace(/_/g, "-"));
+      const positives = (quality.assessmentByCandidate[candidateId]?.positiveReasons ?? []).map((c) => c.replace(/_/g, "-"));
+      return NAME_EVIDENCE_CATEGORIES.some((c) => categories.includes(c) || positives.includes(c)) || positives.includes("nearby-title");
+    };
+    // Census structure is computed once per candidate and kept, so the gate,
+    // the diagnostic and the audit all read ONE evaluation rather than three.
+    const censusByCandidate = new Map<string, CensusNameEvidence>();
+    const gnisByCandidate = new Map<string, GnisPlaceEvidence>();
     for (const candidate of detection.candidates) {
-      semanticAssignments.set(
+      if (candidate.detectedType !== "person") continue;
+      const evidence = censusNameEvidenceFor(candidate.displayValue);
+      if (evidence.supportsNameStructure) censusByCandidate.set(candidate.id, evidence);
+      // GNIS is evaluated over the same person-typed population: a geographic
+      // name only reaches DocScrub at all because the person detector's broad
+      // capitalized-phrase pattern picked it up.
+      const place = gnisPlaceEvidenceFor(candidate.displayValue);
+      if (place.strength !== "none") gnisByCandidate.set(candidate.id, place);
+    }
+    /*
+     * HIGHER-ED TERMINOLOGY, computed once per candidate (AG, 2026-08-10).
+     *
+     * DELIBERATELY NOT FED INTO `personEvidenceFacts` BELOW. The
+     * person-protection gate takes evidence FOR personhood; terminology
+     * attestation is not that, and its inverse -- "attested terminology,
+     * therefore not a person" -- is the failure this dataset's own
+     * collision_risk column exists to warn about. `White` and `Major` are
+     * attested terminology AND Census-attested surnames. Adding a
+     * `hasHigherEdTerminology` disqualifier to that gate would suppress real
+     * people, which is the one error class the gate was built to prevent.
+     */
+    const higherEdByCandidate = new Map<string, HigherEdTerminologyEvidence>();
+    for (const candidate of detection.candidates) {
+      const evidence = higherEdTerminologyFor(candidate.displayValue);
+      if (evidence) higherEdByCandidate.set(candidate.id, evidence);
+    }
+    /*
+     * MEDICAL/HEALTHCARE TERMINOLOGY, computed once per candidate
+     * (AG, 2026-08-10).
+     *
+     * DELIBERATELY NOT FED INTO `personEvidenceFacts` BELOW, for the reason
+     * stated for higher-ed above and one more that is specific to this family.
+     * The gate takes evidence FOR personhood. Terminology attestation is not
+     * that, and its inverse -- "attested medical terminology, therefore not a
+     * person" -- would be acting on a dataset whose HIGH-risk population is
+     * mostly two- and three-letter abbreviations, the exact shape a person's
+     * initials take. Beyond that: a redaction tool must never treat "this
+     * phrase is clinical" as a fact about whoever is named beside it, and the
+     * cleanest way to guarantee that is for no gate, score or router to read
+     * this map at all until a combination layer exists to read it carefully.
+     */
+    const medicalByCandidate = new Map<string, MedicalEvidence>();
+    for (const candidate of detection.candidates) {
+      const evidence = medicalEvidenceFor(candidate.displayValue);
+      if (evidence) medicalByCandidate.set(candidate.id, evidence);
+    }
+
+    /*
+     * ALL REFERENCE CHANNELS, gathered once (AG, 2026-08-10). See
+     * `getReferenceEvidence` above for why this is one loop rather than a
+     * sixth and seventh per-family loop, and why the next evidence family
+     * should not need to edit this file at all.
+     *
+     * Stored for EVERY candidate, including those no channel attested, so the
+     * diagnostic can distinguish "asked and nothing matched" from "never
+     * asked". That distinction is the difference between a measurable miss and
+     * an invisible one.
+     *
+     * READ BY NOTHING BELOW. It is assigned to the field and never consulted
+     * by the type-check pass, the gate, the scorer or the router.
+     */
+    const referenceEvidenceByCandidate = new Map<string, ReferenceEvidenceChannels>();
+    for (const candidate of detection.candidates) {
+      referenceEvidenceByCandidate.set(candidate.id, referenceEvidenceFor(candidate.displayValue));
+    }
+
+    const personEvidenceFactsById = new Map<string, PersonEvidenceFacts>();
+    const personEvidenceFacts: PersonEvidenceFacts[] = detection.candidates.map((candidate) => ({
+      candidateId: candidate.id,
+      qualityCategories: categoriesOf(candidate.id),
+      positiveReasons: quality.assessmentByCandidate[candidate.id]?.positiveReasons ?? [],
+      contextualRules: contextual.byCandidate[candidate.id]?.rules ?? [],
+      hasCensusNameStructure: censusByCandidate.has(candidate.id),
+      // A proposal or group is person evidence only when the PARTNER is
+      // itself person-evidenced -- otherwise a spurious proposal corroborates
+      // itself, which is the failure the witness audit found one layer down.
+      hasPersonEvidencedLinkage:
+        (groupMembersById.get(candidate.id) ?? []).some(directPersonEvidence) ||
+        (ambiguityCandidateIds.has(candidate.id) && directPersonEvidence(candidate.id)),
+    }));
+    for (const facts of personEvidenceFacts) personEvidenceFactsById.set(facts.candidateId, facts);
+    const protectedPersonIds = personEvidencedCandidateIds(personEvidenceFacts);
+    const crossCandidate = evaluateCrossCandidateEvidence({
+      candidates: detection.candidates,
+      personEvidencedCandidateIds: protectedPersonIds,
+    });
+
+    /*
+     * MULTI-INTERPRETATION PROFILES, Phase A (AG, 2026-08-10).
+     *
+     * Every reading the evidence affirmatively supports, per candidate, with
+     * nothing chosen between them. See
+     * engines/interpretation/candidate-interpretation.ts.
+     *
+     * PLACED HERE because this is the first point at which every input exists:
+     * quality, contextual evidence, entity linkage, reference channels and
+     * cross-candidate evidence have all been computed above. It reads them and
+     * writes nothing back.
+     *
+     * READ BY NOTHING BELOW. `semanticAssignments`, the residual-review gate,
+     * the recommendation layer and the audit export are all computed from the
+     * same inputs they were before and never consult this map. Phase A is
+     * measurement; the profiles exist so combination policy can be designed
+     * against real populations instead of guessed at.
+     */
+    /*
+     * DOCUMENT-LOCAL ATTESTED TOKENS (AG, 2026-08-10) -- every normalized
+     * token appearing anywhere in this document's candidates that is EXACTLY
+     * attested in Census name data.
+     *
+     * Computed once, here, because the interpretation layer owns no view of
+     * the document and must not acquire one. It is what lets a variant lookup
+     * ask "does this resemble a name THIS DOCUMENT already contains", which
+     * runs against a few hundred tokens rather than 195,310 national forms.
+     */
+    const documentAttestedTokens = new Set<string>();
+    for (const candidate of detection.candidates) {
+      for (const token of candidate.displayValue.replace(/,/g, " ").split(/\s+/)) {
+        const normalized = normalizeForCensusLookup(token);
+        if (normalized.length === 0) continue;
+        if (censusRoleFor(normalized) !== null) documentAttestedTokens.add(normalized);
+      }
+    }
+
+    const interpretationProfiles = new Map<string, InterpretationProfile>();
+    for (const candidate of detection.candidates) {
+      const facts = personEvidenceFactsById.get(candidate.id);
+      interpretationProfiles.set(
         candidate.id,
-        semanticTypeFor({
+        interpretCandidate({
+          candidateId: candidate.id,
+          displayValue: candidate.displayValue,
+          detectedType: candidate.detectedType,
+          qualityCategories: categoriesOf(candidate.id),
+          positiveReasons: quality.assessmentByCandidate[candidate.id]?.positiveReasons ?? [],
+          relationshipKinds: [...(kindsByCandidate.get(candidate.id) ?? new Set<RelationshipKind>())],
+          contextualRules: contextual.byCandidate[candidate.id]?.rules ?? [],
+          hasPersonEvidencedLinkage: facts?.hasPersonEvidencedLinkage ?? false,
+          // Absent for person-protected candidates: the gate excludes them
+          // from cross-candidate output entirely, and this inherits that
+          // rather than working around it.
+          ...(crossCandidate.byCandidate[candidate.id] !== undefined
+            ? { crossCandidate: crossCandidate.byCandidate[candidate.id]! }
+            : {}),
+          reference: referenceEvidenceByCandidate.get(candidate.id)!,
+          documentAttestedTokens,
+        })
+      );
+    }
+
+    const semanticAssignments = new Map<string, TypeCheckSectionId>();
+    const interpretations = new Map<string, CandidateInterpretation>();
+    for (const candidate of detection.candidates) {
+      const interpretation = typeCheckSectionFor(
+        {
           detectedType: candidate.detectedType,
           categories: categoriesOf(candidate.id),
           relationshipKinds: kindsByCandidate.get(candidate.id) ?? new Set<RelationshipKind>(),
-        })
+          censusNameStructure: censusByCandidate.has(candidate.id),
+          // Carried, never branched on -- see the field's own doc comment in
+          // domain/semanticTypes.ts. Passing it here is what makes the future
+          // combination change a local edit rather than a plumbing exercise.
+          higherEdTerminologyAttested: higherEdByCandidate.has(candidate.id),
+          // Likewise carried, never branched on. Passing it here is what makes
+          // the future combination change a local edit rather than a plumbing
+          // exercise -- and what makes the inertness assertion in
+          // verify/medical-evidence-verification.ts §11 meaningful, since the
+          // fact genuinely reaches the interpretation boundary in production.
+          medicalTerminologyAttested: medicalByCandidate.has(candidate.id),
+        },
+        crossCandidate.byCandidate[candidate.id] !== undefined
       );
+      interpretations.set(candidate.id, interpretation);
+      semanticAssignments.set(candidate.id, interpretation.section);
     }
     const semanticTypeGroups = buildSemanticTypeGroups(semanticAssignments);
 
@@ -641,7 +1044,62 @@ export class ReviewWorkspace {
       };
     }
 
+    /*
+     * THE RESIDUAL-REVIEW GATE (AG, 2026-08-09, Phase 2).
+     *
+     * Runs once per load, HERE, because this is the narrowest point at which
+     * every input it consumes exists and nothing downstream has yet asked
+     * "what is left to review": detection, quality and contextual evidence
+     * are all computed above, and the navigator is constructed below. A gate
+     * anywhere later would be a filter over an answer already given.
+     *
+     * FRESH SESSIONS ONLY. A restored session already carries whatever the
+     * gate concluded when it was created, plus every decision the reviewer
+     * has made since. Re-running would either re-resolve candidates the
+     * reviewer had deliberately reopened, or (worse) resolve ones a NEWER
+     * rule now matches without them noticing -- silently changing a document
+     * they thought they had finished. Same reasoning as `processingRevisions`
+     * above: a deliberate rescan under new rules is a separate, explicit act.
+     *
+     * It cannot touch decided candidates: `decidedCandidateIds` is passed in
+     * and the gate refuses anything already settled. On a fresh session that
+     * set is empty except for imported decisions, which it still respects.
+     */
+    if (!sessionRestored) {
+      const gateFacts = buildGateFacts({
+        candidates: detection.candidates,
+        assessmentByCandidate: quality.assessmentByCandidate,
+        contextualByCandidate: contextual.byCandidate,
+        decidedCandidateIds: new Set(Object.keys(session.candidateDecisions)),
+        automaticallyResolvedIds: new Set(Object.keys(session.automaticResolutions ?? {})),
+        // Document-derived name evidence (2026-08-09): entity resolution has
+        // already run above, so the signal that settles a bare "Agnes"
+        // against a full name in THIS document is available here.
+        ambiguityProposalCandidateIds: new Set(grouping.ambiguityProposals.map((p) => p.candidateId)),
+        entityGroupMemberIds: new Set(grouping.entityGroupProposals.flatMap((g) => g.candidateIds)),
+      });
+      const gateRun = runResidualReviewGate(gateFacts, this.clock());
+      if (gateRun.resolutions.length > 0) {
+        const resolutions: Record<string, AutomaticResolution> = { ...(session.automaticResolutions ?? {}) };
+        for (const r of gateRun.resolutions) resolutions[r.candidateId] = r;
+        session = { ...session, automaticResolutions: resolutions };
+      }
+      this.lastGateRun = gateRun;
+    } else {
+      this.lastGateRun = null;
+    }
+
     this.document = document;
+    this.contextualEvidence = contextual;
+    this.crossCandidateEvidence = crossCandidate;
+    this.candidateInterpretations = interpretations;
+    this.censusNameEvidence = censusByCandidate;
+    this.gnisPlaceEvidence = gnisByCandidate;
+    this.higherEdTerminology = higherEdByCandidate;
+    this.medicalTerminology = medicalByCandidate;
+    this.referenceEvidence = referenceEvidenceByCandidate;
+    this.interpretationProfiles = interpretationProfiles;
+    this.personProtectedIds = protectedPersonIds;
     this.detection = detection;
     this.rawDetection = rawDetection;
     this.normalization = normalization;
@@ -1183,6 +1641,13 @@ export class ReviewWorkspace {
    * display-ready snapshot. Recomputed fresh every call -- nothing here is
    * cached between calls, so it can never drift from the engines it reads.
    */
+  /** The last fresh-load gate run: what was resolved, and why each retained
+   *  candidate survived. Null on a restored session (the gate does not run).
+   *  Read-only accessor -- measurement and provenance, never a control. */
+  getResidualGateRun(): GateRun | null {
+    return this.lastGateRun;
+  }
+
   getState(): WorkspaceState {
     if (!this.document || !this.reviewEngine || !this.focusNavigator) {
       return {

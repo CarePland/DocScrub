@@ -17,8 +17,8 @@
  *   node --experimental-strip-types --experimental-loader ./verify/ts-loader.mjs verify/review-zone-verification.ts
  */
 
-import { ZONE_CAPACITY, partitionByZone, reviewZone, zoneActionLabel } from "../src/ui/reviewZone.ts";
-import { sectionDisplayTargets, sectionGridSequence, type ReviewDisplayTarget } from "../src/ui/visibleListAdvance.ts";
+import { ZONE_CAPACITY, ZONE_HALF_CAPACITY, activeQueuePartition, completedQueuePartition, partitionByZone, reviewZone, zoneActionLabel, zonePartition } from "../src/ui/reviewZone.ts";
+import { advanceWithinReviewTargets, candidateReviewTarget, proposalReviewTarget, sectionDisplayTargets, sectionGridSequence, type ReviewDisplayTarget } from "../src/ui/visibleListAdvance.ts";
 
 let passCount = 0;
 let failCount = 0;
@@ -96,6 +96,78 @@ function main(): void {
     const a = reviewZone(ids(20), 6);
     const b = reviewZone(ids(20), 6);
     check("re-deriving an unchanged queue gives an identical zone", a.ids.join(",") === b.ids.join(","));
+  }
+
+  console.log("\n--- Ambiguity active queue: half-zone rotation, not per-cell compaction ---");
+  {
+    type Cell = { id: string };
+    const cells = (n: number): Cell[] => ids(n).map((id) => ({ id }));
+    const activeIds = (all: readonly Cell[], done: ReadonlySet<string>) => activeQueuePartition(all, (cell) => done.has(cell.id)).active.map((cell) => cell.id);
+    const restIds = (all: readonly Cell[], done: ReadonlySet<string>) => activeQueuePartition(all, (cell) => done.has(cell.id)).rest.map((cell) => cell.id);
+    const mutationIds = (all: readonly Cell[], done: ReadonlySet<string>) => activeIds(all, done).filter((id) => !done.has(id));
+
+    check("half-zone size is 12", ZONE_HALF_CAPACITY === 12, String(ZONE_HALF_CAPACITY));
+    check("8 items all sit in the side active zone with no continuation", activeIds(cells(8), new Set()).join(",") === ids(8).join(",") && restIds(cells(8), new Set()).length === 0);
+    check("12 items all sit in the side active zone with no continuation", activeIds(cells(12), new Set()).join(",") === ids(12).join(",") && restIds(cells(12), new Set()).length === 0);
+    check("20 items all sit in the side active zone with no continuation", activeIds(cells(20), new Set()).join(",") === ids(20).join(",") && restIds(cells(20), new Set()).length === 0);
+    check("exactly 24 items fill the active zone with no continuation", activeIds(cells(24), new Set()).join(",") === ids(24).join(",") && restIds(cells(24), new Set()).length === 0);
+    check("25 items put only the 25th into the continuation", activeIds(cells(25), new Set()).join(",") === ids(24).join(",") && restIds(cells(25), new Set()).join(",") === "c24");
+    check("more than 24 items keep the first 24 active and continue underneath", activeIds(cells(30), new Set()).join(",") === ids(24).join(",") && restIds(cells(30), new Set()).join(",") === ids(6, "c").map((_, i) => `c${i + 24}`).join(","));
+
+    const partialFirstHalf = new Set(ids(11));
+    check("partially completing the first half does not reshuffle the zone", activeIds(cells(36), partialFirstHalf).join(",") === ids(24).join(","));
+    const firstHalfDone = new Set(ids(12));
+    check("completing the first 12 rotates exactly that half-zone away", activeIds(cells(36), firstHalfDone).join(",") === ids(24).map((_, i) => `c${i + 12}`).join(","));
+    check("after rotation, old 13-24 become the first half", activeIds(cells(36), firstHalfDone).slice(0, 12).join(",") === ids(12).map((_, i) => `c${i + 12}`).join(","));
+    check("after rotation, the next 12 queued items populate the second half", activeIds(cells(36), firstHalfDone).slice(12).join(",") === ids(12).map((_, i) => `c${i + 24}`).join(","));
+
+    const twoHalvesDone = new Set(ids(24));
+    check("repeated half-zone rotations preserve deterministic ordering", activeQueuePartition(cells(60), (cell) => twoHalvesDone.has(cell.id)).ordered.map((cell) => cell.id).join(",") === [...ids(36).map((_, i) => `c${i + 24}`), ...ids(24)].join(","));
+
+    const bulkAllUnresolved = new Set(ids(24));
+    check("bulk over 24 unresolved mutates all active unresolved items", mutationIds(cells(48), new Set()).join(",") === ids(24).join(","));
+    check("after that bulk, all 24 active members retire and the next 24 promote", activeIds(cells(48), bulkAllUnresolved).join(",") === ids(24).map((_, i) => `c${i + 24}`).join(","));
+
+    const fivePredecided = new Set(["c0", "c3", "c7", "c14", "c23"]);
+    check("bulk with preexisting decisions mutates only unresolved active members", mutationIds(cells(48), fivePredecided).length === 19);
+    const afterMixedBulk = new Set([...ids(24)]);
+    check("preexisting decisions survive bulk unchanged by staying outside the mutation list", !mutationIds(cells(48), fivePredecided).some((id) => fivePredecided.has(id)));
+    check("bulk retirement scope is the whole active zone, so next 24 promote", activeIds(cells(60), afterMixedBulk).join(",") === ids(24).map((_, i) => `c${i + 24}`).join(","));
+
+    const finalPartialDone = new Set(ids(36));
+    check("final partial zones behave sensibly", activeIds(cells(42), finalPartialDone).join(",") === "c36,c37,c38,c39,c40,c41");
+
+    const targetsBeforeDecision = cells(36).map((cell) => candidateReviewTarget(cell.id));
+    const next = advanceWithinReviewTargets("candidate:c11", targetsBeforeDecision, (target) => firstHalfDone.has(target.id));
+    check("focus remains on a valid promoted item after rotation", next?.kind === "candidate" && next.id === "c12", next ? `${next.kind}:${next.id}` : "null");
+
+    const proposalTargets = ["may", "its", "perc", "qbu"].map(proposalReviewTarget);
+    const afterSecondProposal = advanceWithinReviewTargets("proposal:its", proposalTargets, (target) => target.id === "may" || target.id === "its");
+    check("completing proposal 2 of 4 advances within the category to proposal 3", afterSecondProposal?.kind === "proposal" && afterSecondProposal.id === "perc", afterSecondProposal ? `${afterSecondProposal.kind}:${afterSecondProposal.id}` : "null");
+
+    const resetDone = new Set(["c0", "c1"]);
+    check("reset-style active-zone derivation keeps decided cells in a partial half-zone", activeIds(cells(30), resetDone).slice(0, 4).join(",") === "c0,c1,c2,c3");
+    check("resetting decisions cannot corrupt ordering: clearing done restores the original active zone", activeIds(cells(30), new Set()).join(",") === ids(24).join(","));
+    const anchoredCells = cells(30);
+    const anchored = activeQueuePartition(anchoredCells, () => false, ZONE_CAPACITY, ZONE_HALF_CAPACITY, anchoredCells[24]!);
+    check("category arrival can anchor a later first-unreviewed cell at the top of the active zone", anchored.active[0]?.id === "c24" && anchored.active.length === 24);
+    check("anchored category arrival keeps every cell exactly once across active plus continuation", new Set([...anchored.active, ...anchored.rest].map((cell) => cell.id)).size === 30);
+  }
+
+  console.log("\n--- Ambiguity completed-category presentation: canonical first-24 display ---");
+  {
+    type Cell = { id: string; decision: "Keep" | "Ignore" | "Rename" | "Redact" };
+    const cells = (n: number): Cell[] => ids(n).map((id, index) => ({ id, decision: index % 2 === 0 ? "Keep" : "Ignore" }));
+    const activeIds = (all: readonly Cell[]) => completedQueuePartition(all).active.map((cell) => cell.id);
+    const restIds = (all: readonly Cell[]) => completedQueuePartition(all).rest.map((cell) => cell.id);
+    const decisions = (all: readonly Cell[]) => completedQueuePartition(all).ordered.map((cell) => cell.decision).join(",");
+
+    check("fewer than 24 completed items all repopulate the side Zone", activeIds(cells(8)).join(",") === ids(8).join(",") && restIds(cells(8)).length === 0);
+    check("exactly 24 completed items all stay beside the panel", activeIds(cells(24)).join(",") === ids(24).join(",") && restIds(cells(24)).length === 0);
+    check("25+ completed items put only item 25 onward into the continuation", activeIds(cells(30)).join(",") === ids(24).join(",") && restIds(cells(30)).join(",") === ids(6).map((_, i) => `c${i + 24}`).join(","));
+    check("completed-category ordering is canonical, not retired-to-tail incidental ordering", completedQueuePartition(cells(30)).ordered.map((cell) => cell.id).join(",") === ids(30).join(","));
+    check("completed-category display preserves the cells' final decision state", decisions(cells(4)) === "Keep,Ignore,Keep,Ignore");
+    check("the completed display is display-only: clearing decisions returns normal conveyor order", activeQueuePartition(cells(30), () => false).active.map((cell) => cell.id).join(",") === ids(24).join(","));
   }
 
   console.log("\n--- the label names the blast radius ---");
@@ -293,5 +365,110 @@ function main(): void {
   console.log(`\nreview-zone-verification: ${passCount} passed, ${failCount} failed\n`);
   if (failCount > 0) process.exitCode = 1;
 }
+
+
+/* ==========================================================================
+ * ONE ZONE ENTRY POINT (AG, 2026-08-09, migration prerequisite D3).
+ *
+ * `zonePartition` exists so the conveyor/compacting choice becomes a
+ * DECLARED ARGUMENT rather than an `if (stage !== "ambiguity-check")`
+ * buried inside a shared helper -- which is how two Zone algorithms came
+ * to live behind one facade in the first place.
+ *
+ * The whole safety of the eventual switch rests on one property: for each
+ * rhythm, `zonePartition` must be BYTE-IDENTICAL to the function that
+ * rhythm replaces. These assert exactly that, over shapes that exercise
+ * chunk retirement, the bound, and the anchor rotation.
+ * ========================================================================== */
+function runZonePartitionEquivalence(): void {
+  console.log("\n--- zonePartition: equivalence with the two existing rhythms ---");
+
+  const keys = <T,>(cells: readonly T[]): string => cells.map((c) => String(c)).join("|");
+
+  // Shapes: under-bound, over-bound, a fully retired leading chunk, and a
+  // ragged tail.
+  const shapes: Array<{ label: string; cells: string[]; resolved: Set<string> }> = [
+    { label: "empty", cells: [], resolved: new Set() },
+    { label: "under the bound, none resolved", cells: Array.from({ length: 10 }, (_, i) => `c${i}`), resolved: new Set() },
+    {
+      label: "over the bound, none resolved",
+      cells: Array.from({ length: 40 }, (_, i) => `c${i}`),
+      resolved: new Set(),
+    },
+    {
+      label: "a fully resolved leading half-zone (retirement)",
+      cells: Array.from({ length: 40 }, (_, i) => `c${i}`),
+      resolved: new Set(Array.from({ length: ZONE_HALF_CAPACITY }, (_, i) => `c${i}`)),
+    },
+    {
+      label: "scattered resolution",
+      cells: Array.from({ length: 37 }, (_, i) => `c${i}`),
+      resolved: new Set(["c0", "c5", "c11", "c12", "c13", "c30"]),
+    },
+  ];
+
+  for (const shape of shapes) {
+    const isResolved = (c: string): boolean => shape.resolved.has(c);
+
+    const conveyorExpected = activeQueuePartition(shape.cells, isResolved, ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    const conveyorActual = zonePartition(shape.cells, isResolved, "conveyor", ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    check(
+      `zonePartition("conveyor") == activeQueuePartition -- ${shape.label}`,
+      keys(conveyorActual.active) === keys(conveyorExpected.active) &&
+        keys(conveyorActual.rest) === keys(conveyorExpected.rest) &&
+        keys(conveyorActual.ordered) === keys(conveyorExpected.ordered) &&
+        keys(conveyorActual.retired) === keys(conveyorExpected.retired) &&
+        conveyorActual.bounded === conveyorExpected.bounded,
+      `active ${keys(conveyorActual.active)} vs ${keys(conveyorExpected.active)}`
+    );
+
+    const bandExpected = partitionByZone(shape.cells, (c) => !isResolved(c), ZONE_CAPACITY);
+    const compactActual = zonePartition(shape.cells, isResolved, "compacting", ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    const expectedRest = bandExpected.banded ? bandExpected.rest : [];
+    check(
+      `zonePartition("compacting") == partitionByZone -- ${shape.label}`,
+      keys(compactActual.active) === keys(bandExpected.band) &&
+        keys(compactActual.rest) === keys(expectedRest) &&
+        keys(compactActual.ordered) === keys([...bandExpected.band, ...expectedRest]),
+      `active ${keys(compactActual.active)} vs band ${keys(bandExpected.band)}`
+    );
+  }
+
+  // The anchor rotation is conveyor-only and must survive the wrapper.
+  {
+    const cells = Array.from({ length: 30 }, (_, i) => `c${i}`);
+    const isResolved = (c: string): boolean => ["c0", "c1"].includes(c);
+    const anchor = "c20";
+    const expected = activeQueuePartition(cells, isResolved, ZONE_CAPACITY, ZONE_HALF_CAPACITY, anchor);
+    const actual = zonePartition(cells, isResolved, "conveyor", ZONE_CAPACITY, ZONE_HALF_CAPACITY, anchor);
+    check(
+      "zonePartition passes the arrival anchor through to the conveyor",
+      keys(actual.active) === keys(expected.active) && actual.active[0] === "c20",
+      `${keys(actual.active).slice(0, 40)}`
+    );
+    const noAnchor = zonePartition(cells, isResolved, "conveyor", ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    check("omitting the anchor is not the same as passing undefined-as-anchor", noAnchor.active[0] === "c0", String(noAnchor.active[0]));
+  }
+
+  // THE RHYTHMS GENUINELY DIFFER -- otherwise the parameter is theatre and
+  // the migration decision is meaningless.
+  {
+    const cells = Array.from({ length: 40 }, (_, i) => `c${i}`);
+    const resolved = new Set(Array.from({ length: ZONE_HALF_CAPACITY }, (_, i) => `c${i}`));
+    const isResolved = (c: string): boolean => resolved.has(c);
+    const conveyor = zonePartition(cells, isResolved, "conveyor", ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    const compacting = zonePartition(cells, isResolved, "compacting", ZONE_CAPACITY, ZONE_HALF_CAPACITY);
+    check(
+      "the two rhythms produce DIFFERENT active zones once a half-zone has retired",
+      keys(conveyor.active) !== keys(compacting.active),
+      "the rhythms are indistinguishable -- the migration decision would be a no-op; re-check before switching Item Check"
+    );
+    check("the conveyor retires the completed chunk out of the active zone", conveyor.retired.length === ZONE_HALF_CAPACITY, String(conveyor.retired.length));
+    check("the compacting model retires nothing", compacting.retired.length === 0);
+  }
+}
+
+
+runZonePartitionEquivalence();
 
 main();

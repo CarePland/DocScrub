@@ -154,6 +154,12 @@ export type ReviewEventKind =
    *  StructuralRelationship.ts. Records the proposal's own facts in the
    *  payload so the audit trail stands alone. */
   | "relationship-dismissed"
+  /** Structural Relationship Review revision (2026-08-08): the reviewer
+   *  reversed an earlier "Unrelated" dismissal. This removes only the
+   *  durable dismissal record; when member decisions must be cancelled for
+   *  recombination, the same command also records ordinary candidate-reset
+   *  events before this relationship-level audit anchor. */
+  | "relationship-restored"
   /** Feature 002: fired once per applyDecisionReuse batch (in addition to
    *  one ordinary "candidate-decided" event per candidate actually decided
    *  by the batch) -- a single anchor point in the log recording that an
@@ -206,6 +212,50 @@ export interface ReviewEvent {
   payload: Record<string, string | number | boolean>;
 }
 
+/**
+ * WHAT DOCSCRUB DID TO A CANDIDATE ON ITS OWN (AG, 2026-08-09).
+ *
+ * The product-principle clarification this type implements, in Andrew's
+ * words: "DocScrub still makes no automatic reviewer decisions. It may
+ * produce explicit, auditable, reversible automatic resolutions when the
+ * system has sufficient evidence that no meaningful human judgment
+ * remains."
+ *
+ * The distinction is not pedantry. A reviewer DECISION is a judgment
+ * someone made and is answerable for; an automatic RESOLUTION is a claim
+ * DocScrub is making about the evidence, and it has to be inspectable and
+ * undoable on those terms. Everything on this record exists so the audit
+ * can answer, for any candidate: what happened to it, what was applied,
+ * why, on what rule, and on what evidence.
+ *
+ * NOT A `CandidateDecision`. It carries no `replacement` and no
+ * `rationale`: the gate applies dispositions it can justify, never a text
+ * substitution, and a "rationale" is the reviewer's word for the claim THEY
+ * accepted. Borrowing either field would be the unearned inference the
+ * original principle was written to prevent.
+ */
+export interface AutomaticResolution {
+  candidateId: string;
+  /**
+   * The disposition applied. Deliberately narrower than
+   * CandidateDecisionKind: the gate may only conclude that a candidate
+   * needs no protective action ("Keep" -- leave the text alone) or is not
+   * PII at all ("Ignore"). It may never conclude Rename or Redact, because
+   * those alter the document and no evidence short of a human judgment
+   * justifies DocScrub changing the text on its own.
+   */
+  resolution: Extract<CandidateDecisionKind, "Keep" | "Ignore">;
+  /** Stable identifier of the rule that fired -- the thing to grep for when
+   *  a class of resolutions turns out to be wrong. */
+  ruleId: string;
+  /** Reviewer-facing sentence: why no judgment remained. */
+  reason: string;
+  /** The specific observations that satisfied the rule, so a reader can
+   *  check the claim rather than trust it. */
+  evidence: string[];
+  resolvedAt: string; // ISO 8601
+}
+
 export interface ReviewSession {
   schemaVersion: typeof REVIEW_SESSION_SCHEMA_VERSION;
   sessionId: string;
@@ -234,6 +284,40 @@ export interface ReviewSession {
    *  (bulkApplyDecision), and "addressed" is derived from those --
    *  derive, don't duplicate. */
   relationshipDismissals?: Record<string /* proposalId */, RelationshipDismissal>;
+
+  /**
+   * AUTOMATIC RESOLUTIONS (AG, 2026-08-09) -- candidates DocScrub settled
+   * itself because it had sufficient evidence that no meaningful human
+   * judgment remained. See AutomaticResolution and the product-principle
+   * clarification in docs/product/invariants.md.
+   *
+   * STRUCTURALLY SEPARATE FROM `candidateDecisions`, AND THAT IS THE WHOLE
+   * DESIGN. The alternative -- a third `CandidateDecisionSource` value --
+   * was considered and rejected by Andrew: a CandidateDecision means "a
+   * decision was made", and every consumer that counts, exports, or renders
+   * one would then have to remember to ask whether this particular one was
+   * real. Separation makes the distinction structural rather than
+   * conditional, so:
+   *
+   *   - `decisionsMade` (which means HUMAN decisions) needs no change to
+   *     stay correct, and cannot be inflated by a gate;
+   *   - audit/export can distinguish reviewer / imported / automatic by
+   *     WHERE the record lives, not by inspecting an enum;
+   *   - reversal is deleting a resolution, never overwriting a decision, so
+   *     DocScrub can never impersonate the reviewer;
+   *   - the "no automatic decisions" principle stays literally true. No
+   *     automatic CandidateDecision is ever written.
+   *
+   * PRECEDENCE: a reviewer (or imported) decision on the same candidate
+   * ALWAYS wins and clears the automatic resolution -- see session.ts's
+   * decideCandidate(). The two are never both live for one candidate, so
+   * "which applies" is never a question anyone has to answer.
+   *
+   * ADDITIVE AND OPTIONAL, no schema bump, same reasoning as
+   * `relationshipDismissals` above: a session saved before this existed has
+   * no automatic resolutions, which is exactly true.
+   */
+  automaticResolutions?: Record<string /* candidateId */, AutomaticResolution>;
 
   /** At most one open Not Quite sub-state at a time (§6.8). */
   activeNotQuite: NotQuiteState | null;

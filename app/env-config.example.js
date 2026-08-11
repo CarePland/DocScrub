@@ -9,5 +9,5 @@
 // stay a plain classic script (no import/export) that sets a global.
 window.__DOCSCRUB_ENV__ = {
   SUPABASE_URL: "https://YOUR_PROJECT_REF.supabase.co",
-  SUPABASE_PUBLISHABLE_KEY: "YOUR_PUBLISHABLE_KEY",
+  SUPABASE_PUBLISHABLE_KEY: "YOUR_PUBLISHABLE_OR_ANON_KEY",
 };

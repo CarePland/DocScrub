@@ -306,12 +306,49 @@ function decideCandidate(
     ...(rationale !== undefined ? { rationale } : {}),
   };
   const anchor = groupId ?? candidateId;
+  /*
+   * A REVIEWER DECISION SUPERSEDES AND CLEARS ANY AUTOMATIC RESOLUTION
+   * (AG, 2026-08-09).
+   *
+   * Explicit removal rather than "the decision wins at read time", for two
+   * reasons. First, leaving both records live would make "which applies"
+   * a question every consumer has to answer, and the ones that forgot would
+   * be the bugs. Second, an automatic resolution is DocScrub's claim that
+   * no judgment was needed -- once the reviewer has made one, that claim is
+   * simply false and keeping it would be a lie in the audit trail.
+   *
+   * The reverse never happens: the gate only ever resolves candidates that
+   * carry no decision, so it cannot overwrite the reviewer. Reversal of an
+   * automatic resolution is deletion of the resolution, which leaves no
+   * decision behind and therefore cannot impersonate one.
+   *
+   * Rebuilt without the key rather than mutated, matching this reducer's
+   * immutability discipline. The whole map is dropped when it empties, so a
+   * session with no automatic resolutions serializes identically to one
+   * from before the feature existed.
+   */
+  const nextAutomatic = clearAutomaticResolution(session.automaticResolutions, candidateId);
   return {
     ...session,
     candidateDecisions: { ...session.candidateDecisions, [candidateId]: entry },
+    // Absent when there was nothing to clear, so `...session` carries the
+    // original through untouched.
+    ...(nextAutomatic === undefined ? {} : { automaticResolutions: nextAutomatic }),
     entityRegistry: applyEntityAcknowledgement(session.entityRegistry, candidateId, decision, anchor, now),
     updatedAt: now,
   };
+}
+
+/** Returns the map without `candidateId`, or undefined when there was
+ *  nothing to clear (so callers can leave the field absent entirely). */
+function clearAutomaticResolution(
+  current: ReviewSession["automaticResolutions"],
+  candidateId: string
+): ReviewSession["automaticResolutions"] {
+  if (!current || !(candidateId in current)) return undefined;
+  const next = { ...current };
+  delete next[candidateId];
+  return next;
 }
 
 /** One item in a DecisionBatch: which candidate, what decision, and (for
@@ -1022,13 +1059,16 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
     }
 
     case "dismissRelationship": {
-      // Structural Relationship Review (2026-07-30): "Unrelated" dissolves
-      // the PROPOSED RELATIONSHIP and nothing else. Deliberately touches no
-      // candidateDecisions, no groupDecisions, no entityRegistry -- it is a
-      // judgment about the proposal, not about any candidate, and every
-      // member continues through the normal review pipeline unchanged (the
-      // proposal's own hard requirement: "Unrelated" must not classify the
-      // candidates as non-sensitive or remove them from later review).
+      // Structural Relationship Review (2026-07-30; revised 2026-08-08):
+      // "Unrelated" marks the PROPOSED RELATIONSHIP unrelated and nothing
+      // else. Deliberately touches no candidateDecisions, no groupDecisions,
+      // no entityRegistry -- it is a judgment about the proposal, not about
+      // any candidate, and every member continues through the normal review
+      // pipeline unchanged (the proposal's own hard requirement: "Unrelated"
+      // must not classify the candidates as non-sensitive or remove them
+      // from later review). The UI keeps the derived proposal visible as a
+      // reversible resolved state; this command is the durable fact behind
+      // that display.
       // Validated only for shape (a non-empty member list) -- the proposal
       // itself is DERIVED state recomputed per load, so there is nothing
       // durable to validate against; carrying its facts into the dismissal
@@ -1051,6 +1091,31 @@ export function applyReviewCommand(session: ReviewSession, command: ReviewComman
           relationshipKind: command.relationshipKind,
           memberCount: command.candidateIds.length,
           candidateIds: command.candidateIds.join(", "),
+        }),
+      };
+      return ok(next);
+    }
+
+    case "restoreRelationship": {
+      if (command.candidateIds.length === 0) return fail(session, "a relationship proposal has no members -- nothing to restore");
+      if (!session.relationshipDismissals?.[command.proposalId]) return fail(session, "relationship proposal is not marked unrelated");
+      const resetIds = command.resetCandidateIds ?? [];
+      const batch = resetIds.length > 0 ? resetDecisionBatch(session, context, resetIds, now, "category") : null;
+      const source = batch?.session ?? session;
+      const remainingDismissals = { ...(source.relationshipDismissals ?? {}) };
+      delete remainingDismissals[command.proposalId];
+      const relationshipDismissals = Object.keys(remainingDismissals).length > 0 ? remainingDismissals : null;
+      const { relationshipDismissals: _discardedRelationshipDismissals, ...sourceWithoutDismissals } = source;
+      const next: ReviewSession = {
+        ...(relationshipDismissals ? source : sourceWithoutDismissals),
+        ...(relationshipDismissals ? { relationshipDismissals } : {}),
+        updatedAt: now,
+        events: appendEvent(source, "relationship-restored", now, {
+          proposalId: command.proposalId,
+          relationshipKind: command.relationshipKind,
+          memberCount: command.candidateIds.length,
+          candidateIds: command.candidateIds.join(", "),
+          resetCount: batch?.resetCount ?? 0,
         }),
       };
       return ok(next);

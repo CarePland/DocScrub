@@ -54,10 +54,42 @@ import { isItemResolved, reviewableItemIdsForStage } from "../engines/navigation
 // ONE derivation stage tabs, ⇧←/→ traversal, and the navigator all share.
 import { isStageActive } from "../engines/navigation/workflow.js";
 import type { WorkflowStage } from "../domain/FocusState.js";
-import { SEMANTIC_TYPE_LABELS, buildSemanticTypeSummaries, type SemanticTypeId, type SemanticTypeSummary } from "../domain/semanticTypes.js";
+import { LEXICAL_WORDS as LEXICAL_WORDS_FOR_PROFILE } from "../engines/quality/scoring.js";
+import { scoreCandidateQuality as scoreCandidateQualityForProfile } from "../engines/quality/scoring.js";
+import { SEMANTIC_TYPE_LABELS, TYPE_CHECK_SECTION_LABELS, TYPE_CHECK_SECTION_EXPLANATIONS, UNDETERMINED_SECTION, buildSemanticTypeSummaries, semanticTypeFor as semanticTypeForProfile, type SemanticTypeId, type TypeCheckSectionId, type SemanticTypeSummary } from "../domain/semanticTypes.js";
+// CROSS-CANDIDATE COMPOSITION (AG, 2026-08-10) -- diagnostic use only.
+import { explainCrossCandidateEvidence as explainCrossCandidateForProfile } from "../engines/cross-candidate/cross-candidate-evidence.js";
+import { explainCensusNameEvidence as explainCensusForProfile } from "../engines/knowledge/CensusNameEvidence.js";
+import { explainGnisPlaceEvidence as explainGnisForProfile } from "../engines/knowledge/GnisPlaceEvidence.js";
+import { HIGHER_ED_EVIDENCE_ROW_COUNT, HIGHER_ED_EVIDENCE_SOURCE, HIGHER_ED_EVIDENCE_TERM_COUNT } from "../engines/knowledge/HigherEdTerminologyEvidence.js";
+import { MEDICAL_EVIDENCE_ROW_COUNT, MEDICAL_EVIDENCE_SOURCE, MEDICAL_EVIDENCE_TERM_COUNT } from "../engines/knowledge/MedicalEvidence.js";
+import {
+  attestingChannels,
+  referenceEvidenceAuditRows,
+  referenceEvidenceFor,
+  terminologyChannelsOf,
+} from "../engines/knowledge/ReferenceEvidence.js";
+// MULTI-INTERPRETATION PROFILES (AG, 2026-08-10) -- diagnostic use only.
+import { explainInterpretationProfile } from "../engines/interpretation/candidate-interpretation.js";
+import {
+  INTERPRETATION_LABELS,
+  SIGNAL_CLASSES,
+  SIGNAL_CLASS_ORDER,
+  contestKey,
+  contestsPerson,
+  interpretationIdsOf,
+  type InterpretationProfile,
+} from "../engines/interpretation/interpretation-model.js";
+// REVIEW NECESSITY (AG, 2026-08-10) -- the single determination of whether a
+// human decision still remains. The UI reads it; it never re-derives it.
+import { REVIEW_NECESSITY_LABELS, reviewNecessityFor } from "../engines/review/reviewNecessity.js";
 import type { AnyCommand, ReviewCommand, ReviewTransactionResult } from "../domain/Commands.js";
 import {
+  advanceWithinCategoryScope,
   advanceWithinReviewTargets,
+  advanceWithinZone,
+  completionAdvanceIsPermitted,
+  firstUnresolvedReviewTarget,
   advanceWithinVisibleList,
   candidateReviewTarget,
   proposalReviewTarget,
@@ -71,13 +103,15 @@ import { DeterministicExplanationEngine } from "../engines/ExplanationEngine.js"
 // line is the ENGINE'S sentence opener, not a UI paraphrase of it -- the
 // words a reviewer reads come from the same function the audit narrative's
 // do, and a future change to the bands lands on both at once.
-import { buildExplanationContext, confidenceOpener } from "../engines/explanation/explanation-builder.js";
+import { buildExplanationContext, evidenceFaithfulOpener, isShapeOnlyPersonClaim, NO_NAME_EVIDENCE_CLAUSE } from "../engines/explanation/explanation-builder.js";
 import { groupReviewOccurrencesForCandidate, type OccurrenceGroup } from "../engines/OccurrenceClassifier.js";
 import type { Candidate } from "../domain/DocumentModel.js";
 import type { CandidateQualityAssessment, ExpertExplanation, ExplanationEvidenceText, QualityResult, Recommendation, StandardExplanation } from "../domain/Evidence.js";
 import { categoryRuleLabel } from "../engines/quality/category-rule-labels.data.js";
 import {
   FILTER_PRESETS,
+  UNLIKELY_PRESET,
+  unlikelyCount,
   SORT_ORDERS,
   createDefaultQueryState,
   queryItemCheck,
@@ -161,7 +195,53 @@ import { computeDocumentScores, explainScoreChange, formatScoreChange, type Docu
 import { partitionCandidatesByResolution } from "../engines/review/coverage.js";
 import { decisionTrackerFigures, explainTimeSaved, explainTimeSavedPending, timeSavedUnitLabel } from "../metrics/decisionTracker.js";
 import { formatPercentFigure, isRestingFigure } from "../metrics/percentDisplay.js";
-import { ZONE_CAPACITY, partitionByZone, reviewZone, zoneActionLabel } from "./reviewZone.js";
+import {
+  ZONE_CAPACITY,
+  ZONE_HALF_CAPACITY,
+  type ActiveQueuePartition,
+  type ZoneRhythm,
+  completedQueuePartition,
+  zoneActionLabel,
+  zonePartition,
+} from "./reviewZone.js";
+// TEMPORARY DIAGNOSTIC INSTRUMENTATION (AG, 2026-08-08). Remove with
+// src/ui/positionTrace.ts once Ambiguity navigation is stabilized.
+import {
+  clearTrace,
+  cursorWriteSummary,
+  contradictions,
+  dumpTrace,
+  dumpTraceJson,
+  enableTrace,
+  trace,
+  traceCursorWrite,
+  traceReport,
+} from "./positionTrace.js";
+import { ORDINARY_LANGUAGE_CATEGORIES as ORDINARY, resolutionsByRule, buildGateFacts as buildFactsForProfile, evaluateCandidate as evaluateForProfile, NAME_EVIDENCE_CATEGORIES as STATIC_NAME_CATEGORIES } from "../engines/review/residualReviewGate.js";
+import type { GateFacts as ProfileGateFacts } from "../engines/review/residualReviewGate.js";
+import { buildFullNameTokenIndex as buildWitnessIndex, documentNameEvidenceFor as documentNameEvidenceForProfile, INSTITUTIONAL_WITNESS_CATEGORIES as INSTITUTIONAL_WITNESS } from "../engines/review/documentNameEvidence.js";
+// PHASE 1 DIAGNOSTIC (AG, 2026-08-09): answers whether truncated fragments
+// in a real document are source-authentic or produced by DocScrub. Read-only.
+import { probeFromContext, reportTruncations, classifyTruncation, type TruncationProbe } from "../engines/detectors/truncationDiagnostics.js";
+// QUICK APPROVAL (AG, 2026-08-10) -- the engine that proposes review cohorts
+// and the pure state machine that runs the exception scan. Both are DOM-free
+// and browser-independently verified; this file owns rendering and raw keys
+// only. See proposedGroups.ts for why there is no "Likely People" group.
+import { buildProposedGroups, PROPOSED_GROUPS, type ProposedGroup, type ProposedGroupFacts } from "../engines/review/proposedGroups.js";
+import {
+  backOut as backOutOfQuickApproval,
+  beginQuickApproval,
+  completeScan,
+  focusRow as focusQuickApprovalRow,
+  focusedMember as focusedQuickApprovalMember,
+  includedIds as quickApprovalIncludedIds,
+  isExcluded as quickApprovalRowExcluded,
+  moveFocus as moveQuickApprovalFocus,
+  quickApprovalCounts,
+  toggleFocused as toggleQuickApprovalFocused,
+  toggleMember as toggleQuickApprovalMember,
+  type QuickApprovalSession,
+} from "./quickApproval.js";
 import {
   decisionReduction,
   formatFewerDecisionsPercent,
@@ -547,6 +627,7 @@ interface PendingResetConfirmation {
 }
 
 let pendingResetConfirmation: PendingResetConfirmation | null = null;
+let pendingRelationshipRestoreId: string | null = null;
 
 /** Per-target draft cache (2026-07-29, interaction model revision). Andrew,
  *  after using the shipped editors: "the keyboard K/C/R/I/F should always
@@ -756,7 +837,7 @@ function confirmInlineEditor(text: string): void {
     });
     if (result.ok) {
       acknowledgeBulkCandidateFeedback(before, target.candidateIds, "type-check");
-      setStatus(`${decisionDisplayLabel(target.action)} applied to ${target.candidateIds.length} ${SEMANTIC_TYPE_LABELS[target.typeId as SemanticTypeId] ?? target.typeId} item(s).`); // RX-18 + RX-22
+      setStatus(`${decisionDisplayLabel(target.action)} applied to ${target.candidateIds.length} ${TYPE_CHECK_SECTION_LABELS[target.typeId as TypeCheckSectionId] ?? target.typeId} item(s).`); // RX-18 + RX-22
     } else {
       notifyToast(`Bulk action failed: ${result.reason}`); // RX-09: recoverable
     }
@@ -1393,7 +1474,31 @@ let rovingFocusPending: HTMLElement | null = null;
 // (pointerdown elsewhere, triage-row keys, the boundary move into the
 // rows), so it can never yank focus back from real work.
 let structuralCardFocusPending: string | null = null;
+
+/**
+ * TEMPORARY DIAGNOSTIC WRAPPER (AG, 2026-08-08) -- see src/ui/positionTrace.ts.
+ *
+ * Every write to the proposal cursor goes through here so an instrumented
+ * manual run can answer "which of these sites moved the cursor, in what
+ * order, and how long after the reviewer's keystroke". The audit counted
+ * the write sites statically; this measures which ones actually fire.
+ *
+ * The `site` argument is the PRE-INSTRUMENTATION SOURCE LINE, applied
+ * mechanically, so a trace line maps straight back to the audit's site
+ * table without anyone having to invent names for 27 assignments.
+ *
+ * NO BEHAVIOR CHANGE BY CONSTRUCTION: assign, then trace. Returns void, so
+ * no caller can branch on it. Delete this wrapper (and inline the
+ * assignments back) when the stabilization pass lands.
+ */
+function setCardCursor(next: string | null, site: string): void {
+  const previous = structuralCardFocusPending;
+  structuralCardFocusPending = next;
+  traceCursorWrite(site, previous, next, { next });
+}
 let lastRenderedActiveStage: WorkflowStage | null = null;
+let lastRenderedSectionedCategoryId: string | null = null;
+const activeZoneAnchorBySection = new Map<string, string>();
 
 /** Attaches the arrow-key roving-focus handler to `containers` (the row
  *  element and, when rendered, the member-list element) -- `stopPropagation`
@@ -1765,7 +1870,7 @@ function resetUiToDefaults(): void {
   scopeWidenedFrom = null; // REVIEW SCOPE, Pass 1: a widening never survives a document change
   sourceViewFor = null;
   groupRovingFocus = null;
-  structuralCardFocusPending = null;
+  setCardCursor(null, "L1771");
   focusPanelEntered = false;
   inlineEditor = null;
 }
@@ -1798,7 +1903,7 @@ function applyUiSnapshot(raw: unknown): void {
     if (queueStage) {
       const proposalStillActive = savedProposalId ? activeRelationshipProposalById(savedProposalId, dispatcher.getState()) : null;
       if (proposalStillActive) {
-        structuralCardFocusPending = savedProposalId;
+        setCardCursor(savedProposalId, "L1804");
         restoredSectionedCursor = true;
       }
     }
@@ -2826,21 +2931,47 @@ function renderReviewStatus(container: HTMLElement, state: ReturnType<WorkspaceC
  *  state, deliberately not persisted: a disclosure the reviewer opened to
  *  satisfy a doubt should not follow them into the next session. */
 let timeSavedExplanationOpen = false;
+let timeSavedInfoFocusPending = false;
+const TIME_SAVED_INFO_BUTTON_ID = "decision-tracker-info-button";
+const TIME_SAVED_INFO_POPOVER_ID = "decision-tracker-info-popover";
+
+function closeTimeSavedExplanation(restoreFocus: boolean): void {
+  if (!timeSavedExplanationOpen) return;
+  timeSavedExplanationOpen = false;
+  timeSavedInfoFocusPending = restoreFocus;
+  render();
+}
 
 /** The "i" affordance. A real <button>, so Tab reaches it and Space/Enter
  *  work with no key handling of our own -- the same reasoning the row
- *  checkbox relies on (see the region model's universal escape rung). The
- *  glyph is inline SVG rather than a text "i" so it stays a circle at any
- *  font size and carries no dependency. */
+ *  checkbox relies on (see the region model's universal escape rung).
+ *  Escape is handled locally only while the popover is open, because the
+ *  explanation belongs to peripheral chrome rather than the review
+ *  workspace's Enter/Escape grammar. The glyph is inline SVG rather than a
+ *  text "i" so it stays a circle at any font size and carries no dependency. */
 function timeSavedInfoControl(): HTMLElement {
   const control = button("", () => {
-    timeSavedExplanationOpen = !timeSavedExplanationOpen;
-    render();
+    if (timeSavedExplanationOpen) closeTimeSavedExplanation(true);
+    else {
+      timeSavedExplanationOpen = true;
+      timeSavedInfoFocusPending = true;
+      render();
+    }
   });
+  control.id = TIME_SAVED_INFO_BUTTON_ID;
   control.className = "decision-tracker-info";
   control.setAttribute("aria-expanded", timeSavedExplanationOpen ? "true" : "false");
-  control.setAttribute("aria-label", timeSavedExplanationOpen ? "Hide how this estimate is calculated" : "How is this estimated?");
-  control.title = "How is this estimated?";
+  control.setAttribute("aria-controls", TIME_SAVED_INFO_POPOVER_ID);
+  control.setAttribute("aria-haspopup", "dialog");
+  if (timeSavedExplanationOpen) control.setAttribute("aria-describedby", TIME_SAVED_INFO_POPOVER_ID);
+  control.setAttribute("aria-label", "How Decision Tracker estimates are calculated");
+  control.title = "How Decision Tracker estimates are calculated";
+  control.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !timeSavedExplanationOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeTimeSavedExplanation(true);
+  });
   control.innerHTML =
     '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
     '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
@@ -2920,7 +3051,19 @@ function renderDecisionTracker(strip: HTMLElement, state: ReturnType<WorkspaceCo
   // have left a visible ⓘ that did nothing on exactly the documents where
   // a reviewer is most likely to press it.
   if (timeSavedExplanationOpen) {
-    const note = el("div", { class: "decision-tracker-note" });
+    const note = el("div", {
+      id: TIME_SAVED_INFO_POPOVER_ID,
+      class: "decision-tracker-note",
+      role: "dialog",
+      "aria-modal": "false",
+      "aria-label": "How Decision Tracker estimates are calculated",
+    });
+    note.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeTimeSavedExplanation(true);
+    });
     const paragraphs = tracker.timeSaved ? explainTimeSaved(tracker.timeSaved) : explainTimeSavedPending(session, resolved);
     for (const paragraph of paragraphs) note.appendChild(el("p", {}, paragraph));
     panel.appendChild(note);
@@ -3199,6 +3342,37 @@ function pendingDecisionOf(renameEditing: boolean, redactEditing: boolean): Cand
   return renameEditing ? "Rename" : redactEditing ? "Redact" : null;
 }
 
+/**
+ * COMPLETED ROW STATUS (AG, 2026-08-08): the green cell tells the reviewer
+ * "done"; the inline suffix tells them WHAT the done state will do to the
+ * document. Replacement-bearing Change/Redact decisions therefore name the
+ * target text directly, so completed rows can be scanned without opening the
+ * focus panel. Rationale still has value for semantic Keep/Ignore choices,
+ * so it remains the fallback before the plain decision label.
+ */
+function completedDecisionStatus(decision: CandidateDecision): string {
+  const replacement = decision.replacement?.trim();
+  if (decision.decision === "Rename" && replacement) return `Changed to ${replacement}`;
+  if (decision.decision === "Redact" && replacement) return `Redacted to ${replacement}`;
+  return decision.rationale ?? decisionDisplayLabel(decision.decision);
+}
+
+function completedRelationshipStatus(decisions: readonly CandidateDecision[]): string | null {
+  if (decisions.length === 0) return null;
+  const kinds = new Set(decisions.map((decision) => decision.decision));
+  if (kinds.size === 1) {
+    const kind = decisions[0]!.decision;
+    const replacements = new Set(decisions.map((decision) => decision.replacement?.trim() ?? ""));
+    if ((kind === "Rename" || kind === "Redact") && replacements.size === 1 && [...replacements][0]) {
+      return completedDecisionStatus(decisions[0]!);
+    }
+    const rationales = new Set(decisions.map((decision) => decision.rationale ?? ""));
+    if (rationales.size === 1 && [...rationales][0]) return decisions[0]!.rationale!;
+    return decisionDisplayLabel(kind);
+  }
+  return decisionSummaryDescription(decisionSummary(decisions.map((decision) => decision.decision)));
+}
+
 /** The reviewer-visible list for `stage`, in displayed order -- the
  *  snapshot dispatchReviewWithVisibleAdvance() captures BEFORE dispatching.
  *  item-check: search/sort/filter (+ Category Check narrowing) via
@@ -3241,11 +3415,120 @@ function sectionedQueueTargetsFromSections(sections: readonly SectionedQueueSect
   return sections.flatMap(sectionDisplayTargets);
 }
 
+/**
+ * ONE ZONE RHYTHM FOR BOTH SECTIONED STAGES (AG, 2026-08-09, approved).
+ *
+ * Item Check Triage previously took the COMPACTING rhythm
+ * (`partitionByZone`/`reviewZone` -- "the next 24 unresolved", recomputed
+ * after every single decision) while Ambiguity took the CONVEYOR
+ * (`activeQueuePartition` -- half-zone chunk retirement, stable map,
+ * arrival anchor). Two algorithms behind one facade, selected by a stage
+ * name buried inside each shared helper.
+ *
+ * That was never a stage difference. It is a RHYTHM difference, and the
+ * conveyor's own doc comment states the rule: "a reviewer deciding cells
+ * one at a time needs the map to hold still until a meaningful block of
+ * work is done." Triage is the same manual one-at-a-time rhythm, so it
+ * takes the same rhythm.
+ *
+ * WHAT IS PRESERVED, explicitly, because this touches the bulk-safety
+ * design (Review Zone design doc §11):
+ *   - ZONE_CAPACITY is unchanged at 24. The bound still bounds.
+ *   - Bulk scope is still the ACTIVE zone and still materialized, so a
+ *     control still names exactly what it will touch.
+ *   - Explicit selection still overrides the bound (headingActionScope's
+ *     `checked` branch returns before the zone is applied).
+ * The bound is not being widened; only the order in which the bounded
+ * block is refilled changes.
+ *
+ * `stage` survives as a parameter because it still selects the RESOLVED
+ * predicate's context -- it no longer selects an algorithm. The rhythm is
+ * now a declared constant, so a future reader cannot mistake a stage name
+ * for a queue behavior.
+ */
+/*
+ * ROLLING (AG, 2026-08-10). Switched from "conveyor".
+ *
+ * The conveyor retires a 12-cell chunk only when EVERY cell in it is
+ * resolved, so a half-finished chunk left decided rows scattered through the
+ * working area -- and a completed pair straddling two chunks retired nothing
+ * at all. The compacting rhythm has the same symptom for a different reason:
+ * `partitionByZone` keeps resolved cells in place inside the band.
+ *
+ * `rolling` holds the first `size` UNRESOLVED cells in canonical order and
+ * settles every resolved cell behind them. Fresh work rises, completed work
+ * moves out of the way, and no resolved cell can enter the active zone from
+ * anywhere -- see reviewZone.ts's rolling section for why this needs no
+ * transient state and therefore cannot corrupt canonical order.
+ *
+ * The Review Zone design doc §11 reserves changes to the bulk bound to
+ * Andrew; this is that change, made on his instruction. The bound itself
+ * (ZONE_CAPACITY) is unchanged -- only which cells occupy it.
+ */
+const SECTIONED_QUEUE_RHYTHM: ZoneRhythm = "rolling";
+
+function orderedReviewTargetsForGrid(
+  stage: "item-check" | "ambiguity-check",
+  gridTargets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] {
+  return zonePartitionForGrid(stage, gridTargets, state).ordered;
+}
+
+function activeReviewTargetsForGrid(
+  stage: "item-check" | "ambiguity-check",
+  gridTargets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] {
+  return zonePartitionForGrid(stage, gridTargets, state).active;
+}
+
+function restReviewTargetsForGrid(
+  stage: "item-check" | "ambiguity-check",
+  gridTargets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] {
+  return zonePartitionForGrid(stage, gridTargets, state).rest;
+}
+
+/** The ONE zone computation for a sectioned grid -- active/rest/ordered all
+ *  come from a single partition rather than three independent recomputations
+ *  that could disagree about where the band ends. */
+function zonePartitionForGrid(
+  stage: "item-check" | "ambiguity-check",
+  gridTargets: readonly ReviewDisplayTarget[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ActiveQueuePartition<ReviewDisplayTarget> {
+  const anchor = activeZoneAnchorForGrid(stage, gridTargets);
+  const isResolved = (target: ReviewDisplayTarget): boolean => isReviewDisplayTargetResolved(stage, target, state);
+  return anchor === undefined
+    ? zonePartition(gridTargets, isResolved, SECTIONED_QUEUE_RHYTHM, ZONE_CAPACITY, ZONE_HALF_CAPACITY)
+    : zonePartition(gridTargets, isResolved, SECTIONED_QUEUE_RHYTHM, ZONE_CAPACITY, ZONE_HALF_CAPACITY, anchor);
+}
+
+/** The arrival anchor now applies on BOTH sectioned stages (2026-08-09):
+ *  `jumpToStageCategory` already recorded it under a `${queueStage}:${id}`
+ *  key for either stage, so Triage was writing an anchor that nothing read.
+ *  With the conveyor shared, that recorded intent finally takes effect --
+ *  entering a Triage category puts the arrival cell at the top of its zone
+ *  instead of leaving the cursor somewhere down the continuation. */
+function activeZoneAnchorForGrid(stage: "item-check" | "ambiguity-check", gridTargets: readonly ReviewDisplayTarget[]): ReviewDisplayTarget | undefined {
+  void stage;
+  if (activeZoneAnchorBySection.size === 0) return undefined;
+  for (const anchorKey of activeZoneAnchorBySection.values()) {
+    const target = gridTargets.find((candidateTarget) => reviewDisplayTargetKey(candidateTarget) === anchorKey);
+    if (target) return target;
+  }
+  return undefined;
+}
+
 function displayedReviewTargetsForSectionedStage(
   stage: "item-check" | "ambiguity-check",
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
 ): ReviewDisplayTarget[] {
-  return sectionedQueueTargetsFromSections(sectionedQueueModel(state, stage).sections);
+  return sectionedQueueModel(state, stage).sections.flatMap((section) =>
+    sectionGridSequence(section).flatMap((gridTargets) => orderedReviewTargetsForGrid(stage, gridTargets, state))
+  );
 }
 
 function currentReviewDisplayTargetKey(stage: WorkflowStage | null, itemId: string | null, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string | null {
@@ -3256,7 +3539,6 @@ function currentReviewDisplayTargetKey(stage: WorkflowStage | null, itemId: stri
 }
 
 function activeRelationshipProposalById(proposalId: string, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): RelationshipProposal | null {
-  if (state.reviewSession?.relationshipDismissals?.[proposalId]) return null;
   const candidates = state.detection?.candidates ?? [];
   const proposal = (state.structuralRelationships?.proposals ?? []).find((p) => p.proposalId === proposalId) ?? null;
   if (!proposal) return null;
@@ -3269,6 +3551,7 @@ function isReviewDisplayTargetResolved(
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
 ): boolean {
   if (target.kind === "candidate") return isItemResolvedInState(stage, target.id, state);
+  if (state.reviewSession?.relationshipDismissals?.[target.id]) return true;
   const proposal = activeRelationshipProposalById(target.id, state);
   if (!proposal) return true;
   return proposal.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]));
@@ -3341,7 +3624,7 @@ function currentSectionedQueueContext(
     ? sections.find((candidateSection) => (candidateSection.relationshipProposalIds ?? []).includes(cardId))
     : itemId !== null
       ? sections.find((candidateSection) => candidateSection.candidateIds.includes(itemId))
-      : undefined;
+      : sections.find((candidateSection) => String(candidateSection.id) === lastRenderedSectionedCategoryId);
   if (!section) return null;
   const targetKey = currentReviewDisplayTargetKey(state.focus?.target.stage ?? null, state.focus?.target.itemId ?? null, state);
   return { stage, sections, section, targetKey };
@@ -3356,7 +3639,7 @@ function paintedZoneResetScope(
   const grids = sectionGridSequence(section);
   const grid =
     (targetKey ? grids.find((targets) => targets.some((target) => reviewDisplayTargetKey(target) === targetKey)) : undefined) ?? grids[0] ?? [];
-  const band = partitionByZone(grid, (target) => !isReviewDisplayTargetResolved(stage, target, state)).band;
+  const band = activeReviewTargetsForGrid(stage, grid, state);
   return resetScopeFromTargets("zone", `reset:zone:${section.id}:${band.map(reviewDisplayTargetKey).join("|")}`, "Reset Zone", band, state);
 }
 
@@ -3372,9 +3655,10 @@ function resetZoneEqualsCategory(
 ): boolean {
   const grids = sectionGridSequence(section);
   if (grids.length !== 1) return false;
-  const partition = partitionByZone(grids[0] ?? [], (target) => !isReviewDisplayTargetResolved(stage, target, state));
-  if (partition.banded) return false;
-  const bandKeys = partition.band.map(reviewDisplayTargetKey).join("|");
+  const active = activeReviewTargetsForGrid(stage, grids[0] ?? [], state);
+  const rest = restReviewTargetsForGrid(stage, grids[0] ?? [], state);
+  if (rest.length > 0) return false;
+  const bandKeys = active.map(reviewDisplayTargetKey).join("|");
   const categoryKeys = sectionDisplayTargets(section).map(reviewDisplayTargetKey).join("|");
   return bandKeys === categoryKeys;
 }
@@ -3468,7 +3752,7 @@ function proposalTargetsInActiveReviewZone(
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
 ): ReviewDisplayTarget[] {
   return sectionGridSequence(section).flatMap((gridTargets) =>
-    partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state)).band.filter((target) => target.kind === "proposal")
+    activeReviewTargetsForGrid(stage, gridTargets, state).filter((target) => target.kind === "proposal")
   );
 }
 
@@ -3484,10 +3768,10 @@ function relationshipProposalsInActiveReviewZone(
 
 function selectReviewDisplayTarget(target: ReviewDisplayTarget): void {
   if (target.kind === "proposal") {
-    structuralCardFocusPending = target.id;
+    setCardCursor(target.id, "L3566");
     return;
   }
-  structuralCardFocusPending = null;
+  setCardCursor(null, "L3569");
   dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: target.id });
 }
 
@@ -3513,6 +3797,48 @@ function isItemResolvedInState(stage: WorkflowStage, itemId: string, state: Retu
 }
 
 /**
+ * THE ONE "IS THIS CANDIDATE FINISHED" TEST FOR COUNTS AND SCOPES
+ * (AG, 2026-08-09, migration prerequisite D1).
+ *
+ * WHAT THIS REPLACES, and why a helper rather than a comment asking people
+ * to be careful: roughly a dozen counting and scoping sites in this file
+ * asked `!state.reviewSession?.candidateDecisions[id]` -- DIRECT decisions
+ * only -- while navigation, the post-decision advance and the
+ * category-boundary guard all asked the DOMAIN predicate, which also counts
+ * a candidate whose occurrences are covered by a resolved entity group
+ * (coverage.ts). Two tests for one question, in a codebase where the
+ * paint/keystroke disagreement class has already cost four debugging passes.
+ *
+ * THE DIVERGENCE IS REAL AND REACHABLE, established by executing it rather
+ * than by reading (verify/resolved-predicate-verification.ts): NOT QUITE
+ * produces it. `completeNotQuite` stamps every member into the group
+ * decision's `confirmedMemberCandidateIds` -- that is what settling the
+ * group means -- while only the members the reviewer explicitly decided
+ * receive a CandidateDecision. A carried member then reads resolved to the
+ * domain and undecided to the raw map.
+ *
+ * (The group BULK operations -- confirmGroup/redactGroup/ignoreGroup/
+ * flattenGroup -- do NOT produce it; each bulk-writes a real decision per
+ * member. An earlier draft of the migration audit assumed they did. The
+ * verification suite asserts they do not, so that assumption cannot quietly
+ * come back.)
+ *
+ * WHY IT MATTERS MOST TO ITEM CHECK: WORKFLOW_STAGE_ORDER runs
+ * ambiguity-check FIRST -- before any group decision exists, so coverage is
+ * empty and the two tests agree there by construction -- and item-check
+ * LAST, after Group Check, where Not Quite lives. The defect is therefore
+ * structurally invisible on the stage that was just stabilized and waiting
+ * in the stage that is next to be migrated.
+ *
+ * STAGE-INDEPENDENT for candidates: `isItemResolved` routes both
+ * item-check and ambiguity-check to the same `candidateResolvedStatus`, so
+ * one helper serves both sectioned stages. Pinned by the suite above.
+ */
+function candidateIsResolvedInState(candidateId: string, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): boolean {
+  return isItemResolvedInState("item-check", candidateId, state);
+}
+
+/**
  * UNIFIED REVIEW-TARGET ADVANCEMENT (2026-08-08). Sectioned stages paint
  * candidates and relationship proposals as one displayed review surface, so
  * completion must advance across one mixed target list. This stays in the
@@ -3523,9 +3849,58 @@ function advanceWithinDisplayedReviewTargets(
   stage: "item-check" | "ambiguity-check",
   currentKey: string | null,
   targets: readonly ReviewDisplayTarget[],
-  after: ReturnType<WorkspaceCommandDispatcher["getState"]>
+  after: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  preferredTargets: readonly ReviewDisplayTarget[] | null = null
 ): ReviewDisplayTarget | null {
+  /* ZONE-SCOPED FIRST (AG, 2026-08-10). `preferredTargets` is the ACTIVE ZONE,
+   * not the section: a section extends past the zone, so a forward scan inside
+   * it walked the cursor out of the work surface the bulk actions are bound to.
+   * See advanceWithinZone for the observed defect and why it wraps. */
+  if (preferredTargets && preferredTargets.some((target) => reviewDisplayTargetKey(target) === currentKey)) {
+    const local = advanceWithinZone(currentKey, preferredTargets, (target) => isReviewDisplayTargetResolved(stage, target, after));
+    if (local) return local;
+  }
   return advanceWithinReviewTargets(currentKey, targets, (target) => isReviewDisplayTargetResolved(stage, target, after));
+}
+
+/**
+ * The ACTIVE ZONE containing `currentKey`, in display order (AG, 2026-08-10).
+ *
+ * Walks the same grid sequence the renderer paints and returns the first
+ * grid's active band that contains the cursor -- so "the zone" here is
+ * literally the cells on screen above the disclosure, which is also exactly
+ * what the zone-bounded bulk actions cover. Returns null when the cursor is
+ * not in any active zone, in which case the caller falls through to the full
+ * displayed sequence unchanged.
+ */
+function activeZoneTargetsContaining(
+  stage: "item-check" | "ambiguity-check",
+  currentKey: string,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] | null {
+  for (const section of sectionedQueueModel(state, stage).sections) {
+    for (const gridTargets of sectionGridSequence(section)) {
+      const active = activeReviewTargetsForGrid(stage, gridTargets, state);
+      if (active.some((target) => reviewDisplayTargetKey(target) === currentKey)) return active;
+    }
+  }
+  return null;
+}
+
+function displayedReviewTargetsForSectionContaining(
+  stage: "item-check" | "ambiguity-check",
+  targetKey: string,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>
+): ReviewDisplayTarget[] | null {
+  const section = sectionedQueueModel(state, stage).sections.find((candidateSection) =>
+    sectionDisplayTargets(candidateSection).some((target) => reviewDisplayTargetKey(target) === targetKey)
+  );
+  if (!section) return null;
+  // ONE ZONE RHYTHM (2026-08-09): both sectioned stages now walk the
+  // zone-ordered sequence. Triage previously took raw section order here
+  // while Ambiguity took the conveyor's, so the "preferred targets" the
+  // advance searched first differed between the two.
+  return sectionGridSequence(section).flatMap((gridTargets) => orderedReviewTargetsForGrid(stage, gridTargets, state));
 }
 
 /*
@@ -3614,6 +3989,12 @@ function dispatchReviewWithVisibleAdvance(command: ReviewCommand): ReviewTransac
   const queueStage = stage !== null ? sectionedQueueStage(stage) : null;
   const preReviewTargetKey = currentReviewDisplayTargetKey(stage, preItemId, before);
   const visibleTargets = queueStage !== null ? displayedReviewTargetsForSectionedStage(queueStage, before) : null;
+  /* THE ACTIVE ZONE the cursor was working in, captured pre-dispatch. Was the
+   * whole SECTION, which is what let the cursor escape the zone -- see
+   * advanceWithinZone. */
+  const preferredTargets = queueStage !== null && preReviewTargetKey !== null
+    ? activeZoneTargetsContaining(queueStage, preReviewTargetKey, before)
+    : null;
   const visibleIds = queueStage === null && stage !== null && preItemId !== null ? snapshotVisibleIdsForStage(stage, before) : null;
 
   const result = dispatcher.dispatchReview(command);
@@ -3624,9 +4005,31 @@ function dispatchReviewWithVisibleAdvance(command: ReviewCommand): ReviewTransac
   if (queueStage !== null && visibleTargets !== null && preReviewTargetKey !== null) {
     const preReviewTarget = visibleTargets.find((target) => reviewDisplayTargetKey(target) === preReviewTargetKey);
     if (!preReviewTarget || !isReviewDisplayTargetResolved(queueStage, preReviewTarget, after)) return result;
-    const target = advanceWithinDisplayedReviewTargets(queueStage, preReviewTargetKey, visibleTargets, after);
+    const target = advanceWithinDisplayedReviewTargets(queueStage, preReviewTargetKey, visibleTargets, after, preferredTargets);
     if (target) {
       const afterKey = currentReviewDisplayTargetKey(after.focus?.target.stage ?? null, after.focus?.target.itemId ?? null, after);
+      // TEMPORARY INSTRUMENTATION (2026-08-08): mechanism 2 of 3. Records
+      // where the DOMAIN's reconcile() landed versus where the visible-order
+      // advance overrides it to, and whether the landing crossed a category
+      // boundary -- the transition Failures 3 and 4 are reported against.
+      // `remaining` is read from AFTER, not before. The first instrumented
+      // run flagged seq 57 as a violation because the pre-dispatch count
+      // still included the unit being decided -- a false positive that would
+      // have sent the next investigation at a category advance that was in
+      // fact correct. The count that matters is what remains once the
+      // decision has landed.
+      const preCategory = stageCategories(after, queueStage).find((c) => sectionDisplayTargets({ candidateIds: c.candidateIds, relationshipProposalIds: c.relationshipProposalIds }).some((t) => reviewDisplayTargetKey(t) === preReviewTargetKey));
+      const landingCategory = stageCategories(after, queueStage).find((c) => sectionDisplayTargets({ candidateIds: c.candidateIds, relationshipProposalIds: c.relationshipProposalIds }).some((t) => reviewDisplayTargetKey(t) === reviewDisplayTargetKey(target)));
+      trace("advance.visible", "dispatchReviewWithVisibleAdvance", `${preReviewTargetKey} -> ${reviewDisplayTargetKey(target)}${reviewDisplayTargetKey(target) !== afterKey ? " (overriding reconcile)" : ""}`, {
+        from: preReviewTargetKey,
+        landing: reviewDisplayTargetKey(target),
+        reconcileLanded: afterKey,
+        overrode: reviewDisplayTargetKey(target) !== afterKey,
+        fromCategory: preCategory ? String(preCategory.id) : null,
+        landingCategory: landingCategory ? String(landingCategory.id) : null,
+        categoryChanged: Boolean(preCategory && landingCategory && preCategory.id !== landingCategory.id),
+        remaining: preCategory ? preCategory.remaining : null,
+      });
       if (reviewDisplayTargetKey(target) !== afterKey) selectReviewDisplayTarget(target);
     }
     return result;
@@ -3679,9 +4082,15 @@ function decideAndAdvance(command: AnyCommand, candidateId: string, stage: Workf
   // stops a stale editor from lingering open under a row whose decision has
   // already changed underneath it. A no-op when confirmInlineEditor already
   // cleared inlineEditor itself (the Change/Redact-confirm path).
+  const before = dispatcher.getState();
+  const completionAnchor = snapshotCurrentScopeCompletionAnchor(stage, before);
   if (inlineEditor?.scope === "candidate" && inlineEditor.candidateId === candidateId) inlineEditor = null;
-  if (command.family === "review") dispatchReviewWithVisibleAdvance(command);
-  acknowledge({ kind: "candidate", stage, candidateId });
+  const result = command.family === "review" ? dispatchReviewWithVisibleAdvance(command) : undefined;
+  if (result?.ok === false) {
+    render();
+    return;
+  }
+  acknowledgeCandidateDecisionFeedback(candidateId, stage, completionAnchor);
   render();
 }
 
@@ -4556,6 +4965,29 @@ function renderCandidateDetailPanel(
     badges.appendChild(el("span", { class: "badge" }, candidate.detectedType));
     if (!opts?.hideRecommendationBadge) badges.appendChild(el("span", { class: "badge" }, recommendationLabel(recommendation)));
   }
+  /*
+   * REVIEW NECESSITY (AG, 2026-08-10). Shown ONLY for Unlikely candidates --
+   * a badge on all 601 saying "Needs review" would be noise on the 426 that
+   * are simply normal.
+   *
+   * The reason is assembled from evidence that already exists: the surviving
+   * reading and the signal classes supporting it. NO CONFIDENCE VALUE, and no
+   * claim stronger than the evidence -- the copy says "explanation", never
+   * "safe" or "resolved". See engines/review/reviewNecessity.ts.
+   */
+  {
+    const necessity = reviewNecessityFor(candidate.detectedType, workspace.getInterpretationProfiles().get(candidate.id));
+    if (necessity.necessity === "unlikely" && necessity.explanation) {
+      const reading = necessity.explanationDomain ? `${necessity.explanation} [${necessity.explanationDomain}]` : necessity.explanation;
+      const badge = el("span", { class: "badge badge-unlikely" }, REVIEW_NECESSITY_LABELS.unlikely);
+      badge.setAttribute("title",
+        `Held out of active review. Affirmative explanation: ${reading}. `
+        + `Evidence: ${necessity.affirmativeEvidence.join(", ") || "none recorded"}. `
+        + "The candidate remains in the document and in the audit.");
+      badges.appendChild(badge);
+      badges.appendChild(el("span", { class: "badge badge-unlikely-reason" }, reading));
+    }
+  }
 
   if (opts?.showHeader) {
     /*
@@ -4674,7 +5106,18 @@ function renderCandidateDetailPanel(
    * answer to keep the reasoning out of the way, which is backwards.
    */
   const whySummary = el("summary", { class: "why-summary" });
-  whySummary.appendChild(el("span", { class: "detail-verdict" }, `${confidenceOpener(likelihood, candidate.detectedType)}.`));
+  /*
+   * DEVIATION #7 (explanation-builder.ts): the verdict states what the
+   * evidence establishes. On a candidate whose only positive evidence is
+   * capitalization shape and frequency, "Almost certainly a person's name"
+   * asserted a distinction the pipeline had not made -- `Amy Miller` and
+   * `Grade Rosters` produced the identical sentence from the identical
+   * evidence. The score and the bands are unchanged; only the noun moves.
+   */
+  const verdictPositiveReasons = state.quality?.assessmentByCandidate[candidate.id]?.positiveReasons ?? [];
+  const verdictOpener = evidenceFaithfulOpener(likelihood, candidate.detectedType, verdictPositiveReasons);
+  const verdictSuffix = isShapeOnlyPersonClaim(candidate.detectedType, verdictPositiveReasons) ? ` ${NO_NAME_EVIDENCE_CLAUSE}` : "";
+  whySummary.appendChild(el("span", { class: "detail-verdict" }, `${verdictOpener}.${verdictSuffix}`));
   whySummary.appendChild(el("span", { class: "why-caret", "aria-hidden": "true" }));
   whyDetails.appendChild(whySummary);
 
@@ -5354,16 +5797,25 @@ function renderResultsGrid(container: HTMLElement, state: ReturnType<WorkspaceCo
  */
 function buildCandidateQueryFacts(candidateIds: string[], state: ReturnType<WorkspaceCommandDispatcher["getState"]>): CandidateQueryFacts[] {
   const ambiguousIds = new Set(state.grouping?.ambiguityProposals.map((p) => p.candidateId) ?? []);
+  const interpretationProfiles = workspace.getInterpretationProfiles();
   const facts: CandidateQueryFacts[] = [];
   for (const candidateId of candidateIds) {
     const candidate = state.detection?.candidates.find((c) => c.id === candidateId);
     if (!candidate) continue;
+    /* REVIEW NECESSITY (AG, 2026-08-10): read from the already-derived
+     * interpretation profile via the one determination module. Not recomputed
+     * here, and not derivable from the other fields on this record. */
+    const necessity = reviewNecessityFor(candidate.detectedType, interpretationProfiles.get(candidateId));
     facts.push({
       candidate,
       likelihood: state.quality?.scoreByCandidate[candidateId],
       decision: state.reviewSession?.candidateDecisions[candidateId],
       isAmbiguous: ambiguousIds.has(candidateId),
       categories: candidateCategories(candidate, state),
+      reviewNecessity: necessity.necessity,
+      ...(necessity.explanation
+        ? { unlikelyExplanation: necessity.explanationDomain ? `${necessity.explanation} [${necessity.explanationDomain}]` : necessity.explanation }
+        : {}),
     });
   }
   return facts;
@@ -5427,10 +5879,31 @@ function renderItemCheckToolbar(container: HTMLElement): void {
   });
   toolbar.appendChild(searchInput);
 
+  /*
+   * REVIEW NECESSITY (AG, 2026-08-10). Unlikely candidates are held out of the
+   * conveyor by queryItemCheck(); this line is how the reviewer knows that
+   * happened and how many. Counted from the same facts the exclusion reads, so
+   * the number can never disagree with the list.
+   *
+   * The wording is deliberately weak -- "Unlikely", "held out", never "safe",
+   * "resolved" or "ignored". See engines/review/reviewNecessity.ts.
+   */
+  const toolbarState = dispatcher.getState();
+  const toolbarFacts = buildCandidateQueryFacts(itemCheckPoolIds(toolbarState), toolbarState);
+  const heldOut = unlikelyCount(toolbarFacts);
+  const unlikelyShown = itemCheckQueryState.activePresets.has(UNLIKELY_PRESET);
+  if (heldOut > 0) {
+    const notice = el("div", { class: "item-check-unlikely-notice" },
+      unlikelyShown
+        ? `Showing ${heldOut} Unlikely candidate${heldOut === 1 ? "" : "s"} — DocScrub has an affirmative non-sensitive explanation for each. They remain in the document and in the audit.`
+        : `${heldOut} Unlikely candidate${heldOut === 1 ? "" : "s"} held out of this list. Select "Unlikely" to inspect them.`);
+    toolbar.appendChild(notice);
+  }
+
   const presetRow = el("div", { class: "filter-preset-row" });
   for (const preset of FILTER_PRESETS) {
     const isActive = itemCheckQueryState.activePresets.has(preset.key);
-    const chip = button(preset.label, () => {
+    const chip = button(preset.key === UNLIKELY_PRESET ? `${preset.label} (${heldOut})` : preset.label, () => {
       const next = new Set(itemCheckQueryState.activePresets);
       if (next.has(preset.key)) next.delete(preset.key);
       else next.add(preset.key);
@@ -6016,11 +6489,11 @@ function moveWithinResultsGrid(visibleIds: string[], currentId: string | null, k
   // cursor. One list, two cursors -- the same dispatch the row and card
   // click handlers already make, so nothing new learns about the split.
   if (anchor?.querySelector(`[data-proposal-id="${cssAttrEscape(targetId)}"]`)) {
-    structuralCardFocusPending = targetId;
+    setCardCursor(targetId, "L6123");
     render();
     return;
   }
-  structuralCardFocusPending = null;
+  setCardCursor(null, "L6127");
   dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: targetId });
   render();
 }
@@ -6251,7 +6724,7 @@ function currentReviewScope(state: ReturnType<WorkspaceCommandDispatcher["getSta
   const displayed = visibleItemCheckIds(state);
   const selected = displayed.filter((id) => selectedCandidateIds.has(id));
   return resolveReviewScope({
-    remainderItemIds: displayed.filter((id) => !state.reviewSession?.candidateDecisions[id]),
+    remainderItemIds: displayed.filter((id) => !candidateIsResolvedInState(id, state)),
     remainderArtifactIds: itemCheckViewMode === "triage" ? unaddressedStructuralCardIds(state) : [],
     selectedItemIds: selected,
     focusedItemId: target.itemId ?? null,
@@ -6291,7 +6764,13 @@ function triageItemsFor(candidateIds: readonly string[], state: ReturnType<Works
   return candidateIds.flatMap((id) => {
     const candidate = state.detection?.candidates.find((c) => c.id === id);
     if (!candidate) return [];
-    return [{ id, archetype: triageRecommendationForCandidate(id, state)?.archetype ?? null, detectedType: candidate.detectedType }];
+    return [
+      {
+        id,
+        archetype: triageRecommendationForCandidate(id, state)?.archetype ?? null,
+        detectedType: candidate.detectedType,
+      },
+    ];
   });
 }
 
@@ -6331,8 +6810,9 @@ function ambiguityItemsFor(candidateIds: readonly string[], state: ReturnType<Wo
  *  category-first refactor this was the raw proposal order (the two
  *  coincided because display WAS the flat proposal list). */
 function visibleAmbiguityIds(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): string[] {
-  const candidateIds = state.grouping?.ambiguityProposals.map((p) => p.candidateId) ?? [];
-  return ambiguityQueueOrder(ambiguityItemsFor(candidateIds, state));
+  return displayedReviewTargetsForSectionedStage("ambiguity-check", state)
+    .filter((target) => target.kind === "candidate")
+    .map((target) => target.id);
 }
 
 /**
@@ -6375,18 +6855,42 @@ function renderTriageQueue(container: HTMLElement, state: ReturnType<WorkspaceCo
     renderSectionedQueue(container, state, sections, TRIAGE_QUEUE_POLICY);
     return;
   }
-  const split = el("div", { class: "scope-split" });
-  // Inspector FIRST in the DOM -- same reading-order/tab-order reasoning
-  // as the per-section pane it replaces (see renderSectionedQueue's
-  // focus-pane note); below the breakpoint it stacks on top.
+  /*
+   * AMBIGUITY'S PAGE STRUCTURE, REUSED (AG, 2026-08-09).
+   *
+   * This used to wrap the WHOLE queue in a workspace-level `.scope-split`,
+   * which put every section -- and therefore every continuation grid --
+   * inside the right-hand column. The remainder could never span the page,
+   * and no CSS could free it: escaping the nesting needs
+   * `display: contents` on `.triage-section`, and the section snap
+   * (`scrollFocusedRowIntoView`) plus proposal-card arrow scope
+   * (`moveStructuralCardFocus`) both require that element to have a box.
+   *
+   * So the inspector now travels INTO the section, where Ambiguity's own
+   * `.triage-split` already produces the shape:
+   *
+   *     .triage-section
+   *       ├── heading                       (full width)
+   *       ├── .triage-split.scope-split     [ inspector │ active zone ]
+   *       └── .zone-rest                    (full width, both columns)
+   *
+   * Same primitive, one implementation. Item Check keeps its own content
+   * (the scope inspector, its controls, its width rule via `.scope-split`);
+   * only where the node hangs has changed.
+   *
+   * Inspector FIRST in the DOM -- same reading-order/tab-order reasoning as
+   * the per-section pane it sits beside; below the breakpoint it stacks on
+   * top.
+   *
+   * CREATED EMPTY, FILLED AFTER: its content depends on the panels the
+   * queue render collects, so the node is handed over empty, attached by
+   * the first visible section, and populated once the queue is built. It is
+   * already in the tree by then, so nothing needs re-parenting.
+   */
   const inspector = el("div", { class: "scope-inspector" });
-  const queueHost = el("div", { class: "scope-queue" });
-  const pane: WorkspacePaneSink = { scopeKind: scope.source.kind, panels: [] };
-  renderSectionedQueue(queueHost, state, sections, TRIAGE_QUEUE_POLICY, pane);
+  const pane: WorkspacePaneSink = { scopeKind: scope.source.kind, panels: [], inspectorHost: inspector };
+  renderSectionedQueue(container, state, sections, TRIAGE_QUEUE_POLICY, pane);
   renderScopeInspector(inspector, state, scope, pane.panels);
-  split.appendChild(inspector);
-  split.appendChild(queueHost);
-  container.appendChild(split);
 }
 
 /**
@@ -6453,7 +6957,20 @@ function renderScopeInspector(
   // under an active search/filter it says so instead of silently
   // describing rows that are not on screen.
   if (!isSelection && visibleItemCheckIds(state).length < itemCheckPoolIds(state).length) {
-    host.appendChild(el("p", { class: "scope-inspector-note" }, "Narrowed by your search/filter — the counts describe the rows currently shown."));
+    /* REVIEW NECESSITY (AG, 2026-08-10): this notice predates Unlikely and
+     * said "your search/filter", which is now sometimes untrue -- the
+     * hold-out is DocScrub's, not the reviewer's. Distinguishing the two is a
+     * one-line honesty fix, not a redesign: a count the reviewer cannot
+     * explain is worse than no count. */
+    const poolFacts = buildCandidateQueryFacts(itemCheckPoolIds(state), state);
+    const heldOutHere = itemCheckQueryState.activePresets.has(UNLIKELY_PRESET) ? 0 : unlikelyCount(poolFacts);
+    const narrowedByReviewer = itemCheckQueryState.searchText.trim().length > 0 || itemCheckQueryState.activePresets.size > 0;
+    const note = heldOutHere > 0 && narrowedByReviewer
+      ? `Narrowed by your search/filter, and ${heldOutHere} Unlikely candidate${heldOutHere === 1 ? "" : "s"} held out — the counts describe the rows currently shown.`
+      : heldOutHere > 0
+        ? `${heldOutHere} Unlikely candidate${heldOutHere === 1 ? "" : "s"} held out of this queue — the counts describe the rows currently shown.`
+        : "Narrowed by your search/filter — the counts describe the rows currently shown.";
+    host.appendChild(el("p", { class: "scope-inspector-note" }, note));
   }
 
   // The decision opportunities: the queue's own sections, summarized.
@@ -6619,7 +7136,7 @@ const TRIAGE_QUEUE_POLICY: SectionedQueuePolicy = {
   //
   // Wording follows the items: their chip says "Not a name", not "Not
   // personal", because in a section OF names the meaningful claim is about
-  // nameness. Same chord (Opt N) and same underlying Ignore as every other
+  // nameness. Same chord (Opt I) and same underlying Ignore as every other
   // "none are..." button -- one key, one meaning, the sentence varying with
   // what the section holds.
   //
@@ -6670,6 +7187,38 @@ const AMBIGUITY_QUEUE_POLICY: SectionedQueuePolicy = {
 interface WorkspacePaneSink {
   scopeKind: "stage-remainder" | "selection" | "item-focus" | "artifact-focus";
   panels: HTMLElement[];
+  /**
+   * THE INSPECTOR'S HOST ELEMENT, placed INSIDE the section rather than
+   * wrapped around the whole queue (AG, 2026-08-09).
+   *
+   * WHY THIS MOVED. Item Check Triage used to nest the entire queue inside
+   * a workspace-level `.scope-split`, which meant the continuation
+   * ("remainder") grid was three ancestors deep inside the right-hand
+   * column and could never span the page. Ambiguity has always had the
+   * shape Andrew wants -- `.triage-split` for the top row with `.zone-rest`
+   * as its SIBLING inside the section, so the continuation runs full width
+   * beneath both columns -- and it gets it structurally, not through CSS.
+   *
+   * No CSS can reproduce it from the old nesting: escaping would need
+   * `display: contents` on `.triage-section`, and two behavioral consumers
+   * depend on that element having a box --
+   * `scrollFocusedRowIntoView`'s section snap (`section.scrollIntoView`)
+   * and `moveStructuralCardFocus`'s `closest(".triage-section")` scope for
+   * proposal-card arrows. So the inspector comes to the section instead.
+   *
+   * The element is created EMPTY by the caller and filled after the queue
+   * renders (the inspector's content depends on `panels`, which this render
+   * pass collects). Placing an empty node now and populating it later is
+   * safe because it is already attached.
+   *
+   * ONE HOST, ALWAYS: a DOM node can only be in one place, so if two
+   * sections both took it the last would silently win. The rule is the
+   * FIRST visible section -- which, because the only-active-category filter
+   * normally leaves exactly one, is the section the reviewer is working.
+   * The multi-section case only arises when no cursor owns a section at
+   * all, and "the first one" is the sane answer there too.
+   */
+  inspectorHost?: HTMLElement;
 }
 
 function renderSectionedQueue(
@@ -6728,8 +7277,41 @@ function renderSectionedQueue(
       ? (sections.find((s) => s.candidateIds.includes(cursorItemId))?.id ?? null)
       : null;
   const visibleSections = cursorSectionId === null ? sections : sections.filter((s) => s.id === cursorSectionId);
+  lastRenderedSectionedCategoryId = visibleSections.length === 1 ? String(visibleSections[0]!.id) : null;
+  let inspectorPlaced = false;
   for (const section of visibleSections) {
     const sectionEl = el("div", { class: "triage-section", "data-section-id": String(section.id) });
+    /*
+     * WHERE THE SECTION'S ACTIVE CONTENT GOES (AG, 2026-08-09).
+     *
+     * `sectionEl` by default -- unchanged for Ambiguity and for any Triage
+     * section that is not hosting the inspector.
+     *
+     * When a workspace inspector exists, the FIRST visible section builds
+     * Ambiguity's own `.triage-split` and routes its tier headings and
+     * active grids into the right-hand column. `appendRest()` continues to
+     * append to `sectionEl`, so the continuation grid lands as a SIBLING of
+     * the split and spans the full section width -- the two-row page shape
+     * Ambiguity already has, reached by reusing its primitive rather than
+     * by building a second one.
+     *
+     * `.scope-split` rides along on the same element so Item Check keeps
+     * its own width rule; `.triage-split` supplies the shared structure.
+     */
+    let activeHost: HTMLElement = sectionEl;
+    let pendingWorkspaceSplit: HTMLElement | null = null;
+    if (workspacePane?.inspectorHost && !inspectorPlaced) {
+      inspectorPlaced = true;
+      const workspaceSplit = el("div", { class: "triage-split scope-split" });
+      const workspaceQueue = el("div", { class: "scope-queue" });
+      workspaceSplit.appendChild(workspacePane.inspectorHost);
+      workspaceSplit.appendChild(workspaceQueue);
+      // Held, not appended: the section heading is appended below and must
+      // stay ABOVE the split (it names the category and carries its
+      // actions). Attaching here would put the split first.
+      pendingWorkspaceSplit = workspaceSplit;
+      activeHost = workspaceQueue;
+    }
     // `remainingIds` (not just a count) so the section's Decision Reduction
     // figure below is scoped to EXACTLY the set this line calls remaining.
     // Declared up here because both the select-all and the bulk-action
@@ -6741,7 +7323,7 @@ function renderSectionedQueue(
      * it, and two derivations of "which unit type is active" is how the
      * paint and the keystroke come to disagree. */
     const activeUnitIsProposal = structuralCardFocusPending !== null && (section.relationshipProposalIds ?? []).length > 0;
-    const remainingIds = section.candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+    const remainingIds = section.candidateIds.filter((id) => !candidateIsResolvedInState(id, state));
     /* COUNTED IN REVIEW UNITS, BOTH TYPES (AG, 2026-08-06). The pill and
      * the heading below it are two renderings of one number, and they
      * disagreed the moment proposals joined a category: Numeric's pill read
@@ -6752,7 +7334,9 @@ function renderSectionedQueue(
     const sectionProposals = (section.relationshipProposalIds ?? [])
       .map((id) => state.structuralRelationships?.proposals.find((p) => p.proposalId === id))
       .filter((p): p is NonNullable<typeof p> => Boolean(p));
-    const proposalsDone = sectionProposals.filter((p) => p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]))).length;
+    const proposalsDone = sectionProposals.filter(
+      (p) => Boolean(state.reviewSession?.relationshipDismissals?.[p.proposalId]) || p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]))
+    ).length;
     const done = section.candidateIds.length - remainingIds.length + proposalsDone;
     const remaining = remainingIds.length + (sectionProposals.length - proposalsDone);
     // CATEGORY-FIRST REVIEW (AG, 2026-07-30): the category is the primary
@@ -6819,6 +7403,9 @@ function renderSectionedQueue(
     const explanation = policy.explanationFor(section.id);
     if (explanation) (titleLine.firstChild as HTMLElement | null)?.setAttribute?.("title", explanation);
     sectionEl.appendChild(heading);
+    // The workspace split follows the heading, so the category's name and
+    // actions stay above its two-column body (2026-08-09).
+    if (pendingWorkspaceSplit) sectionEl.appendChild(pendingWorkspaceSplit);
     // REVIEW CONFIDENCE TIERS (AG, 2026-08-02): a section may partition
     // into tier groups ("Strong Recommendations" / "Needs Review").
     // Rendering rules, all category-agnostic:
@@ -6931,7 +7518,7 @@ function renderSectionedQueue(
         for (const proposal of collectionProposals) if (!kinds.includes(proposal.kind)) kinds.push(proposal.kind);
         for (const kind of kinds) {
           const ofKind = collectionProposals.filter((p) => p.kind === kind);
-          const undecided = ofKind.filter((p) => !p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id])));
+          const undecided = ofKind.filter((p) => !p.candidateIds.every((id) => candidateIsResolvedInState(id, state)));
           // Same single-item rule as the category headings: a "global" over
           // one pair is the card's own buttons, reworded.
           if (undecided.length <= 1) continue;
@@ -6994,19 +7581,11 @@ function renderSectionedQueue(
      * because nothing about its shape reads layout. Measured live: band
      * 569px, a stable 12 rows, against a 843px viewport.
      *
-     * THE REMAINDER IS COLLAPSED, which §4a of the design record did not
-     * specify (it said "below a gap at full width"). That was written before
-     * anyone measured it: on Likely People the remainder is 253 cells =
-     * 6,021px, so a drawn-but-open remainder leaves the 7-screen scroll the
-     * band exists to end. Collapsed, the whole section is 2.1 screens
-     * (18,018px -> 8,933px -> 1,762px across this change and the sibling
-     * hide). The summary NAMES the count, for the §5 reason every bulk
-     * control does: the reviewer is never guessing how much is behind it.
-     *
-     * The escape hatch survives intact -- §8's unbounded explicit selection
-     * is one disclosure click away, not gone. That is the one cost of
-     * collapsing, and it is deliberate: reaching past the bound should be a
-     * gesture, not the resting state. */
+     * THE CONTINUATION IS OPEN (AG, 2026-08-08). The 2026-08-06 version
+     * tucked the remainder behind a disclosure to shorten very large
+     * categories. Andrew's refinement supersedes that: excess Ambiguity
+     * cells are not a different class of work, so they continue underneath
+     * the focus pane plus active-zone grid as the same ordered queue. */
     /* THE ZONE IS BOUNDED IN REVIEW TARGETS, NOT CANDIDATES (2026-08-07).
      *
      * Previously this partitioned CANDIDATE ids and the proposal loop below
@@ -7035,20 +7614,35 @@ function renderSectionedQueue(
      * within a grid, so a proposal can only enter the band once every
      * undecided candidate in that grid is already in it. The band's
      * candidate subset is therefore always identical to
-     * headingActionScope's own `reviewZone(undecided candidates)` -- the
-     * buttons cover precisely the candidate cells the band shows. Pinned by
-     * ui-smoke's zone-agreement case. */
-    // Decided items leave the band, per §4a ("an item leaves the band when
-    // it is decided -- legible cause and effect"): the zone is the next N
-    // UNRESOLVED, so a decision promotes one item out and pulls the next in.
-    // The split itself lives in reviewZone.ts (partitionByZone) so it is
-    // pinned without a browser; see that function for the unresolved-
-    // subsequence invariant the advance depends on.
-    const partition = partitionByZone(gridTargets, (target) => !isReviewDisplayTargetResolved(stage, target, state));
-    const restSet = partition.banded ? new Set(partition.rest.map(reviewDisplayTargetKey)) : null;
+     * headingActionScope's own active-zone candidate subset -- the buttons
+     * cover precisely the candidate cells the band shows. (2026-08-09: both
+     * now come from the SAME `zonePartition(..., "conveyor")` computation on
+     * both sectioned stages, so this agreement is structural rather than a
+     * coincidence of two rules matching.) Pinned by ui-smoke's zone-agreement
+     * case and by verify/review-zone-verification.ts. */
+    // BOTH sectioned stages now keep a conveyor-belt active zone while a
+    // category has unresolved work (2026-08-09; Ambiguity since 2026-08-08): individual decisions retire in 12-cell
+    // chunks, while bulk actions mutate only unresolved active members and
+    // then retire the whole completed zone. Once the UI has advanced THIS
+    // category into its completed presentation, that conveyor is no longer
+    // the right display: finished cells repopulate in canonical order, with
+    // the first 24 beside the focus pane and item 25+ continuing below. The
+    // trigger is the rendered completed category, not merely a helper seeing
+    // zero unresolved cells in isolation, so the decision transaction's
+    // conveyor mechanics finish before the inspectable finished view is
+    // drawn.
+    // Item Check's triage view keeps the original unresolved-compacting
+    // Review Zone until that separate follow-up is requested.
+    const completedPresentation =
+      stage === "ambiguity-check" && remaining === 0 && cursorSectionId === section.id
+        ? completedQueuePartition(gridTargets)
+        : null;
+    const orderedTargets = completedPresentation?.ordered ?? orderedReviewTargetsForGrid(stage, gridTargets, state);
+    const restTargets = completedPresentation?.rest ?? restReviewTargetsForGrid(stage, gridTargets, state);
+    const restSet = restTargets.length > 0 ? new Set(restTargets.map(reviewDisplayTargetKey)) : null;
     const inRest = (target: ReviewDisplayTarget): boolean => restSet?.has(reviewDisplayTargetKey(target)) ?? false;
     const grid = el("div", { class: "triage-grid" });
-    const restGrid = el("div", { class: "triage-grid" });
+    const restGrid = el("div", { class: "triage-grid triage-grid-continuation" });
     // SIDE-BY-SIDE FOCUS PANE (AG, 2026-08-03) -- the detail panel moves
     // OUT of the grid flow and into a column beside it.
     //
@@ -7115,7 +7709,7 @@ function renderSectionedQueue(
      * cursor can reach" are the same list read once, not two lists that have
      * to be kept in step. */
     let proposalCellsPainted = 0;
-    for (const target of gridTargets) {
+    for (const target of orderedTargets) {
       const host = inRest(target) ? restGrid : grid;
       if (target.kind === "proposal") {
         const proposalId = target.id;
@@ -7125,23 +7719,40 @@ function renderSectionedQueue(
           .map((id) => state.detection?.candidates.find((c) => c.id === id))
           .filter((candidate): candidate is Candidate => Boolean(candidate));
         if (members.length === 0) continue;
-        const addressed = proposal.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]));
+        const dismissed = Boolean(state.reviewSession?.relationshipDismissals?.[proposal.proposalId]);
+        const addressed = dismissed || proposal.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id]));
         const pendingProposalAction = pendingDecisionOf(isEditingRelationship(proposal.proposalId, "Rename"), isEditingRelationship(proposal.proposalId, "Redact"));
-        const proposalSummary = decisionSummary(proposal.candidateIds.map((id) => state.reviewSession?.candidateDecisions[id]?.decision));
+        const proposalDecisions = proposal.candidateIds
+          .map((id) => state.reviewSession?.candidateDecisions[id])
+          .filter((decision): decision is CandidateDecision => Boolean(decision));
+        const proposalSummary = decisionSummary(proposalDecisions.map((decision) => decision.decision));
         const isSelected = structuralCardFocusPending === proposalId;
+        const isAcknowledgingProposalMembers =
+          isAcknowledged({ kind: "group", groupId: proposal.proposalId }) ||
+          proposal.candidateIds.some((candidateId) => isAcknowledged({ kind: "candidate", stage, candidateId }));
         const row = el("div", { class: "triage-row", "data-proposal-id": proposalId });
         if (addressed) row.classList.add("triage-row-done");
+        if (dismissed) row.classList.add("triage-row-dismissed");
         if (pendingProposalAction) row.classList.add(decisionClass(pendingProposalAction), "decision-tinted");
-        else if (addressed && proposalSummary.dominant) row.classList.add(decisionClass(proposalSummary.dominant), "decision-tinted");
+        else if (!dismissed && addressed && proposalSummary.dominant) row.classList.add(decisionClass(proposalSummary.dominant), "decision-tinted");
         if (isSelected) row.classList.add("triage-row-focused");
         if (!activeUnitIsProposal) row.classList.add("triage-row-inactive-unit");
+        if (isAcknowledgingProposalMembers) row.classList.add("row-acknowledged-pulse");
         row.appendChild(el("span", { class: "triage-check-slot" }));
+        // A category can mix singleton candidates and relationship
+        // proposals, so completion must speak in review-unit terms rather
+        // than candidate-row terms: every resolved cell gets the same ✓
+        // state slot, and any proposal-specific outcome still comes from
+        // the decision tint above.
+        row.appendChild(el("span", { class: "triage-state" }, addressed ? "✓" : isSelected ? "▶" : ""));
         // The pair IS the label -- "A ↔ B" says at a glance what the review
         // unit is, which a single token never could on this axis.
         row.appendChild(el("span", { class: "triage-token" }, members.map((m) => m.displayValue).join(" ↔ ")));
+        const completedStatus = dismissed ? "Marked unrelated" : addressed ? completedRelationshipStatus(proposalDecisions) : null;
+        if (completedStatus) row.appendChild(el("span", { class: "triage-arrow triage-arrow-done", title: completedStatus }, `→ ${completedStatus}`));
         row.addEventListener("click", () => {
           scopeWidenedFrom = null;
-          structuralCardFocusPending = proposalId;
+          setCardCursor(proposalId, "L7273");
           render();
         });
         appendCell(host, row, true);
@@ -7275,7 +7886,7 @@ function renderSectionedQueue(
         token.appendChild(el("span", { class: "triage-token-pair" }, ` ↔ ${counterpart}`));
       }
       token.title = decided
-        ? `Reviewed -- ${decisionDisplayLabel(decided.decision)}`
+        ? `Reviewed -- ${completedDecisionStatus(decided)}`
         : counterpart !== null
           ? `${candidate.displayValue} ↔ ${counterpart}`
           : candidate.detectedType;
@@ -7305,6 +7916,7 @@ function renderSectionedQueue(
       // control, and recommendationForCandidate already returns null for a
       // decided item, so the panel header has nothing to duplicate.
       if (decided) {
+        const completedStatus = completedDecisionStatus(decided);
         /*
          * THE DECIDED ROW NAMES THE DECISION (2026-08-06, from AG's report:
          * "I swear I selected 'this is a name' and I got this" -- an item he
@@ -7342,7 +7954,7 @@ function renderSectionedQueue(
          * still deserves to say what happened to it.
          */
         row.appendChild(
-          el("span", { class: "triage-arrow triage-arrow-done" }, `→ ${decided.rationale ?? decisionDisplayLabel(decided.decision)}`)
+          el("span", { class: "triage-arrow triage-arrow-done", title: completedStatus }, `→ ${completedStatus}`)
         );
       }
       // SUGGESTION CHIPS REMOVED FROM THE CARD ENTIRELY (AG, 2026-08-06:
@@ -7389,7 +8001,7 @@ function renderSectionedQueue(
         // stands the card cursor down -- clicking a row previously left a
         // selected card expanded elsewhere, two highlights at once, which
         // is exactly the "where am I" ambiguity the bug report describes.
-        structuralCardFocusPending = null;
+        setCardCursor(null, "L7522");
         // REVIEW SCOPE, Pass 1: a row click is explicit item-directed
         // navigation, so it re-narrows a widened scope even when the
         // clicked row is the parked cursor itself (focus unchanged, so
@@ -7456,8 +8068,8 @@ function renderSectionedQueue(
      *
      * BOTH GRIDS: with the zone bounding review targets, a candidate cell
      * can sit in the withheld remainder while a proposal owns the pane, and
-     * a rest row that kept its ring would be a second highlight hiding
-     * inside the disclosure. Gated on cells actually PAINTED, not on the
+     * a rest row that kept its ring would be a second highlight later in
+     * the continuous queue. Gated on cells actually PAINTED, not on the
      * section declaring proposals -- a proposal the renderer skipped (no
      * surviving members) dims nothing. */
     if (activeUnitIsProposal && proposalCellsPainted > 0) {
@@ -7469,23 +8081,21 @@ function renderSectionedQueue(
       }
     }
 
-    /* The withheld remainder, behind a disclosure that names its size.
-     *
-     * FORCED OPEN WHEN IT HOLDS THE CURSOR. Focus can legitimately land in
-     * here -- Tab, a click, or an arrow move off the band's edge -- and a
-     * focused row inside a closed <details> is a cursor the reviewer cannot
-     * see, which is the "where am I" failure the row-click handler above
-     * already exists to prevent. The disclosure is a default, not a cage. */
+    /* The continuation queue. It is deliberately NOT a named overflow or a
+     * disclosure: after the focus pane plus active 24-cell zone, the same
+     * ordered queue simply continues below both columns at the page width. */
     const appendRest = (): void => {
       if (!restSet || restGrid.childElementCount === 0) return;
-      const rest = el("details", { class: "zone-rest" });
-      rest.appendChild(el("summary", {}, `${restGrid.childElementCount} more in ${section.label} — not covered by the buttons above`));
+      const rest = el("div", { class: "zone-rest" });
       rest.appendChild(restGrid);
-      if (restGrid.querySelector(".triage-row-focused")) (rest as HTMLDetailsElement).open = true;
       sectionEl.appendChild(rest);
     };
     if (workspacePane || focusPanels.length === 0) {
-      sectionEl.appendChild(grid);
+      // `activeHost` is the section itself unless a workspace inspector put
+      // this section's active content into the split's right column
+      // (2026-08-09). `appendRest()` deliberately still targets `sectionEl`,
+      // which is what carries the continuation across the full width.
+      activeHost.appendChild(grid);
       appendRest();
       return;
     }
@@ -7528,7 +8138,7 @@ function renderSectionedQueue(
       renderGrid(gridSequence[0] ?? []);
     } else {
       for (const tier of tierGroups) {
-        const tierRemainingIds = tier.candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+        const tierRemainingIds = tier.candidateIds.filter((id) => !candidateIsResolvedInState(id, state));
         const tierDone = tier.candidateIds.length - tierRemainingIds.length;
         const tierRemaining = tierRemainingIds.length;
         const tierHeading = el("div", { class: "review-tier-heading" });
@@ -7547,7 +8157,10 @@ function renderSectionedQueue(
         // the tier the focused row actually sits in, matching ⇧A's own
         // tier-scoped rule.
         emitSectionActions(isMixedCategory ? [] : headingSectionActions(policy, section, tier, state), tier.candidateIds, tierHeading, true);
-        sectionEl.appendChild(tierHeading);
+        // Tier headings ride with their grids: under a workspace inspector
+        // both belong in the split's right column, or a tiered section would
+        // interleave full-width headings with column-bound grids.
+        activeHost.appendChild(tierHeading);
         renderGrid(gridSequence[tierGroups.indexOf(tier)] ?? []);
       }
       // The section's proposal grid, ONCE, after the last tier -- entry
@@ -7604,14 +8217,14 @@ function acceptAllInSection(config: AcceptAllConfig, label: string, candidateIds
   const fallback = config.fallback;
   if (!fallback && !config.recommendationsOnly) return;
   const state = dispatcher.getState();
-  const undecided = candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+  const undecided = candidateIds.filter((id) => !candidateIsResolvedInState(id, state));
   if (undecided.length === 0) return;
   // COMPLETION-PATH AUDIT (AG, 2026-08-03): this button clears a whole
   // section through raw dispatches, exactly like runSectionAction, and had
   // no advance whatsoever -- the reviewer was left parked above work they
   // had just finished. Snapshot the displayed review targets and the anchor
   // pre-dispatch, while this section is still in the list.
-  const completionAnchor = snapshotSectionCompletionAnchor(_stage, candidateIds, state);
+  const completionAnchor = snapshotCurrentScopeCompletionAnchor(_stage, state) ?? snapshotSectionCompletionAnchor(_stage, candidateIds, state);
   const { viaRecommendation, withoutSuggestion: plain } = applyOwnSuggestions(undecided, state);
   anchorSuggestionsAccepted(undecided.length, viaRecommendation, plain.length);
   if (fallback && plain.length > 0) {
@@ -7721,7 +8334,7 @@ function anchorSuggestionsAccepted(requestedCount: number, viaRecommendation: nu
  */
 function runSectionAction(action: SectionAction, sectionLabel: string, candidateIds: readonly string[], stage: "item-check" | "ambiguity-check"): void {
   const state = dispatcher.getState();
-  const undecided = candidateIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+  const undecided = candidateIds.filter((id) => !candidateIsResolvedInState(id, state));
   if (undecided.length === 0) return;
   // NAV-ORDER FIX (AG, 2026-08-02, live report: "I clicked 'Leave all
   // as-is' on Institutional Terminology and then apparently ended up on
@@ -7735,7 +8348,7 @@ function runSectionAction(action: SectionAction, sectionLabel: string, candidate
   // the thing just completed, so it -- not whatever happened to hold
   // focus -- is the advance anchor), via the same advanceWithinVisibleList
   // + domain isItemResolved pair the choke point uses.
-  const completionAnchor = snapshotSectionCompletionAnchor(stage, candidateIds, state);
+  const completionAnchor = snapshotCurrentScopeCompletionAnchor(stage, state) ?? snapshotSectionCompletionAnchor(stage, candidateIds, state);
   if (action.op.kind === "accept-suggestions") {
     const { viaRecommendation, withoutSuggestion } = applyOwnSuggestions(undecided, state);
     anchorSuggestionsAccepted(undecided.length, viaRecommendation, withoutSuggestion.length);
@@ -7830,6 +8443,28 @@ function snapshotSectionCompletionAnchor(
   return { stage, sectionId: String(section.id), anchorKey: reviewDisplayTargetKey(anchorTarget), sectionTargetKeys: [...sectionTargetKeys], targets };
 }
 
+function snapshotCurrentScopeCompletionAnchor(stage: WorkflowStage, before: ReturnType<WorkspaceCommandDispatcher["getState"]>): SectionCompletionAnchor | null {
+  const queueStage = sectionedQueueStage(stage);
+  if (!queueStage) return null;
+  const targetKey = currentReviewDisplayTargetKey(stage, before.focus?.target.itemId ?? null, before);
+  if (!targetKey) return null;
+  const { sections } = sectionedQueueModel(before, queueStage);
+  const section = sections.find((candidateSection) => sectionDisplayTargets(candidateSection).some((target) => reviewDisplayTargetKey(target) === targetKey));
+  if (!section) return null;
+  const activeGrid = sectionGridSequence(section).find((gridTargets) => gridTargets.some((target) => reviewDisplayTargetKey(target) === targetKey));
+  if (!activeGrid || activeGrid.length === 0) return null;
+  const scopeTargets = activeReviewTargetsForGrid(queueStage, activeGrid, before);
+  const anchorTarget = [...scopeTargets].reverse().find((target) => displayedReviewTargetsForSectionedStage(queueStage, before).some((displayed) => reviewDisplayTargetKey(displayed) === reviewDisplayTargetKey(target)));
+  if (!anchorTarget) return null;
+  return {
+    stage: queueStage,
+    sectionId: String(section.id),
+    anchorKey: reviewDisplayTargetKey(anchorTarget),
+    sectionTargetKeys: scopeTargets.map(reviewDisplayTargetKey),
+    targets: displayedReviewTargetsForSectionedStage(queueStage, before),
+  };
+}
+
 function sectionCompletedByAnchor(anchor: SectionCompletionAnchor, after: ReturnType<WorkspaceCommandDispatcher["getState"]>): boolean {
   const sectionTargetKeys = new Set(anchor.sectionTargetKeys);
   return anchor.targets.filter((target) => sectionTargetKeys.has(reviewDisplayTargetKey(target))).every((target) => isReviewDisplayTargetResolved(anchor.stage, target, after));
@@ -7837,6 +8472,7 @@ function sectionCompletedByAnchor(anchor: SectionCompletionAnchor, after: Return
 
 function keepSectionVisibleForCompletionFeedback(anchor: SectionCompletionAnchor): void {
   const anchorTarget = anchor.targets.find((target) => reviewDisplayTargetKey(target) === anchor.anchorKey);
+  dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: anchor.stage });
   if (anchorTarget) selectReviewDisplayTarget(anchorTarget);
 }
 
@@ -7844,29 +8480,138 @@ function acknowledgeBulkCandidateFeedback(
   before: ReturnType<WorkspaceCommandDispatcher["getState"]>,
   candidateIds: readonly string[],
   stage: WorkflowStage,
-  completionAnchor?: SectionCompletionAnchor | null
+  completionAnchor?: SectionCompletionAnchor | null,
+  extraTargets: readonly AcknowledgementTarget[] = []
 ): void {
   const after = dispatcher.getState();
-  const targets = changedCandidateAcknowledgements(before, after, candidateIds, stage);
+  const targets = [...changedCandidateAcknowledgements(before, after, candidateIds, stage), ...extraTargets];
   const completionTarget: AcknowledgementTarget | null =
     completionAnchor && sectionCompletedByAnchor(completionAnchor, after) ? { kind: "section", stage: completionAnchor.stage, sectionId: completionAnchor.sectionId } : null;
   if (completionTarget) {
     keepSectionVisibleForCompletionFeedback(completionAnchor!);
-    acknowledge([...targets, completionTarget], () => advanceAfterSectionCompletion(completionAnchor!));
+    acknowledge([...targets, completionTarget], () => advanceAfterSectionCompletion(completionAnchor!, true));
   } else {
     if (targets.length > 0) acknowledge(targets);
     if (completionAnchor) advanceAfterSectionCompletion(completionAnchor);
   }
 }
 
+function acknowledgeCandidateDecisionFeedback(
+  candidateId: string,
+  stage: WorkflowStage,
+  completionAnchor?: SectionCompletionAnchor | null
+): void {
+  const after = dispatcher.getState();
+  const candidateTarget: AcknowledgementTarget = { kind: "candidate", stage, candidateId };
+  const completionTarget: AcknowledgementTarget | null =
+    completionAnchor && sectionCompletedByAnchor(completionAnchor, after) ? { kind: "section", stage: completionAnchor.stage, sectionId: completionAnchor.sectionId } : null;
+  if (completionTarget) {
+    keepSectionVisibleForCompletionFeedback(completionAnchor!);
+    acknowledge([candidateTarget, completionTarget], () => advanceAfterSectionCompletion(completionAnchor!, true));
+    return;
+  }
+  acknowledge(candidateTarget);
+}
+
 /** Post-dispatch half: the nearest still-unresolved target after the anchor,
  *  in the order the reviewer was looking at when they acted. */
-function advanceAfterSectionCompletion(anchor: SectionCompletionAnchor | null): void {
+function advanceAfterSectionCompletion(anchor: SectionCompletionAnchor | null, advanceStageWhenExhausted = false): void {
   if (!anchor) return;
   const after = dispatcher.getState();
-  const target = advanceWithinDisplayedReviewTargets(anchor.stage, anchor.anchorKey, anchor.targets, after);
-  if (!target) return;
+  /*
+   * THE COMPLETION ADVANCE MAY NOT OVERRIDE A LIVE CURSOR (AG, 2026-08-08).
+   * See completionAdvanceIsPermitted's doc comment for the trace excerpt and
+   * the full mechanism.
+   *
+   * This is the ROOT-CAUSE gate, and it comes first deliberately: the
+   * category bound below decides WHERE this advance may land, but the real
+   * defect was that it ran at all. Its call site fires it whenever a
+   * completion anchor merely EXISTS -- which is on every decision -- so
+   * without this gate the completion path is entitled to overwrite a
+   * position the per-unit advance just chose correctly.
+   *
+   * Gating here rather than at the call site on purpose: there are two call
+   * sites (the bulk path and the per-candidate path), only one of which was
+   * observed misbehaving, and a rule enforced inside the function cannot be
+   * forgotten by a third caller added later.
+   */
+  const liveKey = currentReviewDisplayTargetKey(after.focus?.target.stage ?? null, after.focus?.target.itemId ?? null, after);
+  if (!completionAdvanceIsPermitted(liveKey, anchor.targets, (candidateTarget) => isReviewDisplayTargetResolved(anchor.stage, candidateTarget, after))) {
+    trace("advance.completion", "advanceAfterSectionCompletion", `DECLINED: cursor ${liveKey ?? "(none)"} is still unresolved -- leaving the live position alone`, {
+      sectionId: anchor.sectionId,
+      declined: true,
+      liveKey,
+      anchorKey: anchor.anchorKey,
+    });
+    return;
+  }
+  /*
+   * THE CATEGORY BOUNDARY IS A HARD STOP (AG, 2026-08-08, fixed from an
+   * instrumented run -- see advanceWithinCategoryScope's doc comment for
+   * the trace excerpt and the full mechanism).
+   *
+   * `anchor.anchorKey` is the LAST target of the zone scope captured before
+   * the dispatch, not the unit the reviewer acted on. Advancing from it
+   * scanned forward out of the category and skipped the unresolved units
+   * lying behind it. Scoping the scan to the anchor's own category while
+   * that category still holds work makes the documented "advance on
+   * completion" behavior conditional on completion actually having
+   * happened, which is what it always claimed to be.
+   *
+   * Deliberately NOT fixed by removing the unconditional call from
+   * acknowledgeBulkCandidateFeedback's else branch: that call also carries
+   * the legitimate "the scope you were working is done, move on" behavior,
+   * and deleting it would trade an over-advance for an under-advance. The
+   * boundary belongs on the advance itself, where every caller gets it.
+   */
+  const anchorSection = sectionedQueueModel(after, anchor.stage).sections.find((section) => String(section.id) === anchor.sectionId);
+  // ONE ZONE RHYTHM (2026-08-09): the boundary guard reads the same
+  // zone-ordered category sequence on both sectioned stages.
+  const anchorCategoryTargets = anchorSection
+    ? sectionGridSequence(anchorSection).flatMap((gridTargets) => orderedReviewTargetsForGrid(anchor.stage, gridTargets, after))
+    : [];
+  const target = anchorCategoryTargets.length > 0
+    ? advanceWithinCategoryScope(anchor.anchorKey, anchorCategoryTargets, anchor.targets, (candidateTarget) =>
+        isReviewDisplayTargetResolved(anchor.stage, candidateTarget, after)
+      )
+    : advanceWithinDisplayedReviewTargets(anchor.stage, anchor.anchorKey, anchor.targets, after);
+  // TEMPORARY INSTRUMENTATION (2026-08-08). This is the third and most
+  // suspect advance mechanism: it runs from the acknowledgement TIMER over
+  // a snapshot captured BEFORE the dispatch, and it is the only path that
+  // can dispatch a stage advance. `remaining` is computed live so the trace
+  // can state whether the category still held work at the moment it moved --
+  // the exact assertion Failure 4 claims is violated and that nothing
+  // currently checks.
+  const anchorCategoryRemaining = stageCategories(after, anchor.stage).find((c) => String(c.id) === anchor.sectionId)?.remaining ?? null;
+  if (!target) {
+    trace("advance.completion", "advanceAfterSectionCompletion", `exhausted from anchor ${anchor.anchorKey}; moveStage=${advanceStageWhenExhausted}`, {
+      sectionId: anchor.sectionId,
+      anchorKey: anchor.anchorKey,
+      snapshotSize: anchor.targets.length,
+      scopeSize: anchor.sectionTargetKeys.length,
+      remaining: anchorCategoryRemaining,
+      moveStage: advanceStageWhenExhausted,
+    });
+    if (advanceStageWhenExhausted) dispatcher.dispatchNavigation({ family: "navigation", type: "moveStage", direction: "next" });
+    return;
+  }
   const afterKey = currentReviewDisplayTargetKey(after.focus?.target.stage ?? null, after.focus?.target.itemId ?? null, after);
+  // `categoryChanged` is recorded so the contradiction detector can see this
+  // mechanism too. The first instrumented run flagged nothing here while
+  // seq 70 was the actual defect -- a detector blind to the mechanism it
+  // was built to catch. Fixed by emitting the landing's own category.
+  const landingSection = sectionedQueueModel(after, anchor.stage).sections.find((section) =>
+    sectionDisplayTargets(section).some((sectionTarget) => reviewDisplayTargetKey(sectionTarget) === reviewDisplayTargetKey(target))
+  );
+  trace("advance.completion", "advanceAfterSectionCompletion", `anchor ${anchor.anchorKey} -> ${reviewDisplayTargetKey(target)}${reviewDisplayTargetKey(target) !== afterKey ? " (overriding reconcile)" : " (agrees with reconcile)"}`, {
+    sectionId: anchor.sectionId,
+    landing: reviewDisplayTargetKey(target),
+    landingCategory: landingSection ? String(landingSection.id) : null,
+    categoryChanged: Boolean(landingSection && String(landingSection.id) !== anchor.sectionId),
+    reconcileLanded: afterKey,
+    overrode: reviewDisplayTargetKey(target) !== afterKey,
+    remaining: anchorCategoryRemaining,
+  });
   if (reviewDisplayTargetKey(target) !== afterKey) selectReviewDisplayTarget(target);
 }
 
@@ -7957,7 +8702,7 @@ interface QueueSectionAction {
    */
   verboseLabel?: string;
   /** How the keyboard reaches it (AG, 2026-08-03) -- a GROUP-SCOPE CHORD
-   *  (⌥K/⌥C/⌥R/⌥N/⌥U) when the action IS a decision, or null when it is a
+   *  (⌥K/⌥C/⌥R/⌥I/⌥U) when the action IS a decision, or null when it is a
    *  named conclusion that only a digit can address. Required, not
    *  optional: a new section action must say which population it joins,
    *  because that is the whole of its keyboard identity, and the two
@@ -8003,11 +8748,10 @@ function withRelationshipUnits(
   order: readonly string[],
   labels: Record<string, string>
 ): SectionedQueueSection[] {
-  const dismissals = state.reviewSession?.relationshipDismissals ?? {};
   const candidates = state.detection?.candidates ?? [];
   const active = structuralCardDisplayOrder(
     (state.structuralRelationships?.proposals ?? []).filter(
-      (proposal) => !dismissals[proposal.proposalId] && proposal.candidateIds.some((id) => candidates.some((c) => c.id === id))
+      (proposal) => proposal.candidateIds.some((id) => candidates.some((c) => c.id === id))
     )
   );
   if (active.length === 0) return sections;
@@ -8081,19 +8825,25 @@ function stageCategories(
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
   queueStage: "item-check" | "ambiguity-check"
 ): StageCategory[] {
-  const decisions = state.reviewSession?.candidateDecisions ?? {};
+  // ONE RESOLVED TEST (AG, 2026-08-09, prerequisite D1). This is THE PILL
+  // COUNT -- the number the reviewer reads to decide whether a category
+  // still holds work -- and it asked the raw decision map while navigation
+  // asked the domain predicate. After Not Quite carries a member, those two
+  // disagree, and the pill can advertise work that no keystroke can clear.
+  // See candidateIsResolvedInState.
   const { sections } = sectionedQueueModel(state, queueStage);
   const proposals = state.structuralRelationships?.proposals ?? [];
   return sections.map((section) => {
     const proposalIds = section.relationshipProposalIds ?? [];
     const unaddressedProposals = proposalIds.filter((proposalId) => {
+      if (state.reviewSession?.relationshipDismissals?.[proposalId]) return false;
       const proposal = proposals.find((p) => p.proposalId === proposalId);
-      return proposal ? !proposal.candidateIds.every((id) => Boolean(decisions[id])) : false;
+      return proposal ? !proposal.candidateIds.every((id) => candidateIsResolvedInState(id, state)) : false;
     }).length;
     return {
       id: section.id,
       label: section.label,
-      remaining: section.candidateIds.filter((id) => !decisions[id]).length + unaddressedProposals,
+      remaining: section.candidateIds.filter((id) => !candidateIsResolvedInState(id, state)).length + unaddressedProposals,
       candidateIds: section.candidateIds,
       relationshipProposalIds: proposalIds,
     };
@@ -8106,10 +8856,10 @@ function stageCategories(
  *  on a candidate beside it. That single fact is what makes the two review-
  *  unit types one category rather than two. */
 function currentStageCategoryId(state: ReturnType<WorkspaceCommandDispatcher["getState"]>, categories: readonly StageCategory[]): string | null {
-  const cardId = structuralCardFocusPending as string | null;
+  const cardId = activeStructuralProposalId();
   if (cardId) return categories.find((c) => c.relationshipProposalIds.includes(cardId))?.id ?? null;
   const itemId = state.focus?.target.itemId ?? null;
-  if (itemId === null) return null;
+  if (itemId === null) return categories.find((c) => c.id === lastRenderedSectionedCategoryId)?.id ?? null;
   return categories.find((c) => c.candidateIds.includes(itemId))?.id ?? null;
 }
 
@@ -8150,12 +8900,12 @@ function headingSectionActions(
    * undecided work" rule directly below, one step further: a scope of one
    * has work, but not work a BULK control is for.
    */
-  const remaining = (ids: readonly string[]): boolean => ids.some((id) => !state.reviewSession?.candidateDecisions[id]);
-  const bulkWorthwhile = (ids: readonly string[]): boolean => headingActionScope(ids, state).ids.length > 1;
+  const remaining = (ids: readonly string[]): boolean => ids.some((id) => !candidateIsResolvedInState(id, state));
+  const bulkWorthwhile = (ids: readonly string[]): boolean => headingActionScope(ids, state, policy.stage).ids.length > 1;
   const actions: QueueSectionAction[] = [];
   const acceptConfig = policy.acceptFor(section.id);
   if (acceptConfig && remaining(section.candidateIds) && bulkWorthwhile(section.candidateIds)) {
-    const scope = headingActionScope(section.candidateIds, state);
+    const scope = headingActionScope(section.candidateIds, state, policy.stage);
     actions.push({
       // "Accept All Remaining" names its scope in the label, exactly like
       // "Ignore all" does, so it takes the same selected form.
@@ -8180,7 +8930,7 @@ function headingSectionActions(
   // OWN scope -- the triage view has no tiers, so the tier path below never
   // reaches them.
   if (remaining(section.candidateIds) && bulkWorthwhile(section.candidateIds)) {
-    const scope = headingActionScope(section.candidateIds, state);
+    const scope = headingActionScope(section.candidateIds, state, policy.stage);
     for (const declared of policy.sectionActionsFor?.(section.id) ?? []) {
       actions.push({
         // REVIEW ZONE (2026-08-06): the count rides on the UNSELECTED form
@@ -8204,7 +8954,7 @@ function headingSectionActions(
     }
   }
   if (tier && remaining(tier.candidateIds) && bulkWorthwhile(tier.candidateIds)) {
-    const scope = headingActionScope(tier.candidateIds, state);
+    const scope = headingActionScope(tier.candidateIds, state, policy.stage);
     for (const declared of policy.tierActionsFor?.(section.id, tier.id) ?? []) {
       actions.push({
         // A conclusion-naming label ("These are people's names") has no
@@ -8319,12 +9069,49 @@ interface HeadingActionScope {
  *    never has to be built later -- it was never removed, it just stopped
  *    being the default gesture.
  */
-function headingActionScope(ids: readonly string[], state: ReturnType<WorkspaceCommandDispatcher["getState"]>): HeadingActionScope {
-  const undecided = ids.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+function headingActionScope(
+  ids: readonly string[],
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  stage: "item-check" | "ambiguity-check" = "item-check"
+): HeadingActionScope {
+  const undecided = ids.filter((id) => !candidateIsResolvedInState(id, state));
   const checked = undecided.filter((id) => selectedCandidateIds.has(id));
   if (checked.length > 0) return { ids: checked, selected: true, available: checked.length, bounded: false };
-  const zone = reviewZone(undecided, ZONE_CAPACITY);
-  return { ids: zone.ids, selected: false, available: zone.available, bounded: zone.bounded };
+  /*
+   * ONE BULK SCOPE RULE (AG, 2026-08-09). Triage previously scoped bulk
+   * actions with `reviewZone(undecided)` -- the COMPACTING "next 24
+   * unresolved" -- while Ambiguity scoped them to the conveyor's active
+   * zone. Same button, same label grammar, two different populations.
+   *
+   * THE SAFETY PROPERTIES ARE UNCHANGED, and are the reason this is a
+   * rewrite of HOW the block is chosen rather than of how big it is:
+   *   - the bound is still ZONE_CAPACITY;
+   *   - `ids` is still materialized, so the control still names exactly
+   *     what it will touch ("a button that cannot say 150 cannot do 150");
+   *   - `available` still reports the full undecided population, so a
+   *     label can still say "4 of 37";
+   *   - `bounded` is still true exactly while work is held back.
+   * What changes is that the block stops reshuffling under the reviewer
+   * after every individual decision.
+   */
+  const idSet = new Set(ids);
+  const targets = ids.map(candidateReviewTarget);
+  const partition = zonePartition(
+    targets,
+    (target) => isReviewDisplayTargetResolved(stage, target, state),
+    SECTIONED_QUEUE_RHYTHM,
+    ZONE_CAPACITY,
+    ZONE_HALF_CAPACITY
+  );
+  const activeUnresolved = partition.active
+    .filter((target) => idSet.has(target.id) && !candidateIsResolvedInState(target.id, state))
+    .map((target) => target.id);
+  return {
+    ids: activeUnresolved,
+    selected: false,
+    available: undecided.length,
+    bounded: partition.rest.some((target) => !isReviewDisplayTargetResolved(stage, target, state)),
+  };
 }
 
 /**
@@ -8351,7 +9138,8 @@ function syncZoneGridLayout(root: ParentNode | null): void {
   if (!root || typeof root.querySelectorAll !== "function") return;
   for (const grid of Array.from(root.querySelectorAll<HTMLElement>(".triage-grid"))) {
     const cells = Array.from(grid.children).filter((n): n is HTMLElement => (n as HTMLElement).classList?.contains("triage-row"));
-    const twoColumn = cells.length >= ZONE_TWO_COLUMN_THRESHOLD;
+    const isContinuation = grid.classList.contains("triage-grid-continuation");
+    const twoColumn = !isContinuation && cells.length >= ZONE_TWO_COLUMN_THRESHOLD;
     grid.classList.toggle("zone-two-col", twoColumn);
     // ceil(n/2) puts the extra item in the LEFT column (12+11, not 11+12),
     // so the columns fill top-down in reading order.
@@ -8418,7 +9206,7 @@ function appendHeadingSelectionControls(
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
   mixedCategory = false
 ): void {
-  const remaining = scopeIds.filter((id) => !state.reviewSession?.candidateDecisions[id]);
+  const remaining = scopeIds.filter((id) => !candidateIsResolvedInState(id, state));
   if (remaining.length === 0) return; // a finished scope has no work to select
   /* NO SELECT-ALL IN A MIXED CATEGORY (AG, 2026-08-06: "let's just lose
    * select all then for now").
@@ -8662,8 +9450,9 @@ function activeScopeSectionActions(state: ReturnType<WorkspaceCommandDispatcher[
   // A structural card holds the cursor: its active Review Zone KIND GROUP
   // is the scope -- the same object ⇧A already accepts and K/C/R/I already
   // decide, bounded to the proposal cells the reviewer can act on now.
-  const cardId = structuralCardFocusPending as string | null;
+  const cardId = activeStructuralProposalId();
   if (cardId) {
+    setCardCursor(cardId, "L8847");
     const active = (state.structuralRelationships?.proposals ?? []).filter((p) => !state.reviewSession?.relationshipDismissals?.[p.proposalId]);
     const current = active.find((p) => p.proposalId === cardId);
     if (!current) return [];
@@ -8811,7 +9600,7 @@ function handleScopeModeKey(event: KeyboardEvent): boolean {
 
   if (event.key === "Escape") {
     if (kind === "artifact-focus") {
-      structuralCardFocusPending = null;
+      setCardCursor(null, "L8995");
       setStatus("Left the cards — the row cursor takes over."); // RX-18
       render();
       return true;
@@ -8865,13 +9654,21 @@ function handleScopeModeKey(event: KeyboardEvent): boolean {
 }
 
 /**
- * TRIAGE QUEUE keys, active only in the triage view with a focused
- * candidate: Enter = accept the recommendation (the mode's core "single
- * action"); Enter with nothing to accept = expand (the interaction
- * language's "Enter = go deeper", which this deliberately overrides only
- * when there IS something to accept); Space = toggle details. Runs before
- * resolveKeyboardCommand so Enter never falls through to enterItem while
- * a recommendation is acceptable. Buttons/inputs keep their native keys.
+ * SECTIONED CELL GRID keys, active in Item Check's Triage view and the
+ * Ambiguity stage. These surfaces now share one cell-region grammar:
+ *
+ *   arrows = move between cells
+ *   Enter  = enter/open the focus panel, never process the cell
+ *   Escape = leave the focus panel (handled higher in the key pipeline)
+ *   Space  = select the cell
+ *   D      = hold/collapse details
+ *
+ * ENTER IS DEPTH ONLY (AG, 2026-08-08, explicit correction after live use):
+ * it must never accept a recommendation, run a preferred action, or mutate
+ * review data from a cell. Processing stays on explicit decision keys,
+ * numbered suggestion/preferred-action keys, and visible buttons. This
+ * handler therefore deliberately returns false for Enter so the one domain
+ * `enterItem` path opens the panel for candidate rows.
  */
 function handleTriageKey(event: KeyboardEvent): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
@@ -8881,8 +9678,8 @@ function handleTriageKey(event: KeyboardEvent): boolean {
   if (!target || !target.itemId) return false;
   // AMBIGUITY CATEGORY-FIRST (AG, 2026-08-02): the sectioned queue now
   // exists on two stages -- Item Check's Triage view and the Ambiguity
-  // stage (always sectioned) -- with the identical Enter-accepts /
-  // Space-details grammar on both.
+  // stage (always sectioned) -- with the identical cell-region grammar on
+  // both.
   const queueStage = sectionedQueueStage(target.stage);
   if (!queueStage) return false;
   // STRUCTURAL CARD CURSOR OWNS ITS OWN KEYS (2026-08-08, Numeric bug).
@@ -8902,48 +9699,8 @@ function handleTriageKey(event: KeyboardEvent): boolean {
   const tag = (event.target as HTMLElement | null)?.tagName?.toLowerCase() ?? "";
   if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || tag === "a") return false;
   if (event.key === "Enter") {
-    structuralCardFocusPending = null; // working the rows now
-    /*
-     * ENTER NO LONGER ACCEPTS (AG, 2026-08-06: "Enter means Accept. That's
-     * bad if we want to allow it to enter the focus panel ... So I think we
-     * can retire it").
-     *
-     * This branch used to run `acceptTriageRecommendation` whenever the item
-     * had a suggestion, and only fall through to `enterItem` when it did
-     * not -- so Enter's meaning depended on data the reviewer could not see
-     * from the cell. On a row with a suggestion it decided; on a row without
-     * one it navigated. A key that sometimes commits a decision and
-     * sometimes moves the cursor is not learnable, and it is the wrong half
-     * to keep now that Enter/Escape are the level grammar for both cell
-     * types.
-     *
-     * NOTHING IS LOST. What it ran was `suggestions[0]` -- precisely what
-     * digit ① is bound to, on the same item, in the same panel. So this
-     * retires a duplicate accelerator, not a capability. (Worth recording
-     * that it was NOT a duplicate of `Keep as-is`, as it first appeared:
-     * suggestion[0] is the identity link on a shortened name and the term
-     * claim on a common word, and only coincidentally a Keep.)
-     *
-     * Falling through to the resolver's `enterItem` keeps ONE implementation
-     * of "go deeper" -- the same reason the note below already gives for not
-     * handling Enter here.
-     */
-    // ENTER ENTERS (AG, 2026-08-06): with arrows demoted to pure movement,
-    // Enter is the key that goes into the focus panel. Falling THROUGH
-    // (return false) rather than handling it here is deliberate -- the
-    // global resolver's `enterItem` already dispatches the domain command
-    // and sets detailPanelFocusPending, so routing Enter to it keeps ONE
-    // implementation of "go deeper" instead of a second copy on this
-    // surface. Esc is the symmetric exit, unchanged.
-    //
-    // ACCEPT STILL WINS when there is something to accept: that is the
-    // sectioned queue's core single action and the reason Enter was
-    // overloaded here in the first place ("Enter = go deeper, overridden
-    // only when there IS something to accept"). Unchanged by this pass.
-    const primary = recommendationForCandidate(target.itemId, state)?.suggestions[0];
-    if (!primary) return false;
-    acceptTriageRecommendation(target.itemId, queueStage);
-    return true;
+    setCardCursor(null, "L9094"); // working the rows now
+    return false;
   }
   // SPACE SELECTS, D DISCLOSES (AG, 2026-08-06): "space bar should select
   // the checkbox, not scroll down the page. this should be a global rule in
@@ -8968,12 +9725,12 @@ function handleTriageKey(event: KeyboardEvent): boolean {
   // when the detail toggle was retired. Nothing else binds it.
   if (event.key === " ") {
     event.preventDefault(); // the whole point: never scroll the page from a cell
-    structuralCardFocusPending = null; // working the rows now
+    setCardCursor(null, "L9120"); // working the rows now
     toggleCandidateSelection(target.itemId);
     return true;
   }
   if (event.key.toLowerCase() === "d") {
-    structuralCardFocusPending = null;
+    setCardCursor(null, "L9125");
     toggleTriageExpansion(target.itemId);
     return true;
   }
@@ -9016,15 +9773,42 @@ function sectionedQueueStage(stage: WorkflowStage | undefined): "item-check" | "
 function activeSectionedQueueStage(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): "item-check" | "ambiguity-check" | null {
   const focused = sectionedQueueStage(state.focus?.target.stage);
   if (focused) return focused;
-  // PROPOSAL-ONLY SHORTCUTS (AG, 2026-08-08 live report: "arrows were not
-  // working" and "so are Opt C and Opt R on Numeric"). A proposal/card
-  // cursor is UI state: the domain item cursor can be parked on a stale row
-  // while the rendered stage is the one the reviewer is actually standing
-  // in. Shortcuts that act on visible section scope must therefore have one
-  // UI-layer fallback: the stage last used to render the workspace. This
-  // stays out of FocusNavigator on purpose; the domain still knows nothing
-  // about category pills or proposal-card cursors.
-  return structuralCardFocusPending !== null ? sectionedQueueStage(lastRenderedActiveStage ?? undefined) : null;
+  // PROPOSAL-ONLY SHORTCUTS (AG, 2026-08-08 live reports: "arrows were not
+  // working", "so are Opt C and Opt R on Numeric", then "Opt R is broken
+  // here ... So is category nav with Opt arrows"). A proposal/card cursor
+  // and the side focus pane are UI state: the domain item cursor can be
+  // parked on a stale row while the rendered stage is the one the reviewer
+  // is actually standing in. Shortcuts that act on visible section scope
+  // therefore use the last rendered sectioned stage as their UI-layer
+  // fallback. This stays out of FocusNavigator on purpose; the domain still
+  // knows nothing about category pills, proposal-card cursors, or panes.
+  return sectionedQueueStage(lastRenderedActiveStage ?? undefined);
+}
+
+function activeStructuralProposalId(): string | null {
+  if (structuralCardFocusPending) return structuralCardFocusPending;
+  // TEMPORARY INSTRUMENTATION (2026-08-08): the two branches below resolve
+  // review position by READING THE DOM. The audit named this the clearest
+  // instance of browser focus deciding review ownership; every trace entry
+  // emitted here is one real occurrence of it in a live session.
+  const active = document.activeElement as HTMLElement | null;
+  const fromActive = active?.closest?.("[data-proposal-id]")?.getAttribute("data-proposal-id") ?? null;
+  if (fromActive) {
+    trace("cursor.domRead", "activeStructuralProposalId", `resolved proposal ${fromActive} from document.activeElement (state cursor was empty)`, {
+      proposalId: fromActive,
+      source: "activeElement",
+    });
+    return fromActive;
+  }
+  const fromQuery =
+    document.querySelector<HTMLElement>(".triage-row-focused[data-proposal-id], .relationship-card[data-proposal-id]:focus")?.getAttribute("data-proposal-id") ?? null;
+  if (fromQuery) {
+    trace("cursor.domRead", "activeStructuralProposalId", `resolved proposal ${fromQuery} from a DOM query (state cursor was empty)`, {
+      proposalId: fromQuery,
+      source: "querySelector",
+    });
+  }
+  return fromQuery;
 }
 
 /** "Jump to search result": moves focus straight to the FIRST candidate in
@@ -9090,8 +9874,11 @@ function jumpToCategory(category: string): void {
  * -- per-candidate decisions, indistinguishable from deciding each member
  * by hand, so rebuild/audit/Item Check semantics are untouched and every
  * member remains fully re-decidable in Item Review afterward. "Unrelated"
- * dissolves the proposal (review.dismissRelationship -- durable, audited)
- * and nothing else: not "not PII", not "safe", not "ignore permanently".
+ * marks the proposal unrelated (review.dismissRelationship -- durable,
+ * audited) and nothing else: not "not PII", not "safe", not "ignore
+ * permanently". The proposal stays visible as a grey resolved state with a
+ * Recombine affordance, because hiding it made accidental Unrelated choices
+ * impossible to inspect or reverse.
  *
  * An ADDRESSED proposal (every member decided) stays visible with the
  * circled check -- the relationship was useful; its outcome shows.
@@ -9121,7 +9908,16 @@ function toggleRelationshipMemberChecked(proposalId: string, candidateId: string
  *  events, same decisions.json, same undo posture -- by construction, not
  *  by promise. */
 function applyRelationshipBulk(proposalId: string, candidateIds: string[], decision: CandidateDecisionKind, replacement?: string): void {
+  // CARD-ANCHORED ADVANCE (AG, 2026-08-08): relationship buttons can be
+  // clicked while the focus panel is still showing the previous candidate
+  // (for example MAY). The decision target is nevertheless the card whose
+  // button was pressed (for example ITS). Stamp that card before the
+  // visible-advance snapshot so completing proposal 2 of 4 advances to
+  // proposal 3 in the same category, not to whatever the candidate-panel
+  // cursor would have scanned to globally.
+  setCardCursor(proposalId, "L9292");
   const before = dispatcher.getState();
+  const completionAnchor = snapshotCurrentScopeCompletionAnchor("ambiguity-check", before);
   const result = dispatchReviewWithVisibleAdvance({
     family: "review",
     type: "bulkApplyDecision",
@@ -9130,12 +9926,61 @@ function applyRelationshipBulk(proposalId: string, candidateIds: string[], decis
     ...(replacement !== undefined ? { replacement } : {}),
   });
   if (result.ok) {
-    acknowledgeBulkCandidateFeedback(before, candidateIds, "ambiguity-check");
+    acknowledgeBulkCandidateFeedback(before, candidateIds, "ambiguity-check", completionAnchor, [{ kind: "group", groupId: proposalId }]);
     setStatus(`${decisionDisplayLabel(decision)} applied to ${candidateIds.length} related candidate(s).`); // RX-18 + RX-22
   } else {
     notifyToast(`Action failed: ${result.reason}`); // RX-09: recoverable
     acknowledge({ kind: "group", groupId: proposalId });
   }
+  render();
+}
+
+function restoreRelationshipProposal(proposal: RelationshipProposal, resetCandidateIds: string[]): void {
+  const result = dispatchReviewWithVisibleAdvance({
+    family: "review",
+    type: "restoreRelationship",
+    proposalId: proposal.proposalId,
+    relationshipKind: proposal.kind,
+    candidateIds: proposal.candidateIds,
+    ...(resetCandidateIds.length > 0 ? { resetCandidateIds } : {}),
+  });
+  if (!result.ok) {
+    notifyToast(`Could not recombine relationship: ${result.reason}`);
+    render();
+    return;
+  }
+  pendingRelationshipRestoreId = null;
+  setCardCursor(proposal.proposalId, "L9327");
+  acknowledge({ kind: "group", groupId: proposal.proposalId });
+  setStatus(resetCandidateIds.length > 0 ? "Relationship recombined; member decisions were cleared for review." : "Relationship recombined.");
+  render();
+}
+
+function requestRelationshipRestore(proposal: RelationshipProposal, resetCandidateIds: string[]): void {
+  if (resetCandidateIds.length === 0) {
+    restoreRelationshipProposal(proposal, []);
+    return;
+  }
+  pendingRelationshipRestoreId = proposal.proposalId;
+  setStatus("Recombining will cancel any changes you've made to these members. Confirm Yes or No.");
+  render();
+}
+
+function dismissRelationshipProposal(proposal: RelationshipProposal): void {
+  const result = dispatchReviewWithVisibleAdvance({
+    family: "review",
+    type: "dismissRelationship",
+    proposalId: proposal.proposalId,
+    relationshipKind: proposal.kind,
+    candidateIds: proposal.candidateIds,
+  });
+  // RX-18: a relationship dismissal is a result worth narrating -- and
+  // worth saying precisely what it does NOT mean.
+  if (result.ok) {
+    setCardCursor(proposal.proposalId, "L9354");
+    acknowledge({ kind: "group", groupId: proposal.proposalId });
+    setStatus("Relationship marked unrelated -- its candidates continue through review individually.");
+  } else notifyToast(`Could not dismiss the relationship: ${result.reason}`); // RX-09: recoverable
   render();
 }
 
@@ -9224,19 +10069,25 @@ function acceptAllInRelationshipKind(
  * selection, so audit events and decisions are identical by construction.
  * Returns false (letting the ordinary candidate paths run) whenever no
  * card cursor is set, the stage has no cards, or the key isn't a decision
- * letter. "I" is a deliberate refusal: a proposal card's vocabulary is
- * Keep / Change / Redact / Unrelated -- silently mapping Ignore to one of
- * those would be a substitution, not a synonym.
+ * letter. "U" is deliberately the relationship-only Unrelated action; a
+ * source search found no existing U binding in this app. "I" is a deliberate
+ * refusal: a proposal card's vocabulary is Keep / Change / Redact /
+ * Unrelated -- silently mapping Ignore to one of those would be a
+ * substitution, not a synonym.
  */
 function handleCardDecisionKey(key: string): boolean {
   const letter = key.toLowerCase();
-  if (letter !== "k" && letter !== "c" && letter !== "r" && letter !== "i") return false;
+  if (letter !== "k" && letter !== "c" && letter !== "r" && letter !== "u" && letter !== "i") return false;
   const proposalId = structuralCardFocusPending as string | null;
   if (!proposalId) return false;
   const state = dispatcher.getState();
   if (!sectionedQueueStage(state.focus?.target.stage)) return false;
   const proposal = (state.structuralRelationships?.proposals ?? []).find((p) => p.proposalId === proposalId);
   if (!proposal) return false;
+  if (state.reviewSession?.relationshipDismissals?.[proposalId]) {
+    refuse("This relationship is marked unrelated. Use Recombine to restore it first.");
+    return true;
+  }
   const unchecked = relationshipUncheckedIds.get(proposalId);
   const selectedIds = proposal.candidateIds.filter((id) => !(unchecked?.has(id) ?? false));
   if (selectedIds.length === 0) {
@@ -9255,6 +10106,10 @@ function handleCardDecisionKey(key: string): boolean {
     openInlineEditor({ scope: "relationship", proposalId, candidateIds: selectedIds, action: "Redact" });
     return true;
   }
+  if (letter === "u") {
+    dismissRelationshipProposal(proposal);
+    return true;
+  }
   refuse("This proposal takes Keep, Change, Redact, or Unrelated — Ignore applies to individual items.");
   return true;
 }
@@ -9262,6 +10117,7 @@ function handleCardDecisionKey(key: string): boolean {
 function selectedRelationshipProposal(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): RelationshipProposal | null {
   const proposalId = structuralCardFocusPending as string | null;
   if (!proposalId) return null;
+  if (state.reviewSession?.relationshipDismissals?.[proposalId]) return null;
   return (state.structuralRelationships?.proposals ?? []).find((p) => p.proposalId === proposalId) ?? null;
 }
 
@@ -9271,7 +10127,7 @@ function selectedRelationshipMemberIds(proposal: RelationshipProposal): string[]
 }
 
 function runRelationshipPreferredAction(proposal: RelationshipProposal, op: PreferredActionOp, candidateIds: string[]): void {
-  structuralCardFocusPending = proposal.proposalId; // survive the re-render/editor open
+  setCardCursor(proposal.proposalId, "L9504"); // survive the re-render/editor open
   if (op.kind === "bulk-change") {
     applyRelationshipBulk(proposal.proposalId, candidateIds, "Rename", op.replacement);
   } else {
@@ -9338,7 +10194,7 @@ function renderStructuralRelationships(
   const proposals = state.structuralRelationships?.proposals ?? [];
   if (proposals.length === 0) return;
   const dismissals = state.reviewSession?.relationshipDismissals ?? {};
-  const active = proposals.filter((p) => !dismissals[p.proposalId] && (only === null || p.proposalId === only));
+  const active = proposals.filter((p) => (only === null ? !dismissals[p.proposalId] : p.proposalId === only));
   if (active.length === 0) return;
   const decisions = state.reviewSession?.candidateDecisions ?? {};
 
@@ -9389,7 +10245,7 @@ function renderStructuralRelationships(
       // reviewer must not find the two disagreeing about how many an accept
       // reaches. (This site prints no count today; passing it keeps the two
       // callers honest if that changes.)
-      const undecidedOfKind = ofKind.filter((p) => !p.candidateIds.every((id) => Boolean(state.reviewSession?.candidateDecisions[id])));
+      const undecidedOfKind = ofKind.filter((p) => !p.candidateIds.every((id) => candidateIsResolvedInState(id, state)));
       for (const { action, digit } of sectionActionDigitAssignments(relationshipKindActions(kind, ofKind, undecidedOfKind), (a) => a.chord)) {
         // Same rule as the row headings: chords always advertised, digits
         // gated to the active scope, inactive chords dimmed.
@@ -9451,7 +10307,8 @@ function renderStructuralRelationships(
       .map((id) => state.detection?.candidates.find((c) => c.id === id))
       .filter((candidate): candidate is Candidate => Boolean(candidate));
     if (members.length === 0) continue;
-    const addressed = proposal.candidateIds.every((id) => Boolean(decisions[id]));
+    const dismissed = Boolean(dismissals[proposal.proposalId]);
+    const addressed = dismissed || proposal.candidateIds.every((id) => Boolean(decisions[id]));
     const unchecked = relationshipUncheckedIds.get(proposal.proposalId);
     const selectedIds = proposal.candidateIds.filter((id) => !(unchecked?.has(id) ?? false));
     const allSelected = selectedIds.length === proposal.candidateIds.length;
@@ -9464,6 +10321,7 @@ function renderStructuralRelationships(
     const disabled = selectedIds.length === 0;
 
     const card = el("div", { class: "item-row relationship-card", "data-proposal-id": proposal.proposalId });
+    if (dismissed) card.classList.add("relationship-card-dismissed");
     // PENDING-DECISION PREVIEW: an open Change/Redact editor previews its
     // target scheme on the whole card, same paradigm as everywhere.
     const renameEditing = isEditingRelationship(proposal.proposalId, "Rename");
@@ -9480,9 +10338,9 @@ function renderStructuralRelationships(
     // exactly as on every other surface.
     const cardSummary = decisionSummary(proposal.candidateIds.map((id) => decisions[id]?.decision));
     if (addressed && !cardPending) card.classList.add("relationship-card-addressed");
-    if (!cardPending && cardSummary.dominant) card.classList.add(decisionClass(cardSummary.dominant), "decision-tinted");
+    if (!dismissed && !cardPending && cardSummary.dominant) card.classList.add(decisionClass(cardSummary.dominant), "decision-tinted");
     if (isAcknowledged({ kind: "group", groupId: proposal.proposalId })) card.classList.add("item-row-acknowledged", "row-acknowledged-pulse");
-    card.title = decisionSummaryDescription(cardSummary);
+    card.title = dismissed ? "Marked unrelated" : decisionSummaryDescription(cardSummary);
 
     // ACTION CLUSTER (AG, 2026-08-03): the header composes the reusable
     // content-vs-controls layout (see index.html's .action-cluster block)
@@ -9492,7 +10350,7 @@ function renderStructuralRelationships(
     const headerRow = el("div", { class: "relationship-card-header action-cluster-host" });
     // KIND GROUPS (AG, 2026-07-30): the kind label lives in the group
     // heading now, not on every cell.
-    if (addressed) headerRow.appendChild(el("span", { class: "reviewed-check", title: "Every related candidate has a decision" }, "✓"));
+    if (addressed) headerRow.appendChild(el("span", { class: "reviewed-check", title: dismissed ? "Marked unrelated" : "Every related candidate has a decision" }, "✓"));
     appendDecisionPills(headerRow, cardSummary);
 
     // PREFERRED ACTIONS (2026-07-30): optional accelerators on the SAME
@@ -9503,7 +10361,7 @@ function renderStructuralRelationships(
     // the existing Redact editor), so audit events, decisions.json, undo,
     // and confirmations are identical by construction. A proposal with no
     // preferred actions renders exactly as before.
-    const preferred = preferredActionsForRelationship(proposal, members);
+    const preferred = dismissed ? [] : preferredActionsForRelationship(proposal, members);
     const runPreferredAction = (op: PreferredActionOp): void => {
       // "The cursor appears in the blank": the existing editor's own
       // render-tail focus does exactly this -- typing + Enter is then
@@ -9526,13 +10384,10 @@ function renderStructuralRelationships(
 
     // Card-LOCAL keys, bound on the card element itself (stopPropagation
     // keeps them out of the document handler). Digits 1-9 pick a
-    // preferred action (shipped behavior, unchanged). UNIFIED WORKBENCH
-    // (2026-07-30): every card is now also a stop in the one review
-    // queue -- arrows walk card-to-card (and onward into the triage rows
-    // when the workbench is on screen), Enter accepts the first
-    // preferred action -- the same Enter-accepts / arrows-move grammar
-    // as the triage rows, so a structural proposal reads as "another
-    // review decision," not a different subsystem.
+    // preferred action (shipped behavior, unchanged). UNIFIED CELL
+    // GRAMMAR (AG, 2026-08-08): Enter is never an action key on a cell or
+    // card surface; it only changes depth. A preferred action requires its
+    // printed digit or button.
     card.setAttribute("tabindex", "0");
     card.addEventListener("keydown", (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -9556,11 +10411,12 @@ function renderStructuralRelationships(
         moveStructuralCardFocus(card, -1);
         return;
       }
-      if (event.key === "Enter" && focusTag !== "button" && focusTag !== "a" && preferred.length > 0 && !disabled) {
+      if (event.key === "Enter" && focusTag !== "button" && focusTag !== "a") {
         event.preventDefault();
         event.stopPropagation();
-        structuralCardFocusPending = proposal.proposalId; // survive the re-render
-        runPreferredAction(preferred[0]!.op);
+        setCardCursor(proposal.proposalId, "L9791");
+        focusPanelEntered = true;
+        render();
         return;
       }
       const match = /^Digit([1-9])$/.exec(event.code ?? "");
@@ -9569,7 +10425,7 @@ function renderStructuralRelationships(
       if (!action || disabled) return;
       event.preventDefault();
       event.stopPropagation();
-      structuralCardFocusPending = proposal.proposalId; // survive the re-render
+      setCardCursor(proposal.proposalId, "L9802"); // survive the re-render
       runPreferredAction(action.op);
     });
 
@@ -9577,31 +10433,32 @@ function renderStructuralRelationships(
     // reviewer already knows -- so this is the side that yields shape,
     // reflowing 4-across -> 3+1 -> 2x2 as the card narrows.
     const actions = el("div", { class: "group-row-actions action-cluster" });
-    actions.appendChild(button(decisionBulkLabel("Keep", bulkScope), () => applyRelationshipBulk(proposal.proposalId, selectedIds, "Keep"), disabled));
-    const changeBtn = button(decisionBulkLabel("Rename", bulkScope), () => openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Rename" }), disabled);
-    changeBtn.classList.toggle("action-editing", renameEditing);
-    if (renameEditing) changeBtn.classList.add("group-action-active", decisionClass("Rename"));
-    actions.appendChild(changeBtn);
-    const redactBtn = button(decisionBulkLabel("Redact", bulkScope), () => openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Redact" }), disabled);
-    redactBtn.classList.toggle("action-editing", redactEditing);
-    if (redactEditing) redactBtn.classList.add("group-action-active", decisionClass("Redact"));
-    actions.appendChild(redactBtn);
-    actions.appendChild(
-      button("Unrelated", () => {
-        const result = dispatchReviewWithVisibleAdvance({
-          family: "review",
-          type: "dismissRelationship",
-          proposalId: proposal.proposalId,
-          relationshipKind: proposal.kind,
-          candidateIds: proposal.candidateIds,
-        });
-        // RX-18: a dissolution is a result worth narrating -- and worth
-        // saying precisely what it does NOT mean.
-        if (result.ok) setStatus("Relationship dissolved -- its candidates continue through review individually.");
-        else notifyToast(`Could not dismiss the relationship: ${result.reason}`); // RX-09: recoverable
-        render();
-      })
-    );
+    if (dismissed) {
+      const resetIds = proposal.candidateIds.filter((id) => Boolean(decisions[id]));
+      actions.appendChild(el("span", { class: "relationship-dismissed-label" }, "Marked unrelated"));
+      if (pendingRelationshipRestoreId === proposal.proposalId) {
+        actions.appendChild(el("span", { class: "reset-confirmation-copy" }, "Recombining will cancel any changes you've made to these members."));
+        actions.appendChild(button("Yes, Recombine", () => restoreRelationshipProposal(proposal, resetIds)));
+        actions.appendChild(button("No, Keep unrelated", () => {
+          pendingRelationshipRestoreId = null;
+          setStatus("Recombine cancelled.");
+          render();
+        }));
+      } else {
+        actions.appendChild(button("Recombine", () => requestRelationshipRestore(proposal, resetIds)));
+      }
+    } else {
+      actions.appendChild(keycapButton("K", decisionBulkLabel("Keep", bulkScope), () => applyRelationshipBulk(proposal.proposalId, selectedIds, "Keep"), disabled));
+      const changeBtn = keycapButton("C", decisionBulkLabel("Rename", bulkScope), () => openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Rename" }), disabled);
+      changeBtn.classList.toggle("action-editing", renameEditing);
+      if (renameEditing) changeBtn.classList.add("group-action-active", decisionClass("Rename"));
+      actions.appendChild(changeBtn);
+      const redactBtn = keycapButton("R", decisionBulkLabel("Redact", bulkScope), () => openInlineEditor({ scope: "relationship", proposalId: proposal.proposalId, candidateIds: selectedIds, action: "Redact" }), disabled);
+      redactBtn.classList.toggle("action-editing", redactEditing);
+      if (redactEditing) redactBtn.classList.add("group-action-active", decisionClass("Redact"));
+      actions.appendChild(redactBtn);
+      actions.appendChild(keycapButton("U", "Unrelated", () => dismissRelationshipProposal(proposal)));
+    }
     headerRow.appendChild(actions);
     card.appendChild(headerRow);
 
@@ -9631,7 +10488,7 @@ function renderStructuralRelationships(
     const showDetails = !collapsedWhenAddressed && (selected || renameEditing || redactEditing);
     card.addEventListener("focus", () => {
       if ((structuralCardFocusPending as string | null) !== proposal.proposalId) {
-        structuralCardFocusPending = proposal.proposalId;
+        setCardCursor(proposal.proposalId, "L9865");
         render();
       }
     });
@@ -9674,7 +10531,444 @@ function renderStructuralRelationships(
   container.appendChild(section);
 }
 
+/* ═════════════════════════ QUICK APPROVAL ═════════════════════════
+ *
+ * A second operating mode inside Item Check, for the population that does not
+ * need individual inspection but does need a human. Design record:
+ * `src/engines/review/proposedGroups.ts` (what a cohort is and why these two)
+ * and `src/ui/quickApproval.ts` (the scan rhythm and why exclusion decides
+ * nothing). This file owns rendering and raw key events; every rule lives in
+ * one of those two pure modules.
+ *
+ * ─────────────────── SEPARATE FROM THE ZONE, DELIBERATELY ───────────────────
+ *
+ * The Zone rework is in flight (reviewZone.ts's `zonePartition` is prepared
+ * and not yet switched on) and this feature is built to be indifferent to how
+ * it lands. Quick Approval reads no Zone state, calls no Zone function, and
+ * shares no cursor with the sectioned queue: it takes the unresolved Item
+ * Check pool, freezes a cohort out of it, and hands `bulkApplyDecision` an
+ * explicit id list. `headingActionScope` is untouched.
+ *
+ * THE ONE REMAINING INTEGRATION POINT, reported rather than built: when the
+ * Zone work lands, someone should decide whether a group offered here should
+ * ALSO be reachable as a section in the sectioned queue. That is a product
+ * decision about where the mode is entered from, not an architectural
+ * dependency, and it is deliberately not taken while the queue is moving.
+ */
+
+let quickApprovalSession: QuickApprovalSession | null = null;
+
+/**
+ * The structural-defect flag for one candidate, from the diagnostic that
+ * already exists (truncationDiagnostics) rather than a new heuristic.
+ *
+ * True when any occurrence's span is one DocScrub produced -- a severed word,
+ * a block-boundary cut, or FALLBACK_PERSON_RE's four-token ceiling. Source
+ * literals (`Appt Nbr`, `Comm Gen`) are legitimate content and do not flag.
+ *
+ * The flag never affects group membership (proposedGroups.ts explains why);
+ * it renders as a marker on the row so a defect stays visible instead of
+ * being hidden behind a correct semantic explanation, and so the reviewer can
+ * exclude it with the one key they are already pressing.
+ */
+let structuralDefectMemo: { detection: unknown; ids: Set<string> } | null = null;
+
+function structurallyDefectiveIds(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): Set<string> {
+  const detection = state.detection;
+  if (!detection) return new Set<string>();
+  /* MEMOIZED ON THE DETECTION OBJECT'S IDENTITY, not on a computed key.
+   * This walks every occurrence in the document (5,843 on Andrew's live
+   * document) and it is called from a RENDER path, which runs on every
+   * keystroke in the search box. Detection output is immutable for the life
+   * of a loaded document and is replaced wholesale on reload, so identity is
+   * exactly the right invalidation signal -- a new document is a new object,
+   * and a decision does not touch detection at all. Deliberately NOT a
+   * module-level cache keyed by document id: that would survive a reload of
+   * the same file and quietly serve stale spans. */
+  if (structuralDefectMemo && structuralDefectMemo.detection === detection) return structuralDefectMemo.ids;
+  const flagged = new Set<string>();
+  for (const occurrence of detection.occurrences) {
+    if (flagged.has(occurrence.candidateId)) continue;
+    const probe = probeFromContext(occurrence.context, occurrence.text);
+    if (probe && classifyTruncation(probe).isDefect) flagged.add(occurrence.candidateId);
+  }
+  structuralDefectMemo = { detection, ids: flagged };
+  return flagged;
+}
+
+/**
+ * The cohorts currently on offer.
+ *
+ * Built from the UNRESOLVED Item Check pool, in the pool's own order, so the
+ * counts a group header shows are counts of work that actually remains --
+ * the same "callers pass already-filtered ids" contract reviewZone states.
+ * Recomputed on every consult; nothing about a group is cached or persisted.
+ */
+function availableProposedGroups(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): ProposedGroup[] {
+  const candidates = state.detection?.candidates;
+  if (!candidates) return [];
+  const profiles = workspace.getInterpretationProfiles();
+  const defective = structurallyDefectiveIds(state);
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+  const facts: ProposedGroupFacts[] = [];
+  for (const candidateId of itemCheckPoolIds(state)) {
+    if (candidateIsResolvedInState(candidateId, state)) continue;
+    const candidate = byId.get(candidateId);
+    if (!candidate) continue;
+    facts.push({
+      candidateId,
+      value: candidate.displayValue,
+      detectedType: candidate.detectedType,
+      occurrenceCount: candidate.occurrenceIds.length,
+      profile: profiles.get(candidateId),
+      structurallyDefective: defective.has(candidateId),
+    });
+  }
+  return buildProposedGroups(facts);
+}
+
+function enterQuickApproval(group: ProposedGroup): void {
+  quickApprovalSession = beginQuickApproval(group);
+  const counts = quickApprovalCounts(quickApprovalSession);
+  setStatus(`${group.descriptor.label}: ${counts.proposed} proposed. Space marks an exception; Option+Enter when finished.`);
+  render();
+}
+
+/** Leaves the mode applying nothing. No decision, no state, nothing to warn
+ *  about -- see quickApproval.ts's `backOut`. */
+function exitQuickApproval(message?: string): void {
+  quickApprovalSession = null;
+  if (message) setStatus(message);
+  render();
+}
+
+/**
+ * THE GROUP DECISION -- one `bulkApplyDecision` over the INCLUDED ids only.
+ *
+ * Reuses the existing bulk machinery rather than adding a second
+ * implementation of K/C/R/I: the same command, the same reducer path, the
+ * same per-candidate events plus one summary event, the same audit shape as
+ * every other bulk action in the app.
+ *
+ * EXCLUDED CANDIDATES ARE NOT IN `candidateIds` and therefore receive no
+ * command, no decision, and no mention. They return to ordinary review
+ * untouched, which is the whole point of the exclusion being a scan artifact
+ * rather than a judgement.
+ *
+ * The `scope` string is the audit's record of what this was: the group, and
+ * the proposed/included/excluded split. `bulkApplyDecision.candidateIds`
+ * already names the included set exactly; the counts here are what
+ * distinguishes "a bulk action over a reviewer-assembled selection" from
+ * "a bulk action over an engine-proposed cohort a reviewer scanned".
+ */
+function applyQuickApprovalGroupDecision(action: CandidateDecisionKind): void {
+  const session = quickApprovalSession;
+  if (!session) return;
+  const ids = quickApprovalIncludedIds(session);
+  const counts = quickApprovalCounts(session);
+  const label = PROPOSED_GROUPS[session.groupId].label;
+  if (ids.length === 0) {
+    refuse(`Nothing left in ${label} -- every proposed item was excluded.`);
+    return;
+  }
+  const before = dispatcher.getState();
+  const result = dispatchReviewWithVisibleAdvance({
+    family: "review",
+    type: "bulkApplyDecision",
+    candidateIds: ids,
+    decision: action,
+    scope: `item-check/quick-approval:${session.groupId}:proposed=${counts.proposed},included=${counts.included},excluded=${counts.excluded}`,
+  });
+  if (!result.ok) {
+    notifyToast(`Group action failed: ${result.reason}`); // RX-09: recoverable
+    render();
+    return;
+  }
+  acknowledgeBulkCandidateFeedback(before, ids, "item-check");
+  quickApprovalSession = null;
+  const excludedNote = counts.excluded > 0 ? ` ${counts.excluded} excluded item(s) remain in review.` : "";
+  setStatus(`${decisionDisplayLabel(action)} applied to ${ids.length} ${label} item(s).${excludedNote}`); // RX-18 + RX-22
+  render();
+}
+
+/**
+ * The entry point: one row of offers above the Item Check queue.
+ *
+ * Deliberately an OFFER and not a redirect. Quick Approval never intercepts a
+ * reviewer who came to work the queue; it says what it noticed and waits. If
+ * the engine forms no group -- which is the common case on a document with no
+ * coherent cohorts -- nothing is drawn at all and Item Check looks exactly as
+ * it does today.
+ */
+function renderQuickApprovalOffers(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): void {
+  const groups = availableProposedGroups(state);
+  if (groups.length === 0) return;
+  const bar = el("div", { class: "quick-approval-offers" });
+  bar.appendChild(el("span", { class: "quick-approval-offers-lead" }, "Review together:"));
+  for (const group of groups) {
+    const offer = button(`${group.descriptor.label} (${group.members.length})`, () => enterQuickApproval(group));
+    offer.className = "quick-approval-offer";
+    offer.title = group.descriptor.claim;
+    bar.appendChild(offer);
+  }
+  container.appendChild(bar);
+}
+
+/**
+ * LIST MODE. The list IS the workspace.
+ *
+ * This surface exists because the ordinary candidate panel is the wrong tool
+ * for the job: it is built to explain ONE candidate thoroughly, and repeating
+ * it 65 times produces 65 miniature review forms rather than something a
+ * person can scan. So each row carries the value, the occurrence count, and a
+ * structural-defect marker where one applies -- and nothing else. No Sources,
+ * no All Occurrences, no Expert View, no per-row K/C/R/I. The supporting
+ * readings are available on the focused row's footer, one line, for the cases
+ * where a reviewer wants to know why something is here; they never compete
+ * with the values for attention.
+ *
+ * The two phases are drawn by the same function because they are the same
+ * list: `deciding` adds the action row and dims the exclusions, so the
+ * reviewer never loses sight of what they just scanned while choosing what to
+ * do with it.
+ */
+function renderQuickApprovalSurface(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): void {
+  const session = quickApprovalSession;
+  if (!session) return;
+  const counts = quickApprovalCounts(session);
+  const descriptor = PROPOSED_GROUPS[session.groupId];
+  const surface = el("div", { class: `quick-approval quick-approval-${session.phase}` });
+
+  const header = el("div", { class: "quick-approval-header keyboard-region" });
+  header.appendChild(el("h3", { class: "quick-approval-title" }, descriptor.label));
+  header.appendChild(el("p", { class: "quick-approval-claim" }, descriptor.claim));
+  const tally = el("div", { class: "quick-approval-counts" });
+  tally.appendChild(el("span", { class: "quick-approval-count" }, `${counts.proposed} proposed`));
+  tally.appendChild(el("span", { class: "quick-approval-count quick-approval-count-in" }, `${counts.included} included`));
+  tally.appendChild(el("span", { class: "quick-approval-count quick-approval-count-out" }, `${counts.excluded} excluded`));
+  header.appendChild(tally);
+  if (session.phase === "scanning") {
+    header.appendChild(
+      el(
+        "p",
+        { class: "quick-approval-instruction" },
+        "Everything here is included. Mark the items that do NOT belong, then finish the scan."
+      )
+    );
+  }
+  surface.appendChild(header);
+
+  const list = el("div", { class: "quick-approval-list", role: "listbox", "aria-label": `${descriptor.label} -- exception scan` });
+  // COUNTING, NOT MEASURING (the same rule syncZoneGridLayout follows): the
+  // two-column grid fills column-major, so the row count is ceil(n/2) and is
+  // known before layout. Nothing here asks the browser where anything is.
+  list.style.setProperty("--qa-rows", String(Math.ceil(session.members.length / 2)));
+  session.members.forEach((member, index) => {
+    const excluded = quickApprovalRowExcluded(session, member.candidateId);
+    const focused = index === session.focusIndex;
+    const row = el("div", {
+      class: `quick-approval-row${excluded ? " quick-approval-row-excluded" : ""}${focused ? " quick-approval-row-focused" : ""}`,
+      role: "option",
+      "aria-selected": excluded ? "false" : "true",
+      "data-quick-approval-index": String(index),
+    });
+    row.appendChild(el("span", { class: "quick-approval-mark" }, excluded ? "✕" : "•"));
+    row.appendChild(el("span", { class: "quick-approval-value" }, member.value));
+    if (member.structurallyDefective) {
+      row.appendChild(
+        el("span", { class: "quick-approval-defect", title: "This span looks like an extraction defect (a cut word or a truncated phrase), whatever it means." }, "⚠")
+      );
+    }
+    row.appendChild(el("span", { class: "quick-approval-occ" }, `${member.occurrenceCount}`));
+    // MOUSE PARITY: clicking a row is the same toggle the keyboard performs
+    // at that row, minus the advance -- see quickApproval.ts's toggleMember.
+    row.addEventListener("click", () => {
+      if (!quickApprovalSession) return;
+      quickApprovalSession = toggleQuickApprovalMember(quickApprovalSession, member.candidateId);
+      render();
+    });
+    list.appendChild(row);
+  });
+  surface.appendChild(list);
+
+  const focusedRow = focusedQuickApprovalMember(session);
+  if (focusedRow) {
+    const why = el("div", { class: "quick-approval-why" });
+    why.appendChild(el("span", { class: "quick-approval-why-label" }, "Readings for this item: "));
+    why.appendChild(el("span", {}, focusedRow.supportedReadings.map((id) => INTERPRETATION_LABELS[id]).join(", ") || "none"));
+    surface.appendChild(why);
+  }
+
+  const actions = el("div", { class: "quick-approval-actions keyboard-region" });
+  if (session.phase === "scanning") {
+    const done = button(`Done — I've found the exceptions (${counts.excluded})`, () => {
+      if (!quickApprovalSession) return;
+      quickApprovalSession = completeScan(quickApprovalSession);
+      render();
+    });
+    done.className = "quick-approval-done";
+    done.title = "Option+Enter";
+    actions.appendChild(done);
+    actions.appendChild(el("span", { class: "hint" }, "Option+Enter · Space marks an exception · Escape leaves without deciding"));
+  } else {
+    actions.appendChild(el("span", { class: "quick-approval-apply-lead" }, `Apply to ${counts.included}:`));
+    for (const action of QUICK_APPROVAL_ACTIONS) {
+      const btn = button(`${action.label} (${counts.included})`, () => applyQuickApprovalGroupDecision(action.decision));
+      btn.className = "quick-approval-apply";
+      btn.title = action.key.toUpperCase();
+      actions.appendChild(btn);
+    }
+    // WHY "CHANGE" IS ABSENT rather than disabled: a disabled control invites
+    // the reviewer to wonder what would enable it. Nothing would. See
+    // proposedGroups.ts's `supportsChangeAll`.
+    if (!descriptor.supportsChangeAll) {
+      actions.appendChild(
+        el(
+          "span",
+          { class: "hint" },
+          "Change is not offered for a group: one replacement cannot stand in for this many distinct values."
+        )
+      );
+    }
+    actions.appendChild(el("span", { class: "hint" }, "Escape goes back to the scan."));
+  }
+  surface.appendChild(actions);
+  container.appendChild(surface);
+  void state;
+}
+
+/**
+ * The actions a group may be given, and the letters that give them.
+ *
+ * "Change" is absent, on both the buttons and the keyboard -- see
+ * proposedGroups.ts's `supportsChangeAll` for why a shared replacement string
+ * is incoherent over a cohort of distinct surface forms, and
+ * handleQuickApprovalKey for the narrated refusal that catches the "c" press.
+ *
+ * Redact opens no editor, unlike Redact everywhere else in the app. It does
+ * not need one: with no replacement supplied, each candidate gets its own
+ * type-appropriate placeholder at output-generation time, which is a
+ * PER-CANDIDATE default rather than one shared string -- exactly the property
+ * Change lacks. `redactGroup` already relies on the same default.
+ */
+const QUICK_APPROVAL_ACTIONS: readonly { label: string; key: string; decision: CandidateDecisionKind }[] = [
+  { label: "Keep as-is", key: "k", decision: "Keep" },
+  { label: "Redact", key: "r", decision: "Redact" },
+  { label: "Ignore", key: "i", decision: "Ignore" },
+];
+
+/**
+ * THE SCAN KEYBOARD. Space, arrows, Option+Enter, Escape. Nothing else.
+ *
+ * Runs as a full-surface gate ahead of every other handler in the keydown
+ * pipeline, because while the scan is open it IS the working object -- the
+ * same "plain key = focused object" law that gives the structural-card cursor
+ * first refusal over the domain keymap. Letting K/C/R/I fall through to the
+ * item cursor parked behind this surface is precisely the mis-target class
+ * handleCardDecisionKey was written to end.
+ *
+ * BARE ENTER DOES NOT COMPLETE THE SCAN, and it does not fall through either:
+ * it is swallowed with a narration. Falling through would let Enter reach the
+ * hidden item cursor; doing nothing silently would read as a broken key. See
+ * quickApproval.ts's `completeScan` for why the chord is worth its
+ * discoverability cost.
+ */
+function handleQuickApprovalKey(event: KeyboardEvent): boolean {
+  const session = quickApprovalSession;
+  if (!session) return false;
+  if (inlineEditor) return false; // an open editor owns the caret, as everywhere
+
+  if (event.key === "Escape") {
+    const next = backOutOfQuickApproval(session);
+    if (next === null) exitQuickApproval("Left the group scan. Nothing was decided.");
+    else {
+      quickApprovalSession = next;
+      render();
+    }
+    return true;
+  }
+
+  // OPTION+ENTER completes the scan. Checked before the bare-Enter refusal
+  // below so the chord is never mistaken for the plain key.
+  if (event.key === "Enter" && event.altKey && !event.metaKey && !event.ctrlKey) {
+    if (session.phase === "scanning") {
+      quickApprovalSession = completeScan(session);
+      const counts = quickApprovalCounts(quickApprovalSession);
+      setStatus(`Scan finished. ${counts.included} included, ${counts.excluded} excluded. Choose one action.`);
+      render();
+    }
+    return true;
+  }
+  if (event.key === "Enter") {
+    if (session.phase === "scanning") refuse("Press Option+Enter to finish the scan.");
+    return true;
+  }
+
+  // TAB FALLS THROUGH, deliberately -- it is the only way to put real DOM
+  // focus on the Done/apply buttons, and this surface replaced the stage
+  // body, so there is no parked queue for it to mis-target into. Every other
+  // unbound key is swallowed below.
+  if (event.key === "Tab") return false;
+
+  if (session.phase === "deciding") {
+    // THE DECISION LETTERS, on the group. "Plain key = focused object", and
+    // in this phase the focused object is the cohort -- the same grammar
+    // Group Check's own k/i use. Without these the decision step would be
+    // mouse-only, which would be an odd way to end a keyboard-first scan.
+    const decision = QUICK_APPROVAL_ACTIONS.find((a) => a.key === event.key.toLowerCase());
+    if (decision && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      applyQuickApprovalGroupDecision(decision.decision);
+      return true;
+    }
+    // "c" is refused with its reason rather than ignored: a reviewer who
+    // presses it in a stage where it always works deserves to be told why it
+    // does not work here, not to wonder whether the key is broken.
+    if (event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      refuse("Change is not offered for a group -- one replacement cannot stand in for this many distinct values.");
+      return true;
+    }
+    return true;
+  }
+
+  if (event.key === " " || event.key === "Spacebar") {
+    quickApprovalSession = toggleQuickApprovalFocused(session);
+    render();
+    return true;
+  }
+  if (event.key === "ArrowDown") {
+    quickApprovalSession = moveQuickApprovalFocus(session, 1);
+    render();
+    return true;
+  }
+  if (event.key === "ArrowUp") {
+    quickApprovalSession = moveQuickApprovalFocus(session, -1);
+    render();
+    return true;
+  }
+  if (event.key === "Home") {
+    quickApprovalSession = focusQuickApprovalRow(session, 0);
+    render();
+    return true;
+  }
+  if (event.key === "End") {
+    quickApprovalSession = focusQuickApprovalRow(session, session.members.length - 1);
+    render();
+    return true;
+  }
+  // Everything else is swallowed: while a scan is open, no other key has a
+  // meaning here, and none of them should reach the parked queue behind it.
+  return true;
+}
+
 function renderCandidateStage(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>, stage: "ambiguity-check" | "item-check"): void {
+  // QUICK APPROVAL takes the whole stage body while a scan is open. A dense
+  // list and a sectioned queue cannot share a screen without both being
+  // worse: the scan needs the reviewer's whole attention on ~50 short values,
+  // and the queue behind it would keep offering a second cursor to move.
+  if (stage === "item-check" && quickApprovalSession) {
+    renderQuickApprovalSurface(container, state);
+    return;
+  }
   // Item Check renders its WORK QUEUE, not the full candidate inventory --
   // see itemCheckWorkQueueIds(). Ambiguity Check's pool is its own proposal
   // list and is unaffected. One assignment feeds every view below (list,
@@ -9695,7 +10989,7 @@ function renderCandidateStage(container: HTMLElement, state: ReturnType<Workspac
   // is the review unit; the individual candidates are the evidence.
   const listHost: HTMLElement = container;
   if (stage === "ambiguity-check") {
-    const hasProposals = (state.structuralRelationships?.proposals ?? []).some((p) => !state.reviewSession?.relationshipDismissals?.[p.proposalId]);
+    const hasProposals = (state.structuralRelationships?.proposals ?? []).length > 0;
     if (candidateIds.length === 0 && !hasProposals) {
       container.appendChild(el("p", {}, "Nothing to review in this stage."));
       return;
@@ -9721,6 +11015,12 @@ function renderCandidateStage(container: HTMLElement, state: ReturnType<Workspac
     // stage-body children by direct-child selectors (verified).
     const controls = el("div", { class: "keyboard-region stage-controls" });
     renderItemCheckViewToggle(controls);
+    // QUICK APPROVAL OFFERS -- above the toolbar because they are about the
+    // whole remaining pool, not about the narrowed view the toolbar produces.
+    // Reads the pool directly for the same reason (see availableProposedGroups):
+    // a cohort narrowed by a search box would be a different cohort than the
+    // one its header names.
+    renderQuickApprovalOffers(controls, state);
     renderItemCheckToolbar(controls);
     // Search + advanced filters narrow the pool BEFORE Category Check's own
     // state/category chips further narrow it -- Category Check remains a
@@ -10148,7 +11448,7 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
   for (const groupId of visibleGroupIds(state)) {
     const group = groupsById.get(groupId);
     if (!group) continue;
-    const groupCell = el("div", { class: "group-cell" });
+    const groupCell = el("div", { class: "group-cell group-review-cell" });
     const display: GroupDisplayDecision = session ? groupDisplayDecision(group, session) : { kind: "undecided", summary: UNDECIDED_SUMMARY };
     const notQuiteOpenHere = notQuite?.groupId === group.groupId;
     // SPLIT REVIEW MODE (AG, 2026-08-02): while this group's split
@@ -10169,6 +11469,14 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     const isAcknowledging = isAcknowledged({ kind: "group", groupId: group.groupId });
     const isFocused = state.focus?.target.stage === "group-check" && state.focus.target.itemId === group.groupId;
     const isExpanded = isFocused;
+    // GROUP CHECK STANDARDIZATION PASS (2026-08-10): the focused unit here
+    // is already a GROUP, so this adapter deliberately keeps the existing
+    // group row, action buttons, subset checkboxes, Not Quite panel, and
+    // split-member workflow intact. The visual standardization is applied
+    // by composing the same focus-panel surface tokens used by Ambiguity /
+    // Item/Type inspector columns onto the focused group's existing
+    // wrapper; non-focused groups keep the compact review-cell treatment.
+    if (isFocused) groupCell.classList.add("group-focus-panel");
     // GROUP CHECK PYTHON-PARITY REVISION: the checked subset only matters
     // while Not Quite is closed for THIS group -- Not Quite's own per-member
     // granularity supersedes it entirely for that group (see
@@ -10886,7 +12194,7 @@ function renderRedactionRulesPanel(container: HTMLElement, state: ReturnType<Wor
  *  renderTypeCheckStage). */
 let typeCheckCursor: { typeId: string; candidateId: string } | null = null;
 
-function typeGroupFor(typeId: string | null, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): { typeId: SemanticTypeId; candidateIds: readonly string[] } | null {
+function typeGroupFor(typeId: string | null, state: ReturnType<WorkspaceCommandDispatcher["getState"]>): { typeId: TypeCheckSectionId; candidateIds: readonly string[] } | null {
   if (!typeId) return null;
   return state.semanticTypes?.find((g) => g.typeId === typeId) ?? null;
 }
@@ -10914,7 +12222,7 @@ function nextUnresolvedTypeMember(group: { candidateIds: readonly string[] }, af
  *  unresolved member (wrap; null when the type just resolved -- the
  *  dispatcher's own reconcile has already advanced the TYPE focus, and
  *  the cursor stands down with nothing left to point at). */
-function decideTypeMemberAndAdvance(group: { typeId: SemanticTypeId; candidateIds: readonly string[] }, candidateId: string, command: AnyCommand): void {
+function decideTypeMemberAndAdvance(group: { typeId: TypeCheckSectionId; candidateIds: readonly string[] }, candidateId: string, command: AnyCommand): void {
   if (inlineEditor?.scope === "candidate" && inlineEditor.candidateId === candidateId) inlineEditor = null;
   if (command.family === "review") dispatchReviewWithVisibleAdvance(command);
   acknowledge({ kind: "candidate", stage: "type-check", candidateId });
@@ -10928,7 +12236,7 @@ function decideTypeMemberAndAdvance(group: { typeId: SemanticTypeId; candidateId
  *  bulkApplyDecision, narrated. Change/Redact go through the
  *  "type-members" inline-editor scope instead (they carry text). */
 function applyTypeBulk(
-  group: { typeId: SemanticTypeId; candidateIds: readonly string[] },
+  group: { typeId: TypeCheckSectionId; candidateIds: readonly string[] },
   decision: "Keep" | "Ignore",
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
   /** The scoped subset (a checked selection). Absent = every remaining
@@ -10944,7 +12252,7 @@ function applyTypeBulk(
   const result = dispatchReviewWithVisibleAdvance({ family: "review", type: "bulkApplyDecision", candidateIds: remaining, decision });
   if (result.ok) {
     acknowledgeBulkCandidateFeedback(before, remaining, "type-check");
-    setStatus(`${decisionDisplayLabel(decision)} applied to ${remaining.length} ${SEMANTIC_TYPE_LABELS[group.typeId]} item(s).`); // RX-18
+    setStatus(`${decisionDisplayLabel(decision)} applied to ${remaining.length} ${TYPE_CHECK_SECTION_LABELS[group.typeId]} item(s).`); // RX-18
   } else {
     notifyToast(`Bulk action failed: ${result.reason}`); // RX-09
   }
@@ -11050,12 +12358,12 @@ function renderTypeCheckStage(container: HTMLElement, state: ReturnType<Workspac
  * audit are untouched -- only the description of them moved.
  */
 function typeBulkActions(
-  typeId: SemanticTypeId,
-  group: { typeId: SemanticTypeId; candidateIds: readonly string[] },
+  typeId: TypeCheckSectionId,
+  group: { typeId: TypeCheckSectionId; candidateIds: readonly string[] },
   remaining: readonly string[],
   state: ReturnType<WorkspaceCommandDispatcher["getState"]>
 ): QueueSectionAction[] {
-  const label = SEMANTIC_TYPE_LABELS[typeId];
+  const label = TYPE_CHECK_SECTION_LABELS[typeId];
   // SELECTION SCOPING (AG, 2026-08-03: "have the option buttons at top
   // dynamically update to 'Keep selected..' etc ... However, if no items
   // are selected I want the 'Keep all' options to work").
@@ -11173,6 +12481,13 @@ function renderTypeReviewSurface(container: HTMLElement, summary: SemanticTypeSu
 
   const header = el("div", { class: "type-review-header" });
   header.appendChild(el("span", { class: "detail-title-name" }, summary.label));
+  // UNDETERMINED (AG, 2026-08-10): the ONE section whose name does not carry
+  // its own meaning, so the meaning is stated once here rather than repeated
+  // per row -- the same rule TRIAGE_SECTION_EXPLANATIONS already follows.
+  // Reviewer-facing copy only: no rule ids, no "cross-candidate", no
+  // "name-shaped". Those live in the provenance record.
+  const sectionExplanation = TYPE_CHECK_SECTION_EXPLANATIONS[summary.id];
+  if (sectionExplanation) header.appendChild(el("span", { class: "detail-title-note" }, sectionExplanation));
   header.appendChild(el("span", { class: "detail-title-count" }, `(${remaining.length} of ${summary.entityCount} remaining)`));
   // The opened type's own figure, over exactly the scope its bulk bar acts
   // on -- `remaining` is the same array the "Keep all as-is (N)" buttons
@@ -11377,7 +12692,7 @@ function renderTypeReviewSurface(container: HTMLElement, summary: SemanticTypeSu
  * document in the browser; the table exists so that tuning is a one-line
  * edit per type rather than a layout change.
  */
-const TYPE_TRACK_MIN: Record<SemanticTypeId, string> = {
+const TYPE_TRACK_MIN: Record<TypeCheckSectionId, string> = {
   people: "20rem", // full names, frequently three tokens
   emails: "18rem", // addresses do not wrap or truncate gracefully
   phones: "14rem",
@@ -11387,6 +12702,10 @@ const TYPE_TRACK_MIN: Record<SemanticTypeId, string> = {
   "dates-terms": "16rem",
   "document-titles": "22rem", // titles run longest of the nine
   other: "18rem", // heterogeneous by definition; the safe middle
+  // UNDETERMINED (AG, 2026-08-10): the population is rejected person
+  // hypotheses -- name-shaped administrative phrases -- so it sizes like
+  // People rather than like Other, whose contents are heterogeneous.
+  [UNDETERMINED_SECTION]: "20rem",
 };
 
 /**
@@ -11666,7 +12985,7 @@ function sseg(keys: string | string[], label: string): LegendSegment {
  *   move   -- the cursor: arrows, Tab, Esc, [ ], /, and the two
  *             Next-undecided / Previous-decision buttons.
  *   scope  -- the surrounding section, selection, or group: ⇧A, the
- *             section-action digits, ⌥K/C/R/N, ⇧K/⇧C/⇧R/⇧I.
+   *             section-action digits, ⌥K/C/R/I, ⇧K/⇧C/⇧R/⇧I.
  *
  * DERIVED FROM THE KEYS, NOT RE-DECLARED AT EVERY CONSTRUCTION SITE.
  * commandBarLegend() builds its legend at roughly a dozen places, several
@@ -11899,7 +13218,7 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
       if (scopeKind === "selection") {
         return [
           sseg("1–9", "Zone actions (checked)"),
-          sseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
+          sseg(`${OPTION_KEY_LABEL} K/C/R/I`, "Decide the group"),
           kseg("D", "Hold details open"),
           sseg("Space", "Select"),
           kseg("←→↑", "Move cursor"),
@@ -11910,7 +13229,7 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
         return [
         kseg("Enter", "Return to item"),
         sseg("1–9", "Zone actions"),
-        sseg(`${OPTION_KEY_LABEL} K/C/R/N`, "Decide the group"),
+        sseg(`${OPTION_KEY_LABEL} K/C/R/I`, "Decide the group"),
         kseg("←→↑", "Move & return"),
         kseg("D", "Hold details open"),
         sseg("Space", "Select"),
@@ -11944,10 +13263,9 @@ function commandBarLegend(state: ReturnType<WorkspaceCommandDispatcher["getState
         : sectionedQueueStage(activeStage)
           ? // TRIAGE QUEUE (2026-07-30; the Ambiguity stage joined via
             // AMBIGUITY CATEGORY-FIRST, AG 2026-08-02): the sectioned
-            // queue's core vocabulary -- Enter accepts (or opens details
-            // when nothing is acceptable), Space discloses, Shift+A
-            // accepts the focused item's whole section; K/C/R/I still
-            // decide the focused row.
+            // queue's core vocabulary -- Enter opens the panel, Space
+            // selects, D holds details, and explicit decision keys/buttons
+            // process the focused row.
             /* THE CARD IS SEVEN ENTRIES (AG, 2026-08-06: "Only leave the
              * items in the screenshot. Everything else is unnecessary").
              *
@@ -12089,17 +13407,40 @@ function renderSectionPills(container: HTMLElement, state: ReturnType<WorkspaceC
   container.appendChild(bar);
 }
 
+function stageHasSectionPills(state: ReturnType<WorkspaceCommandDispatcher["getState"]>, activeStage: WorkflowStage): boolean {
+  const queueStage = sectionedQueueStage(activeStage);
+  return queueStage !== null && stageCategories(state, queueStage).length > 0;
+}
+
 /** Move focus to a section's first REMAINING item (its first item if the
  *  section is finished) -- the one definition of "go to this section",
  *  shared by a pill click and ⌥←/→ so the mouse and the keyboard cannot
  *  land in different places. The section snap in scrollFocusedRowIntoView
  *  does the scrolling; this only moves the cursor. */
-function jumpToSection(section: { label: string; candidateIds: readonly string[] }): void {
+function jumpToSection(section: { label: string; candidateIds: readonly string[]; relationshipProposalIds?: readonly string[] }): void {
   const state = dispatcher.getState();
-  const target = section.candidateIds.find((id) => !state.reviewSession?.candidateDecisions[id]) ?? section.candidateIds[0];
-  if (!target) return;
-  structuralCardFocusPending = null;
-  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: target });
+  // SAME ARRIVAL RULE AS selectStageCategoryCursor (AG, 2026-08-09). This
+  // site carried a byte-identical copy of the defective rule --
+  // `candidateIds.find(undecided) ?? candidateIds[0]`, no proposal branch at
+  // all -- so a section whose remaining work was proposals landed the
+  // reviewer on a settled row here too. Two copies of "which unit
+  // represents this section" is exactly how the two answers drifted; both
+  // now call the one function.
+  const queueStage = activeSectionedQueueStage(state) ?? "ambiguity-check";
+  const targets = sectionDisplayTargets(section);
+  const landing = firstUnresolvedReviewTarget(targets, (target) => isReviewDisplayTargetResolved(queueStage, target, state));
+  if (!landing) return;
+  trace("category.arrive", "jumpToSection", `section ${section.label} -> ${reviewDisplayTargetKey(landing)}`, {
+    landing: reviewDisplayTargetKey(landing),
+    landedResolved: isReviewDisplayTargetResolved(queueStage, landing, state) && targets.some((t) => !isReviewDisplayTargetResolved(queueStage, t, state)),
+  });
+  if (landing.kind === "proposal") {
+    setCardCursor(landing.id, "L12336p");
+    render();
+    return;
+  }
+  setCardCursor(null, "L12336");
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: landing.id });
   render();
 }
 
@@ -12107,21 +13448,44 @@ function jumpToSection(section: { label: string; candidateIds: readonly string[]
  *  and refresh restore so the same "which unit represents this pill?"
  *  rule controls mouse, keyboard and page reload. */
 function selectStageCategoryCursor(category: StageCategory, state = dispatcher.getState()): boolean {
-  const firstCandidate = category.candidateIds.find((id) => !state.reviewSession?.candidateDecisions[id]) ?? category.candidateIds[0];
-  if (firstCandidate) {
-    structuralCardFocusPending = null;
-    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: firstCandidate });
+  /*
+   * ONE ARRIVAL RULE FOR BOTH UNIT KINDS (AG, 2026-08-09, fixed from an
+   * instrumented run -- see firstUnresolvedReviewTarget's doc comment for
+   * the trace excerpt and both faults in the rule this replaces).
+   *
+   * The category's units are asked in DISPLAY ORDER, through the same
+   * `sectionDisplayTargets` the renderer paints from, so "the first
+   * unreviewed unit" means the same thing to the cursor and to the
+   * reviewer's eye. Candidates still lead that order, so a category with
+   * unresolved work of both kinds opens exactly where it always did.
+   *
+   * The resolved test is the PROPOSAL-AWARE one, not the raw decision map:
+   * a dismissed proposal ("Unrelated") is resolved, and the previous rule's
+   * `!decisions[id]` could not express that.
+   */
+  const queueStage = activeSectionedQueueStage(state) ?? "ambiguity-check";
+  const targets = sectionDisplayTargets(category);
+  const landing = firstUnresolvedReviewTarget(targets, (target) => isReviewDisplayTargetResolved(queueStage, target, state));
+  if (!landing) return false;
+  // TEMPORARY INSTRUMENTATION (2026-08-08). `landedResolved` should now only
+  // ever be true for a category with no remaining work at all; the
+  // contradiction detector flags any other case.
+  const landedResolved = isReviewDisplayTargetResolved(queueStage, landing, state);
+  trace("category.arrive", "selectStageCategoryCursor", `category ${String(category.id)} -> ${reviewDisplayTargetKey(landing)}${landedResolved ? " (ALREADY RESOLVED)" : ""}`, {
+    categoryId: String(category.id),
+    landing: reviewDisplayTargetKey(landing),
+    landedResolved: landedResolved && category.remaining > 0,
+    categoryComplete: category.remaining === 0,
+    candidateCount: category.candidateIds.length,
+    proposalCount: category.relationshipProposalIds.length,
+    remaining: category.remaining,
+  });
+  if (landing.kind === "proposal") {
+    setCardCursor(landing.id, "L12359");
     return true;
   }
-  const proposals = state.structuralRelationships?.proposals ?? [];
-  const decisions = state.reviewSession?.candidateDecisions ?? {};
-  const unaddressed = category.relationshipProposalIds.find((proposalId) => {
-    const proposal = proposals.find((p) => p.proposalId === proposalId);
-    return proposal ? !proposal.candidateIds.every((id) => Boolean(decisions[id])) : false;
-  });
-  const target = unaddressed ?? category.relationshipProposalIds[0];
-  if (!target) return false;
-  structuralCardFocusPending = target;
+  setCardCursor(null, "L12347");
+  dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: landing.id });
   return true;
 }
 
@@ -12130,7 +13494,12 @@ function selectStageCategoryCursor(category: StageCategory, state = dispatcher.g
  *  the rendered list; a category holding nothing but proposals lands on a
  *  proposal, which is the case that made the old rows-only jump wrong. */
 function jumpToStageCategory(category: StageCategory): void {
-  if (selectStageCategoryCursor(category)) render();
+  if (!selectStageCategoryCursor(category)) return;
+  const state = dispatcher.getState();
+  const targetKey = currentReviewDisplayTargetKey(state.focus?.target.stage ?? null, state.focus?.target.itemId ?? null, state);
+  const queueStage = sectionedQueueStage(state.focus?.target.stage ?? undefined);
+  if (targetKey && queueStage) activeZoneAnchorBySection.set(`${queueStage}:${category.id}`, targetKey);
+  render();
 }
 
 /**
@@ -12141,6 +13510,10 @@ function jumpToStageCategory(category: StageCategory): void {
  * section, ⇧ moves a stage -- so the modifier says how far you travel. That
  * is learnable in a way "press F6 to reach the pill bar, then arrow within
  * it" is not, which is why this won over making the bar a region.
+ * Shift is accepted as a harmless extra modifier for real keyboards: users
+ * naturally press Opt+Shift+Arrow while moving at the section rung, and if
+ * this handler refuses it the key falls through to detail-panel roving and
+ * appears dead.
  *
  * NO COLLISION WITH BY-CATEGORY'S FILTERS, which also bind ⌥ arrows: this
  * declines unless `sectionedQueueStage` returns a stage, and that is null
@@ -12148,18 +13521,26 @@ function jumpToStageCategory(category: StageCategory): void {
  * mutually exclusive by view, not by luck -- but a future surface adding
  * ⌥ arrows must check that guard rather than assume the key is free.
  *
+ * All four arrows are accepted: Right/Down move forward, Left/Up move
+ * backward. The category map is horizontal today, but reviewers quite
+ * reasonably test "Opt arrows" as a family, and there is no competing
+ * section-level meaning on the vertical axis.
+ *
  * No wrap, matching every other cursor in this app: at the first or last
  * section the key is consumed and nothing moves.
  */
 function handleSectionArrowKey(event: KeyboardEvent): boolean {
-  if (!event.altKey || event.shiftKey || event.metaKey || event.ctrlKey) return false;
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+  if (!event.altKey || event.metaKey || event.ctrlKey) return false;
+  const arrowCode = event.code ?? "";
+  if (arrowCode !== "ArrowLeft" && arrowCode !== "ArrowRight" && arrowCode !== "ArrowUp" && arrowCode !== "ArrowDown") return false;
   if (inlineEditor) return false; // an open editor owns every key
   if (isTextEntryElement(document.activeElement as HTMLElement | null)) return false;
   const state = dispatcher.getState();
   if (!state.documentLoaded) return false;
   const queueStage = activeSectionedQueueStage(state);
   if (!queueStage) return false;
+  const activeProposal = activeStructuralProposalId();
+  if (activeProposal) setCardCursor(activeProposal, "L12414");
   // BOTH AXES (AG, 2026-08-06): the kind groups became peer categories, so
   // ⌥←→ walks them too. Without this the pill bar would advertise a
   // destination the keyboard could not reach -- the paint/keystroke
@@ -12177,11 +13558,12 @@ function handleSectionArrowKey(event: KeyboardEvent): boolean {
   // the keyboard back to the review surface.
   const active = document.activeElement as HTMLElement | null;
   if (active && typeof active.blur === "function") active.blur();
+  pendingResetConfirmation = null;
   if (index === -1) {
     jumpToStageCategory(categories[0]!);
     return true;
   }
-  const next = event.key === "ArrowRight" ? index + 1 : index - 1;
+  const next = arrowCode === "ArrowRight" || arrowCode === "ArrowDown" ? index + 1 : index - 1;
   if (next < 0 || next >= categories.length) return true; // boundary: consumed, no wrap
   const target = categories[next]!;
   jumpToStageCategory(target);
@@ -12240,9 +13622,9 @@ function renderCommandBar(container: HTMLElement, state: ReturnType<WorkspaceCom
   // column GRID now: the label column is sized to its own content and the
   // caps start immediately after it, at the same x on every row. The
   // mechanism that made labels bad is gone, and with four rows instead of
-  // two the labels are now carrying real information -- "Enter Accept ·
-  // Space Details" explained itself, but "which of these eleven keys acts
-  // on the section rather than the item" does not.
+  // two the labels are now carrying real information -- "Enter Open panel ·
+  // Space Select" explains itself, but "which of these eleven keys acts on
+  // the section rather than the item" does not.
   const rows: { group: LegendGroup; label: string; aria: string }[] = [
     { group: "decide", label: "Decide", aria: "Shortcuts that act on the focused item" },
     { group: "move", label: "Move", aria: "Shortcuts that move the cursor" },
@@ -12771,6 +14153,7 @@ let lastInputWasPointer = false;
 function resetViewportSnapAnchors(): void {
   lastSnappedSectionId = null;
   lastInputWasPointer = false;
+  activeZoneAnchorBySection.clear();
 }
 
 /**
@@ -13098,9 +14481,43 @@ function render(): void {
    * `appendChild` MOVES the node, so the landing branch above (which
    * returns before this point and needs the toolbar in `container`) is
    * untouched.
-   */
+  */
   const activeStage = state.focus?.target.stage ?? "ambiguity-check";
   lastRenderedActiveStage = activeStage;
+  // TEMPORARY INSTRUMENTATION (2026-08-08): one position snapshot per render.
+  // This is what makes the timeline readable -- every reviewer action shows
+  // up as "render -> (whatever moved) -> render", so a position that changed
+  // WITHOUT an intervening action is immediately visible, and that is the
+  // signature of the render-tail and timer writers the audit identified.
+  {
+    const renderQueueStage = sectionedQueueStage(activeStage);
+    const renderCategories = renderQueueStage ? stageCategories(state, renderQueueStage) : [];
+    const renderCategoryId = renderQueueStage ? currentStageCategoryId(state, renderCategories) : null;
+    // CROSS-CURSOR DISAGREEMENT (2026-08-09). Each cursor's OWN category is
+    // resolved separately here so the contradiction detector can see a frame
+    // in which they name different ones -- the condition observed at trace
+    // seq 63 during the acknowledgement pulse. `categoryId` above is the
+    // app's single answer (card wins); these two are the inputs it chose
+    // between. Both null unless the corresponding cursor is set, so an
+    // ordinary candidate frame emits nothing to flag.
+    const renderItemCategoryId =
+      state.focus?.target.itemId != null ? (renderCategories.find((c) => c.candidateIds.includes(state.focus!.target.itemId!))?.id ?? null) : null;
+    const renderProposalCategoryId =
+      structuralCardFocusPending !== null
+        ? (renderCategories.find((c) => c.relationshipProposalIds.includes(structuralCardFocusPending!))?.id ?? null)
+        : null;
+    trace("render", "render", `stage=${activeStage} category=${renderCategoryId ?? "(none)"} item=${state.focus?.target.itemId ?? "(none)"} card=${structuralCardFocusPending ?? "(none)"}`, {
+      stage: activeStage,
+      categoryId: renderCategoryId,
+      itemId: state.focus?.target.itemId ?? null,
+      proposalCursor: structuralCardFocusPending,
+      itemCategoryId: renderItemCategoryId === null ? null : String(renderItemCategoryId),
+      proposalCategoryId: renderProposalCategoryId === null ? null : String(renderProposalCategoryId),
+      focusPanelEntered,
+      remaining: renderCategoryId ? (renderCategories.find((c) => String(c.id) === String(renderCategoryId))?.remaining ?? null) : null,
+    });
+  }
+  if (stageHasSectionPills(state, activeStage)) chrome.classList.add("workspace-chrome-stage-sections");
   const statusRow = el("div", { class: "chrome-status-row" });
   const statusLeft = el("div", { class: "chrome-status-left" });
   /* THE STATISTICS LINE IS GONE (AG, 2026-08-06: "get rid of all of this
@@ -13215,10 +14632,14 @@ function render(): void {
     const cardEl = Array.from(container.querySelectorAll<HTMLElement>(".relationship-card")).find(
       (c) => c.getAttribute("data-proposal-id") === pendingCardId
     );
-    if (!cardEl) {
-      structuralCardFocusPending = null; // card gone (e.g. dismissed): cursor dies with it
+    const rowEl = Array.from(container.querySelectorAll<HTMLElement>(".triage-row[data-proposal-id]")).find(
+      (row) => row.getAttribute("data-proposal-id") === pendingCardId
+    );
+    if (!cardEl && !rowEl) {
+      setCardCursor(null, "L13477"); // proposal cell gone: cursor dies with it
       focusPanelEntered = false; // and so does the level the reviewer was on inside it
     } else if (
+      cardEl &&
       // DOM FOCUS ONLY ONCE ENTERED (AG, 2026-08-06). Handing the card
       // keyboard focus is what routes arrows to its own listener, which moves
       // between CARDS -- correct when the reviewer asked to be in the card,
@@ -13309,6 +14730,12 @@ function render(): void {
       const firstChip = container.querySelector<HTMLButtonElement>(".inline-editor-quick-pick");
       (currentChip ?? firstChip)?.focus();
     }
+  }
+
+  if (timeSavedInfoFocusPending) {
+    timeSavedInfoFocusPending = false;
+    const infoButton = container.querySelector<HTMLButtonElement>(`#${TIME_SAVED_INFO_BUTTON_ID}`);
+    if (infoButton && typeof infoButton.focus === "function") infoButton.focus();
   }
 
   // UI-STATE PERSISTENCE (AG, 2026-08-02): every render is a chance the
@@ -13880,7 +15307,7 @@ function handleAcceptAllKey(event: KeyboardEvent): boolean {
     // invariants both exist to forbid, and it was also the fastest route to
     // exactly the "wipe out 150 items" outcome this feature exists to
     // prevent. Same function, same scope, same count as the button now.
-    const scope = headingActionScope(section.candidateIds, state);
+    const scope = headingActionScope(section.candidateIds, state, queueStage);
     if (scope.ids.length === 0) return true;
     acceptAllInSection(config, section.label, scope.ids, queueStage);
     releaseSelection(scope);
@@ -13898,7 +15325,9 @@ function handleAcceptAllKey(event: KeyboardEvent): boolean {
     refuse(`${section.label} has no bulk actions -- these items are reviewed individually.`);
     return true;
   }
-  runSectionAction(primary, section.label, tier!.candidateIds, queueStage);
+  const scope = headingActionScope(tier!.candidateIds, state, queueStage);
+  if (scope.ids.length === 0) return true;
+  runSectionAction(primary, section.label, scope.ids, queueStage);
   return true;
 }
 
@@ -13907,6 +15336,7 @@ function handleResetScopeKey(event: KeyboardEvent): boolean {
   const match = /^Key([RA])$/.exec(event.code ?? "");
   if (!match) return false;
   if (inlineEditor || splitReview) return false;
+  if (isTextEntryElement(document.activeElement as HTMLElement | null)) return false;
   const state = dispatcher.getState();
   const queueStage = activeSectionedQueueStage(state);
   if (!queueStage) return false;
@@ -13921,7 +15351,8 @@ function handleResetScopeKey(event: KeyboardEvent): boolean {
 }
 
 /**
- * GROUP-SCOPE CHORDS (AG, 2026-08-03): Opt/Alt + K/C/R/I/U applies that
+   * GROUP-SCOPE CHORDS (AG, 2026-08-03; canonical K/C/R/I pass,
+   * 2026-08-11): Opt/Alt + K/C/R/I/U applies that
  * decision to the whole group the reviewer is standing in.
  *
  * THE PROBLEM IT SOLVES, in AG's words: *"R and C ... may be true within an
@@ -13952,7 +15383,7 @@ function handleResetScopeKey(event: KeyboardEvent): boolean {
  */
 function handleGroupScopeChordKey(event: KeyboardEvent): boolean {
   if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return false;
-  const match = /^Key([KCRNU])$/.exec(event.code ?? "");
+  const match = /^Key([KCRINU])$/.exec(event.code ?? "");
   if (!match) return false;
   if (inlineEditor || splitReview) return false; // an open editor owns every key, as everywhere
   const chord = match[1] as GroupScopeChord;
@@ -14253,6 +15684,33 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("keydown", () => { lastInputWasPointer = false; }, true);
 }
 
+function handleGlobalSectionResetShortcut(event: KeyboardEvent): boolean {
+  if (reopenPrompt) return false;
+  if (handleSectionArrowKey(event) || handleResetScopeKey(event)) {
+    event.preventDefault();
+    // This listener lives on `document`, the same target as the legacy
+    // document-level keydown pipeline below. `stopPropagation()` prevents
+    // travel to later targets, but it does not guarantee another listener
+    // on this same target cannot also answer the same physical key. These
+    // shortcuts move whole sections/categories, so double-handling one
+    // keypress is not a harmless duplicate -- it skips categories. Immediate
+    // stop makes the capture handler the single owner of Opt/Alt section
+    // arrows and reset shortcuts.
+    event.stopImmediatePropagation();
+    return true;
+  }
+  return false;
+}
+
+if (typeof document.addEventListener === "function") {
+  // Capture phase is intentional: focused cards/buttons/panels may attach
+  // their own keydown handlers, and a browser can deliver Option-modified
+  // characters differently before the bubble listener sees them. These two
+  // shortcuts are global review-surface commands, so they get first refusal
+  // after the true reopen modal.
+  document.addEventListener("keydown", handleGlobalSectionResetShortcut, true);
+}
+
 document.addEventListener("keydown", (event) => {
   const activeEl = document.activeElement as HTMLElement | null;
   const activeTag = activeEl?.tagName ?? "";
@@ -14316,13 +15774,6 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault(); // stage switch re-renders; focus drops to <body> = Review mode
       return;
     }
-    // The pills live in the chrome, so ⌥←/→ has to work from here too --
-    // otherwise tabbing to a pill would disable the key that moves between
-    // the very things the pills show.
-    if (handleSectionArrowKey(event)) {
-      event.preventDefault();
-      return;
-    }
     if (handleGroupScopeChordKey(event)) {
       event.preventDefault();
       return;
@@ -14337,14 +15788,6 @@ document.addEventListener("keydown", (event) => {
   // hierarchy and must never be shadowed by a local arrow grammar. See
   // handleStageArrowKey's doc comment for its own deliberate refusals.
   if (handleStageArrowKey(event)) {
-    event.preventDefault();
-    return;
-  }
-
-  // ⌥←/→ = previous/next SECTION, one rung below stage movement in the
-  // same hierarchy and checked in the same place for the same reason: a
-  // local arrow grammar must not shadow it. See handleSectionArrowKey.
-  if (handleSectionArrowKey(event)) {
     event.preventDefault();
     return;
   }
@@ -14375,7 +15818,7 @@ document.addEventListener("keydown", (event) => {
       moveItemFromPanel(event.shiftKey ? "previous" : "next");
       return;
     }
-    if (event.key.startsWith("Arrow")) {
+    if (event.key.startsWith("Arrow") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
       const tagLower = activeTag.toLowerCase();
       if (tagLower === "input" || tagLower === "textarea" || tagLower === "select") return; // native caret/option movement
       event.preventDefault();
@@ -14395,6 +15838,17 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       exitToReviewMode();
     }
+    return;
+  }
+
+  // QUICK APPROVAL, FULL-SURFACE GATE (AG, 2026-08-10). While a scan is open
+  // it is the entire working object: it owns Space, the arrows, Enter and
+  // Escape, and it swallows everything else rather than letting a key reach
+  // the queue cursor parked behind it. Placed above the region cycle for the
+  // same reason the reset confirmation is -- a modal-ish surface must not be
+  // navigable away from by a key it never saw. See handleQuickApprovalKey.
+  if (handleQuickApprovalKey(event)) {
+    event.preventDefault();
     return;
   }
 
@@ -14438,24 +15892,17 @@ document.addEventListener("keydown", (event) => {
 
   // REVIEW SCOPE, Pass 1 (AG, 2026-08-03): the scope ladder (Escape
   // widens / Enter re-narrows) and the wider-scope mis-target guard --
-  // BEFORE handleTriageKey, or Enter from the widened state would fall
-  // through and accept a recommendation on the PARKED row the reviewer
-  // has explicitly stepped away from.
+  // BEFORE handleTriageKey, so Enter from the widened state returns to the
+  // parked row instead of falling through to the ordinary item-depth path.
   if (handleScopeModeKey(event)) {
     event.preventDefault();
     return;
   }
 
-  // TRIAGE QUEUE (2026-07-30): Enter = accept / Space = details, only in
-  // the triage view -- intercepted before resolveKeyboardCommand so Enter
-  // doesn't fall through to enterItem while a recommendation is
-  // acceptable (see handleTriageKey's doc comment).
+  // SECTIONED CELL GRID: Space/D handling only. Enter deliberately falls
+  // through to the one domain `enterItem` path below; it never processes a
+  // cell item.
   if (handleTriageKey(event)) {
-    event.preventDefault();
-    return;
-  }
-
-  if (handleResetScopeKey(event)) {
     event.preventDefault();
     return;
   }
@@ -14607,7 +16054,7 @@ document.addEventListener("keydown", (event) => {
             // got a highlighted-but-compact card. render()'s tail re-focuses
             // the fresh card via the pendingCardId restore (activeElement
             // falls to body during the rebuild), so DOM focus still lands.
-            structuralCardFocusPending = first.getAttribute("data-proposal-id");
+            setCardCursor(first.getAttribute("data-proposal-id"), "L14877");
             render();
             return;
           }
@@ -14676,35 +16123,14 @@ document.addEventListener("keydown", (event) => {
   // handleStageTabKey itself -- ⇧←/→ stage movement runs at the TOP of
   // this listener, before every within-stage grammar.)
   // Before handleFilterColumnKey: both are ⌥-gated, but that one takes only
-  // Arrows and this one only KeyK/C/R/I/U, so the order is documentation of
+  // Arrows and this one only KeyK/C/R/I/N/U, so the order is documentation of
   // intent rather than a live tie-break. Before the section-action digits
   // for the reason that matters: chords and digits address the SAME action
   // list, and a chorded action is never numbered, so whichever runs first
   // finds the same single button.
-  /*
-   * ENTER ENTERS THE CARD, ESCAPE LEAVES IT (AG, 2026-08-06). The proposal
-   * half of the level grammar handleTriageKey already implements for
-   * candidates -- placed here, ahead of every within-stage grammar, for the
-   * same reason the reopen prompt is checked first in this listener: while
-   * the reviewer is standing on a card the question "am I in it or on it" has
-   * to be answered before anything reinterprets the key.
-   *
-   * Deliberately narrow. It fires only while the grid cursor is on a proposal
-   * cell, and only for these two keys; every other key on a proposal cell
-   * continues to the handlers that already own it. Enter while ALREADY inside
-   * falls through untouched, so the card's own Enter (run the first preferred
-   * action) is unchanged -- entering and acting stay two presses, which is
-   * what stops a stray Enter from committing a decision the reviewer only
-   * meant to look at.
-   */
-  if (structuralCardFocusPending !== null && !inlineEditor) {
-    if (event.key === "Enter" && !focusPanelEntered) {
-      event.preventDefault();
-      focusPanelEntered = true;
-      render(); // the render tail hands DOM focus to the card now that it is entered
-      return;
-    }
-  }
+  // Proposal-cell Enter is handled in the structural-card guard above,
+  // before the domain keymap. Do not add a second Enter path here: one
+  // owner is what keeps every Ambiguity cell region on the same grammar.
   /*
    * ESCAPE LEAVES THE PANEL, WHICHEVER CELL TYPE PUT YOU THERE (AG,
    * 2026-08-06). Lifted out of the proposal-only branch above so a candidate's
@@ -14779,8 +16205,15 @@ document.addEventListener("pointerdown", (event) => {
   if (structuralCardFocusPending === null) return;
   const target = event.target as HTMLElement | null;
   if (!target || typeof target.closest !== "function" || !target.closest(".relationship-card")) {
-    structuralCardFocusPending = null;
+    setCardCursor(null, "L15028");
   }
+});
+
+document.addEventListener("click", (event) => {
+  if (!timeSavedExplanationOpen) return;
+  const target = event.target as HTMLElement | null;
+  if (target && typeof target.closest === "function" && target.closest(".decision-tracker")) return;
+  closeTimeSavedExplanation(false);
 });
 
 // MILESTONE 3, Phase 1/2: populate the Recent Documents cache before the
@@ -14898,4 +16331,2098 @@ if (typeof document.querySelector === "function" && typeof document.addEventList
       }
     }
   });
+}
+
+/* ============================================================================
+ * TEMPORARY DIAGNOSTIC ENTRY POINTS (AG, 2026-08-08).
+ *
+ * Delete this block together with src/ui/positionTrace.ts once Ambiguity
+ * navigation is stabilized. It exists so ONE manual review run produces the
+ * evidence that four rounds of static reading could not (see
+ * `20260808-ambiguity-stabilization-step1-STOP.md`).
+ *
+ * ENABLED BY DEFAULT, deliberately. The whole value of this instrumentation
+ * is that Andrew does not have to remember to turn it on BEFORE hitting a
+ * failure -- by the time a workflow bug is visible, the events that explain
+ * it have already happened. The cost is one bounded in-memory ring buffer.
+ *
+ * Usage from the browser console, mid-run or immediately after a failure:
+ *
+ *   __docscrub.report()   -- timeline + write-site summary + contradictions
+ *   __docscrub.copy()     -- the same, onto the clipboard, ready to paste
+ *   __docscrub.bad()      -- ONLY the impossible states observed
+ *   __docscrub.clear()    -- reset before starting a fresh attempt
+ *
+ * Reference-dataset benchmarking (AG, 2026-08-10):
+ *   __docscrub.referenceEvidence()
+ *                         -- higher-ed terminology coverage, provenance, and
+ *                            its collisions with person evidence. Read-only;
+ *                            the only consumer of that evidence family.
+ *   __docscrub.channels()  -- every evidence family side by side, family-generic.
+ *   __docscrub.channels("Levy")
+ *                         -- one phrase, the full determination path.
+ *
+ * Semantic interpretation, Phase A (AG, 2026-08-10):
+ *   __docscrub.interpret() -- every reading the evidence supports, per candidate,
+ *                            with nothing chosen between them. Contested
+ *                            populations, grouped by what collides. Inert.
+ *   __docscrub.interpret("Major")
+ *                         -- one candidate, raw evidence -> supported readings.
+ *   copy(__docscrub.exportInterpretations())
+ *                         -- the loaded population as JSON, for the offline
+ *                            investigation harnesses. Read-only.
+ * ========================================================================== */
+enableTrace();
+{
+  const diagnostics = {
+    report: (): string => {
+      const text = traceReport();
+      console.log(text);
+      return text;
+    },
+    bad: (): unknown[] => {
+      const found = contradictions();
+      if (found.length === 0) console.log("No contradictory states observed in the retained window.");
+      else console.table(found);
+      return found;
+    },
+    writes: (): unknown[] => {
+      const summary = cursorWriteSummary();
+      console.table(summary);
+      return summary;
+    },
+    dump: (): string => {
+      const text = dumpTrace();
+      console.log(text);
+      return text;
+    },
+    json: (): string => dumpTraceJson(),
+    copy: async (): Promise<void> => {
+      const text = traceReport();
+      try {
+        await navigator.clipboard.writeText(text);
+        console.log("Position trace copied to clipboard.");
+      } catch {
+        console.log("Clipboard unavailable -- printing instead:\n" + text);
+      }
+    },
+    clear: (): void => {
+      clearTrace();
+      console.log("Position trace cleared.");
+    },
+    /*
+     * PHASE 2: WHAT DID THE RESIDUAL GATE DO? (AG, 2026-08-09)
+     *
+     * The measurement Andrew asked for, plus the provenance he asked to keep:
+     * for any candidate that vanished from Item Check, `why(id)` prints the
+     * rule, reason and evidence that removed it. Read-only.
+     */
+    gate: (): unknown => {
+      const run = workspace.getResidualGateRun();
+      const state = dispatcher.getState();
+      const total = state.detection?.candidates.length ?? 0;
+      if (!run) {
+        console.log("No gate run for this session (restored sessions do not re-run the gate).");
+        const existing = Object.keys(state.reviewSession?.automaticResolutions ?? {}).length;
+        console.log(`  candidates: ${total}   automatic resolutions carried in session: ${existing}`);
+        return null;
+      }
+      const byId = new Map((state.detection?.candidates ?? []).map((c) => [c.id, c.displayValue]));
+      console.log("=== Residual review gate ===");
+      console.log(`  total candidates:        ${total}`);
+      console.log(`  automatically resolved:  ${run.resolutions.length}`);
+      console.log(`  residual (human) work:   ${run.retained.length}`);
+      console.table(resolutionsByRule(run.resolutions));
+      console.log("\n--- resolved (first 40) ---");
+      console.table(run.resolutions.slice(0, 40).map((r) => ({ value: byId.get(r.candidateId) ?? r.candidateId, rule: r.ruleId, evidence: r.evidence.join(" | ") })));
+      const byReason = new Map<string, string[]>();
+      for (const r of run.retained) {
+        const list = byReason.get(r.because) ?? [];
+        list.push(byId.get(r.candidateId) ?? r.candidateId);
+        byReason.set(r.because, list);
+      }
+      console.log("\n--- retained, by disqualifier ---");
+      console.table([...byReason.entries()].map(([because, ids]) => ({ because, count: ids.length, examples: ids.slice(0, 6).join(", ") })));
+      return run;
+    },
+    /** Why did THIS candidate leave Item Check? Provenance on demand. */
+    why: (needle: string): unknown => {
+      const state = dispatcher.getState();
+      const match = (state.detection?.candidates ?? []).find(
+        (c) => c.id === needle || c.displayValue.toLowerCase() === needle.toLowerCase()
+      );
+      if (!match) {
+        console.log(`No candidate matching ${JSON.stringify(needle)}.`);
+        return null;
+      }
+      const auto = state.reviewSession?.automaticResolutions?.[match.id];
+      const decision = state.reviewSession?.candidateDecisions[match.id];
+      console.log(`${match.displayValue}  (${match.id}, ${match.detectedType})`);
+      if (decision) {
+        console.log(`  REVIEWER DECISION: ${decision.decision}  source=${decision.source ?? "reviewer"}  at ${decision.decidedAt}`);
+        return decision;
+      }
+      if (auto) {
+        console.log(`  AUTOMATIC RESOLUTION: ${auto.resolution}`);
+        console.log(`  rule:     ${auto.ruleId}`);
+        console.log(`  reason:   ${auto.reason}`);
+        console.log(`  evidence: ${auto.evidence.join(" | ")}`);
+        console.log(`  at:       ${auto.resolvedAt}`);
+        return auto;
+      }
+      const retained = workspace.getResidualGateRun()?.retained.find((r) => r.candidateId === match.id);
+      console.log(retained ? `  RETAINED for review: ${retained.because}` : "  RETAINED for review (no gate run for this session).");
+      /*
+       * THE UPSTREAM EVIDENCE, printed whenever a candidate was retained
+       * (AG, 2026-08-09). The gate consumes conclusions other engines
+       * reached, so "why is this still here" is usually a question about
+       * THEM -- and answering it needed the exact occurrence and the exact
+       * rule, not the gate's one-line summary. Added after `why("The")`
+       * reported a contextual-person hold that nothing in the gate could
+       * explain.
+       */
+      const detail = workspace.getContextualEvidence()?.byCandidate?.[match.id];
+      if (detail && (detail.rules?.length ?? 0) > 0) {
+        console.log(`  contextual person evidence: rules=${JSON.stringify(detail.rules)} contribution=${detail.contribution}`);
+        const occById = new Map((state.detection?.occurrences ?? []).map((o) => [o.id, o]));
+        for (const per of detail.perOccurrence ?? []) {
+          if (per.rules.length === 0) continue;
+          console.log(`    ${JSON.stringify(per.rules)} strength=${per.strength}`);
+          console.log(`      ${occById.get(per.occurrenceId)?.context ?? "(context unavailable)"}`);
+        }
+      }
+      const assessment = state.quality?.assessmentByCandidate[match.id];
+      if (assessment) {
+        console.log(`  quality filterRules:     ${JSON.stringify(assessment.filterRules)}`);
+        console.log(`  quality positiveReasons: ${JSON.stringify(assessment.positiveReasons)}`);
+      }
+      return retained ?? null;
+    },
+    /*
+     * WHY IS THE RETAINED POPULATION STILL THIS BIG? (AG, 2026-08-09)
+     *
+     * The gate is deliberately conservative, so every retained candidate is
+     * retained by some UPSTREAM evidence claim. This profiles those claims
+     * against the live document and reports, for each proposed correction,
+     * HOW MANY UNITS IT WOULD RELEASE -- so the next fix is chosen by size
+     * of effect rather than by which example was noticed first.
+     *
+     * Read-only. It re-derives the same facts the gate used and asks
+     * counterfactual questions; it changes nothing.
+     */
+    /*
+     * WHO IS ALLOWED INTO "LIKELY PEOPLE"? (AG, 2026-08-09)
+     *
+     * Item Check's routing falls back to `detectedType === "person"` for any
+     * candidate with no archetype, and `detectedType` is largely a regex
+     * verdict. This measures the consequence on the live document and prices
+     * two candidate membership contracts against it, by RE-RUNNING the real
+     * classifiers rather than approximating them:
+     *
+     *   C1  route the fallback through semanticTypeFor() -- the Type Check
+     *       classifier that already exists and that Item Check ignores.
+     *   C2  C1, plus: People requires POSITIVE person evidence. Name SHAPE
+     *       (strong_name_structure) is not evidence.
+     *
+     * Read-only. Changes nothing, decides nothing.
+     */
+    people: (): unknown => {
+      const state = dispatcher.getState();
+      const ids = visibleItemCheckIds(state);
+      const sections = buildTriageSections(triageItemsFor(ids, state));
+      const peopleIds = sections.find((s) => s.id === "people")?.candidateIds ?? [];
+      const byId = new Map((state.detection?.candidates ?? []).map((c) => [c.id, c]));
+      const ctxEv = workspace.getContextualEvidence();
+      const ambiguityIds = new Set((state.grouping?.ambiguityProposals ?? []).map((p) => p.candidateId));
+      const groupIds = new Set((state.grouping?.entityGroupProposals ?? []).flatMap((g) => g.candidateIds));
+      const val = (id: string): string => byId.get(id)?.displayValue ?? id;
+      const cats = (id: string): string[] => {
+        const c = byId.get(id);
+        return c ? candidateCategories(c, state) : [];
+      };
+      const NAME_LEXICON = ["known-personal-name-token", "known-first-name", "known-name-structure"];
+      const SHAPE_ONLY = ["strong-name-structure", "surname-given-structure", "moderate-frequency-bonus"];
+
+      /** semanticTypeFor over the same facts Type Check feeds it. */
+      const semanticOf = (id: string): SemanticTypeId => {
+        const c = byId.get(id);
+        if (!c) return "other";
+        const facts = recommendationFactsForCandidate(id, state);
+        return semanticTypeForProfile({
+          detectedType: c.detectedType,
+          categories: cats(id),
+          relationshipKinds: facts?.relationshipKinds ?? new Set(),
+        });
+      };
+      const SEMANTIC_TO_TRIAGE: Record<SemanticTypeId, string> = {
+        people: "people", organizations: "institutional", acronyms: "acronyms",
+        identifiers: "identifiers", "dates-terms": "calendar", "document-titles": "institutional",
+        emails: "identifiers", phones: "identifiers", other: "other",
+      };
+
+      /** The evidence C2 would require: something OTHER than capitalization
+       *  shape saying this denotes a person. */
+      const personEvidenceOf = (id: string): string[] => {
+        const found: string[] = [];
+        if (cats(id).some((c) => NAME_LEXICON.includes(c))) found.push("name-lexicon");
+        if ((ctxEv?.byCandidate?.[id]?.rules?.length ?? 0) > 0) found.push("contextual");
+        if (ambiguityIds.has(id)) found.push("ambiguity-proposal");
+        if (groupIds.has(id)) found.push("entity-group");
+        return found;
+      };
+
+      /* ================= C3 =================================================
+       * "Strong explicit person evidence, OR contextual evidence corroborated
+       * by an independent person/name signal. Contextual alone does not
+       * qualify. Shape alone does not qualify." (AG, 2026-08-09)
+       *
+       * THE TIER SPLIT IS NOT INVENTED HERE. contextual-person-evidence.ts
+       * already separates ANCHOR rules from USAGE rules, on the recorded
+       * grounds that "a signature block or a name-with-email is a claim about
+       * IDENTITY rather than about usage" -- and weights them 40-50 against
+       * the usage rules' lower band. C3's "strong explicit" is that existing
+       * distinction, plus the name lexicon, plus an attached honorific.
+       *
+       * `nearby_title` matters more than its size suggests: it is a quality
+       * POSITIVE REASON, not a contextual rule, so C2 could not see it at
+       * all. It is why C3 is NOT simply a stricter C2 -- C3 rescues a titled
+       * name that C2 excluded while dropping the contextual-only phrases C2
+       * kept. The two exclusion sets genuinely differ in both directions.
+       */
+      const rulesOf = (id: string): string[] => ctxEv?.byCandidate?.[id]?.rules ?? [];
+      const positivesOf = (id: string): string[] => state.quality?.assessmentByCandidate[id]?.positiveReasons ?? [];
+      const hasAnchor = (id: string): boolean => rulesOf(id).some((r) => r.startsWith("anchor_"));
+      const hasUsage = (id: string): boolean => rulesOf(id).some((r) => r.startsWith("contextual_"));
+      const hasTitle = (id: string): boolean => positivesOf(id).includes("nearby_title");
+      const hasLexicon = (id: string): boolean => cats(id).some((c) => NAME_LEXICON.includes(c));
+      const hasSurnameGiven = (id: string): boolean => cats(id).includes("surname-given-structure");
+
+      /*
+       * "GENUINE ambiguity/entity-person linkage" (AG's word). A proposal or
+       * group is only person evidence if the thing it links to is itself
+       * person-evidenced -- otherwise a spurious proposal corroborates
+       * itself, which is the failure the witness audit already found one
+       * layer down.
+       */
+      const groupsOf = (id: string): string[][] => (state.grouping?.entityGroupProposals ?? [])
+        .filter((g) => g.candidateIds.includes(id)).map((g) => [...g.candidateIds]);
+      const personEvidencedPartner = (id: string): boolean => {
+        const partners = new Set<string>();
+        for (const ids of groupsOf(id)) for (const other of ids) if (other !== id) partners.add(other);
+        for (const p of (state.grouping?.ambiguityProposals ?? []).filter((p) => p.candidateId === id)) {
+          for (const option of p.candidateGroupOptions ?? []) {
+            for (const other of (state.grouping?.entityGroupProposals ?? []).find((g) => g.groupId === option.groupId)?.candidateIds ?? []) {
+              if (other !== id) partners.add(other);
+            }
+          }
+        }
+        for (const p of partners) if (hasLexicon(p) || hasSurnameGiven(p) || hasTitle(p) || hasAnchor(p)) return true;
+        return false;
+      };
+
+      /** Qualifies on its own. */
+      const strongExplicitOf = (id: string): string[] => {
+        const found: string[] = [];
+        if (hasLexicon(id)) found.push("name-lexicon");
+        if (hasAnchor(id)) found.push("anchor:" + rulesOf(id).filter((r) => r.startsWith("anchor_")).map((r) => r.replace("anchor_", "")).join("/"));
+        if (hasTitle(id)) found.push("title");
+        return found;
+      };
+      /** Makes contextual usage evidence count. Shape is NOT here. */
+      const corroboratorOf = (id: string): string[] => {
+        const found: string[] = [];
+        if (hasLexicon(id)) found.push("name-lexicon");
+        if (hasSurnameGiven(id)) found.push("surname-given");
+        if (hasTitle(id)) found.push("title");
+        if (hasAnchor(id)) found.push("anchor");
+        if (personEvidencedPartner(id)) found.push("person-linkage");
+        return found;
+      };
+      const c3Verdict = (id: string): { keep: boolean; why: string } => {
+        const strong = strongExplicitOf(id);
+        if (strong.length > 0) return { keep: true, why: "strong: " + strong.join("+") };
+        if (hasUsage(id)) {
+          const corr = corroboratorOf(id);
+          if (corr.length > 0) return { keep: true, why: "contextual+" + corr.join("+") };
+          return { keep: false, why: "contextual ALONE" };
+        }
+        return { keep: false, why: hasSurnameGiven(id) || cats(id).some((c) => SHAPE_ONLY.includes(c)) ? "shape only" : "no evidence" };
+      };
+
+      /*
+       * INDEPENDENT ground-truth PROXIES, deliberately not built from C3's
+       * own predicate -- a proxy that reused it would score the contract
+       * against itself and always agree.
+       *
+       * looksLikePerson: the token also appears inside a MULTI-TOKEN
+       *   person-evidenced candidate somewhere in the document, i.e. the
+       *   document itself spells the name out elsewhere. This is the
+       *   documentNameEvidence signal, which C3 does not consult.
+       * looksInstitutional: production categories or semanticTypeFor say
+       *   organization / calendar / acronym / document-title.
+       */
+      const personEvidencedFullNames = new Map<string, string>();
+      for (const c of state.detection?.candidates ?? []) {
+        if (c.detectedType !== "person") continue;
+        if (c.displayValue.trim().split(/\s+/).length < 2) continue;
+        if (!(hasLexicon(c.id) || hasSurnameGiven(c.id) || hasTitle(c.id) || hasAnchor(c.id))) continue;
+        for (const t of c.displayValue.toLowerCase().split(/[\s,]+/)) {
+          const k = t.replace(/[^\p{L}\p{M}'’-]/gu, "");
+          if (k.length > 1 && !personEvidencedFullNames.has(k)) personEvidencedFullNames.set(k, c.displayValue);
+        }
+      }
+      const looksLikePerson = (id: string): string | null => {
+        const v = val(id);
+        if (v.trim().split(/\s+/).length !== 1) return null;
+        const k = v.toLowerCase().replace(/[^\p{L}\p{M}'’-]/gu, "");
+        const w = personEvidencedFullNames.get(k);
+        return w && w !== v ? w : null;
+      };
+      const looksInstitutional = (id: string): boolean => {
+        const s = semanticOf(id);
+        return s === "organizations" || s === "dates-terms" || s === "acronyms" || s === "document-titles" || s === "identifiers";
+      };
+
+      const rows = peopleIds.map((id) => {
+        const c = cats(id);
+        const evidence = personEvidenceOf(id);
+        const semantic = semanticOf(id);
+        return {
+          id,
+          value: val(id),
+          tokens: val(id).trim().split(/\s+/).filter(Boolean).length,
+          semantic,
+          c1: SEMANTIC_TO_TRIAGE[semantic],
+          evidence: evidence.join("+") || "-",
+          shapeOnly: evidence.length === 0 && c.some((x) => SHAPE_ONLY.includes(x)),
+          categories: c.join(","),
+          occurrences: byId.get(id)?.occurrenceIds.length ?? 0,
+        };
+      });
+
+      /* ===== NEW BASELINE, post oracle deviation #8 (AG, 2026-08-10) =======
+       * The last-first branch now reaches the known-given-name lookup, so the
+       * evidence representation of `Cobb, Christopher` has CHANGED. Every
+       * number below is therefore a fresh baseline and must not be compared
+       * unit-for-unit against the pre-fix 139/220. Reported first, and as
+       * populations rather than as a single figure, because "People" and
+       * "shape-only" are different questions.
+       */
+      {
+        const allPerson = (state.detection?.candidates ?? []).filter((c) => c.detectedType === "person");
+        const SHAPE = ["strong-name-structure", "surname-given-structure", "initials-with-surname", "weak-name-structure"];
+        const positivePersonEvidence = (id: string): boolean =>
+          hasLexicon(id) || hasAnchor(id) || hasTitle(id) || hasUsage(id) || personEvidencedPartner(id);
+        const inPeople = rows.map((r) => r.id);
+        const withPos = inPeople.filter(positivePersonEvidence);
+        const shapeOnly = inPeople.filter((id) => !positivePersonEvidence(id) && cats(id).some((c) => SHAPE.includes(c)));
+        const conflicting = inPeople.filter((id) => positivePersonEvidence(id) && looksInstitutional(id));
+        const noEvidenceAtAll = inPeople.filter((id) => !positivePersonEvidence(id) && !cats(id).some((c) => SHAPE.includes(c)));
+        console.log(`=== NEW BASELINE (post deviation #8 -- last-first name evidence) ===`);
+        console.table([
+          { population: "person-typed candidates (detector)", units: allPerson.length },
+          { population: "Item Check -> Likely People", units: rows.length },
+          { population: "  with POSITIVE person evidence", units: withPos.length },
+          { population: "  SHAPE-ONLY (no person evidence)", units: shapeOnly.length },
+          { population: "  CONFLICTING (person evidence + institutional/calendar type)", units: conflicting.length },
+          { population: "  no evidence of any kind", units: noEvidenceAtAll.length },
+        ]);
+        console.log(`   with positive evidence: ${withPos.map(val).join(" | ") || "(none)"}`);
+        console.log(`   conflicting:            ${conflicting.map(val).join(" | ") || "(none)"}`);
+        const lastFirst = allPerson.filter((c) => /,/.test(c.displayValue));
+        const rescued = lastFirst.filter((c) => cats(c.id).includes("known-personal-name-token"));
+        console.log(`\n   DEVIATION #8 EFFECT: ${rescued.length} of ${lastFirst.length} comma-form candidates now carry known_personal_name_token`);
+        console.log(`   rescued: ${rescued.map((c) => c.displayValue).join(" | ") || "(none)"}`);
+      }
+
+      console.log(`\n=== Item Check -> Likely People: ${rows.length} units of ${ids.length} visible ===`);
+
+      console.log("\n--- C1: route the no-archetype fallback through semanticTypeFor() ---");
+      const c1Dest = new Map<string, string[]>();
+      for (const r of rows) { const l = c1Dest.get(r.c1) ?? []; l.push(r.value); c1Dest.set(r.c1, l); }
+      console.table([...c1Dest.entries()].sort((a, b) => b[1].length - a[1].length)
+        .map(([k, v]) => ({ destination: k, units: v.length, examples: v.slice(0, 10).join(", ") })));
+      for (const [dest, v] of c1Dest) if (dest !== "people") console.log(`   -> ${dest} (${v.length}): ${v.join(" | ")}`);
+
+      console.log("\n--- C2: of those C1 still calls People, which carry PERSON EVIDENCE? ---");
+      const stillPeople = rows.filter((r) => r.c1 === "people");
+      const withEvidence = stillPeople.filter((r) => r.evidence !== "-");
+      const shapeOnly = stillPeople.filter((r) => r.evidence === "-");
+      console.table([
+        { contract: "current (detectedType fallback)", people: rows.length },
+        { contract: "C1 (semantic routing)", people: stillPeople.length },
+        { contract: "C2 (C1 + person evidence required)", people: withEvidence.length },
+      ]);
+      const byEvidence = new Map<string, number>();
+      for (const r of withEvidence) byEvidence.set(r.evidence, (byEvidence.get(r.evidence) ?? 0) + 1);
+      console.table([...byEvidence.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ evidence: k, units: v })));
+
+      console.log(`\n--- C2 WOULD RELOCATE ${shapeOnly.length} name-SHAPED units with no corroborating evidence ---`);
+      console.log(`   ${shapeOnly.map((r) => r.value).join(" | ")}`);
+
+      console.log("\n--- FALSE-EXCLUSION REVIEW: the riskiest of those (multi-occurrence, name-shaped) ---");
+      console.table(shapeOnly.filter((r) => r.occurrences > 1).sort((a, b) => b.occurrences - a.occurrences).slice(0, 30)
+        .map((r) => ({ value: r.value, occ: r.occurrences, tokens: r.tokens, categories: r.categories })));
+
+      console.log("\n--- THE TRUSTWORTHY SET: what C2 keeps in People ---");
+      console.table(withEvidence.slice(0, 60).map((r) => ({ value: r.value, evidence: r.evidence, occ: r.occurrences })));
+
+      // ================= C3 =================================================
+      const c3 = stillPeople.map((r) => {
+        const v = c3Verdict(r.id);
+        return { ...r, keep: v.keep, why: v.why, alsoNamed: looksLikePerson(r.id), institutional: looksInstitutional(r.id) };
+      });
+      const c3Keep = c3.filter((r) => r.keep);
+      const c3Drop = c3.filter((r) => !r.keep);
+
+      console.log(`\n=== C3: strong explicit person evidence, OR contextual CORROBORATED ===`);
+      console.table([
+        { contract: "current (detectedType fallback)", people: rows.length },
+        { contract: "C1 (semantic routing)", people: stillPeople.length },
+        { contract: "C2 (any person evidence)", people: withEvidence.length },
+        { contract: "C3 (strong, or corroborated contextual)", people: c3Keep.length },
+      ]);
+
+      const c3Why = new Map<string, number>();
+      for (const r of c3Keep) c3Why.set(r.why.split(":")[0]!.split("+")[0]!, (c3Why.get(r.why.split(":")[0]!.split("+")[0]!) ?? 0) + 1);
+      console.log("\n--- C3 RETAINED, by qualifying route ---");
+      console.table([...c3Why.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ route: k, units: v })));
+
+      const truePeopleRetained = c3Keep.filter((r) => r.why.startsWith("strong") || r.alsoNamed !== null || r.why.includes("person-linkage"));
+      const nonPeopleRetained = c3Keep.filter((r) => r.institutional || (r.categories.split(",").some((c) => ["greeting-or-courtesy", "institution-term", "department-organization", "organization-suffix", "calendar-term", "season-or-academic-term", "document-structure-term", "product-system-name"].includes(c))));
+      const truePeopleExcluded = c3Drop.filter((r) => r.alsoNamed !== null);
+
+      console.log("\n--- THE FOUR NUMBERS ASKED FOR (proxies -- see below) ---");
+      console.table([
+        { measure: "People count (C3)", units: c3Keep.length },
+        { measure: "true people retained (proxy)", units: truePeopleRetained.length },
+        { measure: "obvious non-people retained (proxy)", units: nonPeopleRetained.length },
+        { measure: "true people excluded (proxy)", units: truePeopleExcluded.length },
+      ]);
+      console.log("   PROXIES, stated so the numbers are readable:");
+      console.log("     true person  = strong explicit evidence, OR the document spells the name out in a person-evidenced full name elsewhere (a signal C3 does NOT consult), OR person linkage");
+      console.log("     non-person   = semanticTypeFor says org/calendar/acronym/doc-title, or carries an institutional/greeting/calendar category");
+      console.log("   Neither is ground truth. The lists below are printed in full so the judgement stays yours.");
+
+      console.log(`\n--- OBVIOUS NON-PEOPLE STILL IN PEOPLE UNDER C3 (${nonPeopleRetained.length}) -- the trust test ---`);
+      console.table(nonPeopleRetained.slice(0, 40).map((r) => ({ value: r.value, why: r.why, semantic: r.semantic, categories: r.categories })));
+
+      console.log(`\n--- FALSE-EXCLUSION TABLE, C3 (${truePeopleExcluded.length}) -- excluded, but the document names them elsewhere ---`);
+      console.table(truePeopleExcluded.sort((a, b) => b.occurrences - a.occurrences).slice(0, 40)
+        .map((r) => ({ value: r.value, occ: r.occurrences, why: r.why, spelledOutAs: r.alsoNamed })));
+
+      // The comparison AG's acceptance criterion needs.
+      const c2KeepIds = new Set(withEvidence.map((r) => r.id));
+      const c3KeepIds = new Set(c3Keep.map((r) => r.id));
+      const rescued = c3.filter((r) => r.keep && !c2KeepIds.has(r.id));
+      const newlyDropped = c3.filter((r) => !r.keep && c2KeepIds.has(r.id));
+      const c2FalseExcl = stillPeople.filter((r) => !c2KeepIds.has(r.id) && looksLikePerson(r.id) !== null);
+      console.log("\n--- C2 vs C3: the exclusion sets differ in BOTH directions ---");
+      console.table([
+        { comparison: "C2 false-exclusion table (looks like a person)", units: c2FalseExcl.length },
+        { comparison: "C3 false-exclusion table (looks like a person)", units: truePeopleExcluded.length },
+        { comparison: "RESCUED by C3 (C2 excluded, C3 keeps -- title/anchor)", units: rescued.length },
+        { comparison: "NEWLY DROPPED by C3 (contextual alone)", units: newlyDropped.length },
+        { comparison: "  of those, look like people", units: newlyDropped.filter((r) => r.alsoNamed !== null).length },
+      ]);
+      console.log(`   rescued: ${rescued.map((r) => `${r.value} [${r.why}]`).join(" | ") || "(none)"}`);
+      console.log(`   newly dropped: ${newlyDropped.map((r) => r.value).join(" | ") || "(none)"}`);
+      void c3KeepIds;
+
+      console.log(`\n--- C3 RETAINED IN FULL (${c3Keep.length}) -- read this as the product ---`);
+      console.table(c3Keep.map((r) => ({ value: r.value, why: r.why, occ: r.occurrences })));
+
+      /* ================= ROUTING RULES OVER THE C1 RESIDUE =================
+       * (AG, 2026-08-09: "investigate the remaining People units as a ROUTING
+       * problem rather than a person-detection problem".)
+       *
+       * THE STRUCTURAL CONSTRAINT, which shapes every rule below: C1 routes
+       * via semanticTypeFor, and that tests organizations / calendar /
+       * acronyms / document-titles BEFORE people. So by construction the
+       * residue carries NONE of those categories -- anything that did has
+       * already left. A routing rule for the residue therefore cannot use
+       * phrase-level categories; it has to use evidence semanticTypeFor
+       * never asks for.
+       *
+       * The evidence it never asks for is PER-TOKEN. scoring.ts already owns
+       * LEXICAL_WORDS -- "is this an ordinary word of English" -- built for
+       * the acronym-ambiguity category, with a comment explaining why
+       * ALL_COMMON_DICTIONARY_WORDS is the wrong set for exactly this
+       * question. It is applied to the compacted acronym form and never to
+       * the tokens of a phrase.
+       *
+       * Every rule is scoped to SHAPE-ONLY units (no name-lexicon evidence,
+       * no ambiguous_lexical_token) and to units with NO person evidence of
+       * any kind, so the name/word collisions the pipeline already protects
+       * are untouched before a rule is even consulted.
+       */
+      const NAME_ANY = [...NAME_LEXICON, "surname-given-structure", "ambiguous-lexical-token"];
+      const tokensOf = (v: string): string[] => v.replace(/,/g, " ").split(/\s+/).filter(Boolean)
+        .map((t) => t.toLowerCase().replace(/[^\p{L}\p{M}'’-]/gu, "")).filter((t) => t.length > 0);
+      const isLexical = (t: string): boolean => LEXICAL_WORDS_FOR_PROFILE.has(t);
+      const perTokenCategory = (t: string, wanted: readonly string[]): boolean => {
+        const scored = scoreCandidateQualityForProfile(
+          { id: `probe:${t}`, displayValue: t.charAt(0).toUpperCase() + t.slice(1), detectedType: "person", occurrenceIds: [] } as unknown as Candidate,
+          [], new Map()
+        );
+        return [...scored.filterRules, ...scored.reasons].map((c) => c.replace(/_/g, "-")).some((c) => wanted.includes(c));
+      };
+      const ORG_OR_CAL = ["institution-term", "department-organization", "organization-suffix", "product-system-name",
+        "administrative-phrase", "legal-administrative-term", "document-structure-term", "calendar-term",
+        "calendar-abbreviation", "season-or-academic-term"];
+
+      const residue = stillPeople.map((r) => {
+        const tk = tokensOf(r.value);
+        const anyPersonEvidence = strongExplicitOf(r.id).length > 0 || hasUsage(r.id) || personEvidencedPartner(r.id);
+        return {
+          ...r, tk,
+          shapeOnly: !cats(r.id).some((c) => NAME_ANY.includes(c)),
+          anyPersonEvidence,
+          allLexical: tk.length > 1 && tk.every(isLexical),
+          lastLexical: tk.length > 1 && isLexical(tk[tk.length - 1]!),
+          pluralHead: tk.length > 1 && /s$/.test(tk[tk.length - 1]!) && isLexical(tk[tk.length - 1]!.replace(/s$/, "")),
+          tokenOrgCal: tk.length > 1 && tk.some((t) => perTokenCategory(t, ORG_OR_CAL)),
+        };
+      });
+      const eligible = residue.filter((r) => r.shapeOnly && !r.anyPersonEvidence);
+      console.log(`\n=== ROUTING RULES over the C1 residue (${residue.length}) ===`);
+      console.log(`   eligible (shape-only AND no person evidence of any kind): ${eligible.length}`);
+      console.log(`   protected by existing evidence, no rule may touch them:  ${residue.length - eligible.length}`);
+
+      const RULES: Array<{ id: string; label: string; pick: (r: (typeof residue)[number]) => boolean }> = [
+        { id: "R1", label: "every token is an ordinary English word (production LEXICAL_WORDS)", pick: (r) => r.allLexical },
+        { id: "R2", label: "final token is an ordinary English word (LOOSER -- higher name risk)", pick: (r) => r.lastLexical },
+        { id: "R3", label: "final token is a plural ordinary noun", pick: (r) => r.pluralHead },
+        { id: "R4", label: "some token individually carries an org/calendar category", pick: (r) => r.tokenOrgCal },
+        { id: "R1+R4", label: "R1 or R4 (the combination worth pricing)", pick: (r) => r.allLexical || r.tokenOrgCal },
+      ];
+      console.table(RULES.map((rule) => {
+        const hit = eligible.filter(rule.pick);
+        return { rule: rule.id, removes: hit.length, pctOfResidue: `${Math.round((hit.length / Math.max(1, residue.length)) * 100)}%`, what: rule.label };
+      }));
+      for (const rule of RULES) {
+        const hit = eligible.filter(rule.pick);
+        console.log(`\n--- ${rule.id} removes ${hit.length}: ${hit.map((r) => r.value).join(" | ")}`);
+        const risky = hit.filter((r) => looksLikePerson(r.id) !== null || r.occurrences > 2);
+        if (risky.length > 0) {
+          console.log(`    NAME RISK in ${rule.id} (document names them elsewhere, or 3+ occurrences):`);
+          console.table(risky.map((r) => ({ value: r.value, occ: r.occurrences, spelledOutAs: looksLikePerson(r.id) ?? "-" })));
+        } else console.log(`    NAME RISK in ${rule.id}: none flagged`);
+      }
+      const survivors = eligible.filter((r) => !r.allLexical && !r.tokenOrgCal);
+      console.log(`\n--- WOULD SURVIVE R1+R4 (${survivors.length}) -- the honest remainder ---`);
+      console.log(`   ${survivors.map((r) => r.value).join(" | ")}`);
+
+      /* ============ CONFIDENCE LANGUAGE, measured separately ==============
+       * NOT a routing question, and deliberately reported apart from one.
+       * confidenceOpener(likelihood, entityType) takes the NOUN from the
+       * DETECTOR and only the ADVERB from the score, so "Almost certainly a
+       * person's name" means "the quality engine is >=95 confident" about a
+       * subject nothing ever assessed.
+       */
+      const unsupported = residue.filter((r) => {
+        const like = state.quality?.scoreByCandidate[r.id] ?? 0;
+        return like >= 80 && r.shapeOnly && !r.anyPersonEvidence;
+      });
+      console.log(`\n=== UNSUPPORTED CONFIDENCE LANGUAGE (${unsupported.length}) ===`);
+      console.log("   score >= 80 -> the UI says 'Almost certainly' / 'Likely a person's name',");
+      console.log("   while the item carries NO name evidence and NO person evidence -- only shape.");
+      console.table(unsupported.sort((a, b) => (state.quality?.scoreByCandidate[b.id] ?? 0) - (state.quality?.scoreByCandidate[a.id] ?? 0))
+        .slice(0, 40).map((r) => ({ value: r.value, score: state.quality?.scoreByCandidate[r.id], says: (state.quality?.scoreByCandidate[r.id] ?? 0) >= 95 ? "Almost certainly a person's name" : "Likely a person's name", categories: r.categories })));
+
+      /* ========== CAPABILITY X: OCCURRENCE-DISTRIBUTION EVIDENCE ==========
+       * (AG, 2026-08-10, GO/NO-GO for 20260810-detection-interpretation-
+       * routing-boundary.md §12.)
+       *
+       * THE QUESTION. The C1 residue carries no phrase-level non-person
+       * evidence by construction (semanticTypeFor tests organizations /
+       * calendar / acronyms / document-titles BEFORE people, so anything
+       * that had it has already left). Every lexical avenue has now been
+       * measured and none separates `Amy Miller` from `Grade Rosters`.
+       *
+       * The one remaining body of evidence is STRUCTURAL and is already in
+       * production: OccurrenceClassifier assigns every occurrence a
+       * `groupKind` of "standalone" (no substantive surrounding prose) or
+       * "contextual" (embedded in a sentence), and a `blockKind` from the
+       * owning ContentBlock. Nothing consults either for classification.
+       *
+       * The hypothesis: a person is written about in prose; an interface or
+       * table label never is. If true, "EVERY occurrence is standalone" is a
+       * B-side signal that is lexicon-free, language-independent, and works
+       * on exactly the population no name lexicon reaches.
+       *
+       * READ-ONLY. This reports production's own `reviewOccurrences` --
+       * `groupKind` is not recomputed here, it is read from
+       * state.classification, which is the same array the review UI uses.
+       *
+       * THE PROXIES ARE DELIBERATELY INDEPENDENT OF THE SIGNAL. A proxy
+       * built from occurrence behaviour would score the hypothesis against
+       * itself. Both below are purely lexical:
+       *   person proxy      strong explicit evidence (lexicon/anchor/title),
+       *                     or the document spells the token out elsewhere
+       *                     inside a person-evidenced full name
+       *                     (looksLikePerson -- documentNameEvidence's signal)
+       *   non-person proxy  R1 (every token an ordinary English word) or
+       *                     R4 (some token carries an org/calendar category)
+       * Units matching neither are UNLABELLED and are reported separately
+       * rather than being silently counted as either.
+       */
+      const reviewOccs = state.classification?.reviewOccurrences ?? [];
+      const occsByCandidate = new Map<string, typeof reviewOccs>();
+      for (const o of reviewOccs) {
+        const list = occsByCandidate.get(o.candidateId);
+        if (list) list.push(o);
+        else occsByCandidate.set(o.candidateId, [o]);
+      }
+      const HEADING_BLOCK_KINDS = new Set(["header", "footer", "table"]);
+      const distributionOf = (id: string): { standalone: number; contextual: number; total: number; allStandalone: boolean; allHeadingBlock: boolean } => {
+        const occs = occsByCandidate.get(id) ?? [];
+        const standalone = occs.filter((o) => o.groupKind === "standalone").length;
+        const contextual = occs.length - standalone;
+        return {
+          standalone,
+          contextual,
+          total: occs.length,
+          allStandalone: occs.length > 0 && contextual === 0,
+          allHeadingBlock: occs.length > 0 && occs.every((o) => HEADING_BLOCK_KINDS.has(o.blockKind)),
+        };
+      };
+
+      console.log(`\n\n=================== CAPABILITY X: OCCURRENCE DISTRIBUTION ===================`);
+      if (reviewOccs.length === 0) {
+        console.log("   NO CLASSIFICATION OUTPUT IN STATE -- reload the document fresh (a restored");
+        console.log("   session does not rebuild state.classification). Nothing below is valid.");
+      } else {
+        console.log(`   reading production's own reviewOccurrences (${reviewOccs.length} occurrences); groupKind NOT recomputed here.`);
+
+        /** Base rate across EVERY person-typed candidate, so the residue's
+         *  numbers can be read against something. */
+        const allPerson = (state.detection?.candidates ?? []).filter((c) => c.detectedType === "person");
+        const baseAllStandalone = allPerson.filter((c) => distributionOf(c.id).allStandalone).length;
+        console.log(`   base rate: ${baseAllStandalone} of ${allPerson.length} person-typed candidates are ALL-STANDALONE (${Math.round((100 * baseAllStandalone) / Math.max(1, allPerson.length))}%)`);
+
+        const dist = residue.map((r) => {
+          const d = distributionOf(r.id);
+          const personProxy = strongExplicitOf(r.id).length > 0 || looksLikePerson(r.id) !== null;
+          const nonPersonProxy = r.allLexical || r.tokenOrgCal;
+          return {
+            ...r, ...d,
+            personProxy,
+            nonPersonProxy: nonPersonProxy && !personProxy,
+            unlabelled: !personProxy && !nonPersonProxy,
+          };
+        });
+
+        console.log(`\n--- 1. STANDALONE vs CONTEXTUAL, per candidate (C1 residue, ${dist.length}) ---`);
+        console.table(dist.sort((a, b) => b.total - a.total).map((r) => ({
+          value: r.value, standalone: r.standalone, contextual: r.contextual, total: r.total,
+          allStandalone: r.allStandalone, allHeadingBlock: r.allHeadingBlock,
+          proxy: r.personProxy ? "person" : r.nonPersonProxy ? "non-person" : "-",
+        })));
+
+        const allSA = dist.filter((r) => r.allStandalone);
+        console.log(`\n--- 2. EVERY OCCURRENCE STANDALONE (${allSA.length} of ${dist.length} residue units) ---`);
+        console.log(`   ${allSA.map((r) => r.value).join(" | ") || "(none)"}`);
+
+        const peopleProxy = dist.filter((r) => r.personProxy);
+        const nonPeopleProxy = dist.filter((r) => r.nonPersonProxy);
+        const unlabelled = dist.filter((r) => r.unlabelled);
+        const peopleSA = peopleProxy.filter((r) => r.allStandalone);
+        const nonPeopleSA = nonPeopleProxy.filter((r) => r.allStandalone);
+        const unlabelledSA = unlabelled.filter((r) => r.allStandalone);
+
+        console.log(`\n--- 3. KNOWN REAL PEOPLE that are all-standalone (${peopleSA.length} of ${peopleProxy.length} person-proxy units) ---`);
+        console.log(`   THIS IS THE FALSE-EXCLUSION SET. Every name here would be pushed AWAY from People by the signal.`);
+        console.table(peopleSA.map((r) => ({ value: r.value, occ: r.total, why: strongExplicitOf(r.id).join("+") || "-", spelledOutAs: looksLikePerson(r.id) ?? "-" })));
+
+        console.log(`\n--- 4. KNOWN NON-PEOPLE that are all-standalone (${nonPeopleSA.length} of ${nonPeopleProxy.length} non-person-proxy units) ---`);
+        console.log(`   THIS IS THE PAYOFF SET. Everything here leaves the unresolved pile with real evidence.`);
+        console.log(`   ${nonPeopleSA.map((r) => r.value).join(" | ") || "(none)"}`);
+
+        console.log(`\n--- 5. UNLABELLED units that are all-standalone (${unlabelledSA.length} of ${unlabelled.length}) ---`);
+        console.log(`   neither proxy fired; these are where the signal would act WITHOUT a lexical cross-check.`);
+        console.log(`   ${unlabelledSA.map((r) => r.value).join(" | ") || "(none)"}`);
+
+        const rate = (hit: number, of: number): string => `${hit}/${of} = ${of ? Math.round((100 * hit) / of) : 0}%`;
+        console.log(`\n--- 6. SEPARATION ---`);
+        console.table([
+          { signal: "every occurrence standalone", people: rate(peopleSA.length, peopleProxy.length), nonPeople: rate(nonPeopleSA.length, nonPeopleProxy.length), unlabelled: rate(unlabelledSA.length, unlabelled.length) },
+          { signal: "every occurrence in header/footer/table block", people: rate(peopleProxy.filter((r) => r.allHeadingBlock).length, peopleProxy.length), nonPeople: rate(nonPeopleProxy.filter((r) => r.allHeadingBlock).length, nonPeopleProxy.length), unlabelled: rate(unlabelled.filter((r) => r.allHeadingBlock).length, unlabelled.length) },
+        ]);
+        const peopleRate = peopleProxy.length ? peopleSA.length / peopleProxy.length : 0;
+        const nonPeopleRate = nonPeopleProxy.length ? nonPeopleSA.length / nonPeopleProxy.length : 0;
+        console.log(`   lift = non-people rate - people rate = ${(100 * (nonPeopleRate - peopleRate)).toFixed(0)} points`);
+        console.log(`   GO if non-people fire MUCH more often than real people. NO-GO if the two rates are close,`);
+        console.log(`   or if section 3 above is non-trivial: pushing a real person away from People is the failure that matters.`);
+
+        console.log(`\n--- 7. ESTIMATED EFFECT UNDER THE PROPOSED INTERPRETER ---`);
+        console.log(`   Reading the signal as CORROBORATED NON-PERSON evidence (never as a person disqualifier`);
+        console.log(`   on its own), applied ONLY to units with no positive person evidence -- the same double`);
+        console.log(`   gate the routing rules use, so the name/word collisions the pipeline already protects`);
+        console.log(`   are never reached.`);
+        const eligibleForX = dist.filter((r) => r.shapeOnly && !r.anyPersonEvidence && r.allStandalone);
+        const eligibleRealPeople = eligibleForX.filter((r) => looksLikePerson(r.id) !== null);
+        console.table([
+          { population: "C1 residue today", units: dist.length },
+          { population: "  of which: would move to document/label on X", units: eligibleForX.length },
+          { population: "  of which: the document names them elsewhere (RISK)", units: eligibleRealPeople.length },
+          { population: "residue remaining as unresolved-name-shaped", units: dist.length - eligibleForX.length },
+        ]);
+        console.log(`   moved: ${eligibleForX.map((r) => r.value).join(" | ") || "(none)"}`);
+        if (eligibleRealPeople.length > 0) console.log(`   RISK -- moved but named elsewhere in a person-evidenced full name: ${eligibleRealPeople.map((r) => `${r.value} (as ${looksLikePerson(r.id)})`).join(" | ")}`);
+        console.log(`\n   People is UNCHANGED by capability X in every column -- X removes non-people from the`);
+        console.log(`   unresolved pile, it never adds anyone to People. That is the point: it is the only`);
+        console.log(`   B-side signal available, and B-side evidence cannot manufacture a person.`);
+      }
+
+      /* ============ CROSS-CANDIDATE COMPOSITION (AG, 2026-08-10, §4-§10) ====
+       * Capability X failed because it asked ONE occurrence-level question.
+       * This asks a question the pipeline has never asked at all: what does
+       * this candidate look like RELATIVE TO THE OTHER CANDIDATES IN THE SAME
+       * DOCUMENT?
+       *
+       * A human recognises `Grade Rosters` as a system term partly because
+       * the same document also contains Grade Entry, Grade Posting Process,
+       * Grade Rosters Closed/Created/Posted, Incomplete Grade and Grade Pro.
+       * Domain vocabulary RECURS across unrelated phrases. A surname does
+       * not -- when a name token recurs it recurs across spellings of ONE
+       * person, and that is a relationship entity resolution already owns and
+       * that the safety gate below already reads.
+       *
+       * Every input is existing production output. No new lexicon, no phrase
+       * list, no per-document tuning: the index is built from whatever
+       * candidates this document produced.
+       *
+       * INDEX SCOPE IS THE LOAD-BEARING METHODOLOGICAL CHOICE. The offline
+       * pass could only index the 139-unit residue, which flatters the
+       * signal because the residue is mostly non-people. Here it is built
+       * over EVERY person-typed candidate in the document, which is the
+       * honest denominator and the measurement that can overturn the
+       * offline result.
+       */
+      console.log(`\n\n=========== CROSS-CANDIDATE COMPOSITION (index over ALL person candidates) ===========`);
+      {
+        const allPersonCands = (state.detection?.candidates ?? []).filter((c) => c.detectedType === "person");
+        const tokensOfValue = (v: string): string[] => v.replace(/,/g, " ").split(/\s+/).filter(Boolean)
+          .map((t) => t.toLowerCase().replace(/[^\p{L}\p{M}'’-]/gu, "")).filter((t) => t.length > 0);
+
+        /** token -> distinct MULTI-TOKEN candidates containing it, across the
+         *  whole document. Multi-token only: a bare "Andrew" is a different
+         *  observation and entity resolution is what relates it. */
+        const tokenIndex = new Map<string, Set<string>>();
+        const headIndex = new Map<string, Set<string>>();
+        for (const c of allPersonCands) {
+          const tk = tokensOfValue(c.displayValue);
+          if (tk.length < 2) continue;
+          for (const t of new Set(tk)) {
+            const s = tokenIndex.get(t) ?? new Set<string>();
+            s.add(c.displayValue);
+            tokenIndex.set(t, s);
+          }
+          const head = tk[tk.length - 1]!;
+          const hs = headIndex.get(head) ?? new Set<string>();
+          hs.add(c.displayValue);
+          headIndex.set(head, hs);
+        }
+        const allValues = allPersonCands.map((c) => c.displayValue.toLowerCase());
+
+        /* THE SAFETY GATE, applied before any rule is consulted. Live, this is
+         * strictly stronger than the offline version: it also reads contextual
+         * evidence, anchors, titles and person-evidenced entity linkage. */
+        const protectedByEvidence = (id: string): string[] => {
+          const found: string[] = [];
+          if (hasLexicon(id)) found.push("name-lexicon");
+          if (hasSurnameGiven(id)) found.push("surname-given");
+          if (hasTitle(id)) found.push("title");
+          if (hasAnchor(id)) found.push("anchor");
+          if (hasUsage(id)) found.push("contextual-usage");
+          if (personEvidencedPartner(id)) found.push("person-linkage");
+          if (cats(id).includes("ambiguous-lexical-token")) found.push("ambiguous-lexical-token");
+          return found;
+        };
+
+        const comp = residue.map((r) => {
+          const tk = tokensOfValue(r.value);
+          let tokenShare = 0;
+          let sharedToken = "";
+          for (const t of new Set(tk)) {
+            const n = tokenIndex.get(t)?.size ?? 0;
+            if (n > tokenShare) { tokenShare = n; sharedToken = t; }
+          }
+          const headShare = tk.length >= 2 ? headIndex.get(tk[tk.length - 1]!)?.size ?? 0 : 0;
+          const self = r.value.toLowerCase();
+          const prefixOf = allValues.find((o) => o.length > self.length && o.startsWith(self)) ?? null;
+          const guards = protectedByEvidence(r.id);
+          return { ...r, tk, tokenShare, sharedToken, headShare, prefixOf, guards, eligible: guards.length === 0 };
+        });
+
+        const eligibleComp = comp.filter((r) => r.eligible);
+        console.log(`   residue ${comp.length}   protected by existing person evidence ${comp.length - eligibleComp.length}   eligible ${eligibleComp.length}`);
+        console.log(`   (a unit is eligible ONLY with no name lexicon, no surname/given structure, no title,`);
+        console.log(`    no anchor, no contextual usage, no person-evidenced linkage, no ambiguous-lexical-token)`);
+
+        const RULES_X: Array<{ id: string; label: string; pick: (r: (typeof comp)[number]) => boolean }> = [
+          { id: "T3", label: "a token of this candidate appears in >=3 distinct multi-token candidates", pick: (r) => r.tokenShare >= 3 },
+          { id: "T2", label: "…in >=2 distinct multi-token candidates (looser)", pick: (r) => r.tokenShare >= 2 },
+          { id: "H2", label: "its HEAD noun is shared with >=2 distinct candidates", pick: (r) => r.headShare >= 2 },
+          { id: "PFX", label: "it is a proper prefix of another candidate (truncation/abbreviation)", pick: (r) => r.prefixOf !== null },
+          { id: "SAFE", label: "T3 or H2 or PFX  -- the composition measured safe offline", pick: (r) => r.tokenShare >= 3 || r.headShare >= 2 || r.prefixOf !== null },
+        ];
+        console.table(RULES_X.map((rule) => {
+          const hit = eligibleComp.filter(rule.pick);
+          return {
+            rule: rule.id, removes: hit.length,
+            pctOfResidue: `${Math.round((100 * hit.length) / Math.max(1, comp.length))}%`,
+            nameRisk: hit.filter((r) => looksLikePerson(r.id) !== null).length,
+            what: rule.label,
+          };
+        }));
+
+        for (const rule of RULES_X) {
+          const hit = eligibleComp.filter(rule.pick);
+          console.log(`\n--- ${rule.id} removes ${hit.length}: ${hit.map((r) => r.value).join(" | ") || "(none)"}`);
+          const risky = hit.filter((r) => looksLikePerson(r.id) !== null);
+          if (risky.length) {
+            console.log(`    NAME RISK -- the document spells these out elsewhere in a person-evidenced full name:`);
+            console.table(risky.map((r) => ({ value: r.value, occ: r.occurrences, spelledOutAs: looksLikePerson(r.id), via: `${r.sharedToken}x${r.tokenShare}` })));
+          } else console.log(`    NAME RISK: none flagged`);
+        }
+
+        console.log(`\n--- THE INDEX ITSELF: tokens shared across >=3 distinct multi-token candidates ---`);
+        console.table([...tokenIndex.entries()].filter(([, s]) => s.size >= 3).sort((a, b) => b[1].size - a[1].size)
+          .slice(0, 40).map(([t, s]) => ({ token: t, candidates: s.size, examples: [...s].slice(0, 8).join(" | ") })));
+
+        const SAFE_PICK = (r: (typeof comp)[number]): boolean => r.tokenShare >= 3 || r.headShare >= 2 || r.prefixOf !== null;
+        const removedX = eligibleComp.filter(SAFE_PICK);
+        const survivingX = comp.filter((r) => !removedX.includes(r));
+        console.log(`\n--- COUNTERFACTUAL: routing consumes the composed interpretation ---`);
+        console.table([
+          { population: "Item Check -> People today", units: rows.length },
+          { population: "C1 residue (semanticTypeFor)", units: comp.length },
+          { population: "reclassified non-person by composition", units: removedX.length },
+          { population: "  of those, name-risk flagged", units: removedX.filter((r) => looksLikePerson(r.id) !== null).length },
+          { population: "remaining unresolved / name-shaped", units: survivingX.length },
+        ]);
+        console.log(`\n--- THE HONEST REMAINDER (${survivingX.length}) -- what a reviewer would still hold ---`);
+        console.log(`   ${survivingX.map((r) => r.value).join(" | ")}`);
+
+        console.log(`\n--- FAMILY DECOMPOSITION of the eligible set ---`);
+        const famPick = [
+          { id: "F1 domain vocabulary", pick: (r: (typeof comp)[number]) => r.tokenShare >= 3 },
+          { id: "F2 head-noun paradigm", pick: (r: (typeof comp)[number]) => r.headShare >= 2 && r.tokenShare < 3 },
+          { id: "F3 truncation/abbreviation", pick: (r: (typeof comp)[number]) => r.prefixOf !== null && r.headShare < 2 && r.tokenShare < 3 },
+          { id: "F4 ordinary-language phrase (R1 only)", pick: (r: (typeof comp)[number]) => r.allLexical && !SAFE_PICK(r) },
+          { id: "F5 unreached by any composition", pick: (r: (typeof comp)[number]) => !SAFE_PICK(r) && !r.allLexical },
+        ];
+        console.table(famPick.map((f) => {
+          const hit = eligibleComp.filter(f.pick);
+          return { family: f.id, units: hit.length, nameRisk: hit.filter((r) => looksLikePerson(r.id) !== null).length, examples: hit.slice(0, 8).map((r) => r.value).join(" | ") };
+        }));
+        for (const f of famPick) {
+          const hit = eligibleComp.filter(f.pick);
+          console.log(`\n   ${f.id} (${hit.length}): ${hit.map((r) => r.value).join(" | ") || "(none)"}`);
+        }
+      }
+
+      return { current: rows.length, c1: stillPeople.length, c2: withEvidence.length, c3: c3Keep.length, residue: residue.length, eligible: eligible.length, rows, c3Detail: c3 };
+    },
+    /*
+     * TYPE CHECK BEFORE/AFTER (AG, 2026-08-10) -- TEMPORARY INSTRUMENTATION.
+     *
+     * Reports what the Type Check stage would look like if semantic type
+     * assignment consumed cross-candidate non-person evidence. Read-only:
+     * the shipped assignment does NOT consume it (see Workspace.load's
+     * "ROUTING IS NOT YET ENABLED" note), so this is the decision instrument,
+     * not a report of a change already made.
+     *
+     * The BEFORE column is Andrew's frozen 2026-08-10 baseline, transcribed
+     * verbatim, so the table is stable even if the live document is reloaded
+     * with different decisions applied.
+     */
+    typecheck: (): unknown => {
+      const state = dispatcher.getState();
+      const cross = workspace.getCrossCandidateEvidence();
+      const protectedIds = workspace.getPersonProtectedIds();
+      const byId = new Map((state.detection?.candidates ?? []).map((c) => [c.id, c]));
+      if (!state.semanticTypes) { console.log("No document loaded."); return null; }
+
+      const FROZEN: Record<string, { entities: number; remaining: number }> = {
+        people: { entities: 139, remaining: 124 },
+        emails: { entities: 8, remaining: 8 },
+        phones: { entities: 5, remaining: 5 },
+        organizations: { entities: 61, remaining: 41 },
+        acronyms: { entities: 50, remaining: 33 },
+        identifiers: { entities: 19, remaining: 5 },
+        "dates-terms": { entities: 34, remaining: 30 },
+        "document-titles": { entities: 4, remaining: 3 },
+        other: { entities: 281, remaining: 110 },
+        [UNDETERMINED_SECTION]: { entities: 0, remaining: 0 },
+      };
+
+      const cats = (id: string): string[] => {
+        const c = byId.get(id);
+        return c ? candidateCategories(c, state) : [];
+      };
+      const kindsOf = (id: string): ReadonlySet<RelationshipKind> =>
+        recommendationFactsForCandidate(id, state)?.relationshipKinds ?? new Set<RelationshipKind>();
+
+      /* AFTER is now the LIVE assignment -- routing is enabled, so this
+       * reads production's own state.semanticTypes rather than recomputing a
+       * counterfactual. BEFORE stays the frozen baseline. */
+      const currentType = new Map<string, TypeCheckSectionId>();
+      for (const group of state.semanticTypes) for (const id of group.candidateIds) currentType.set(id, group.typeId);
+      const decided = (id: string): boolean => isItemResolvedInState("item-check", id, state);
+      const proposedType = (id: string): TypeCheckSectionId => currentType.get(id) ?? "other";
+
+      /** What the item WOULD have been before this pass -- the flag off. */
+      const priorType = (id: string): SemanticTypeId => {
+        const c = byId.get(id);
+        if (!c) return "other";
+        return semanticTypeForProfile({ detectedType: c.detectedType, categories: cats(id), relationshipKinds: kindsOf(id) });
+      };
+
+      const after = new Map<TypeCheckSectionId, { entities: number; remaining: number }>();
+      for (const [id, t] of currentType) {
+        const acc = after.get(t) ?? { entities: 0, remaining: 0 };
+        acc.entities += 1;
+        if (!decided(id)) acc.remaining += 1;
+        after.set(t, acc);
+      }
+
+      console.log("=== TYPE CHECK: BEFORE (frozen 2026-08-10) vs AFTER (cross-candidate interpretation) ===");
+      console.table(Object.keys(FROZEN).map((key) => {
+        const id = key as TypeCheckSectionId;
+        const a = after.get(id) ?? { entities: 0, remaining: 0 };
+        return {
+          Category: TYPE_CHECK_SECTION_LABELS[id],
+          "Before entities": FROZEN[key]!.entities,
+          "After entities": a.entities,
+          "Before remaining": FROZEN[key]!.remaining,
+          "After remaining": a.remaining,
+          "Delta remaining": a.remaining - FROZEN[key]!.remaining,
+        };
+      }));
+
+      const movedOutOfPeople = [...currentType.keys()].filter((id) => priorType(id) === "people" && proposedType(id) !== "people");
+      const retainedInPeople = [...currentType.keys()].filter((id) => priorType(id) === "people" && proposedType(id) === "people");
+      const ev = (id: string) => cross.byCandidate[id];
+      const byRule = (rule: string): string[] => movedOutOfPeople.filter((id) => ev(id)?.rules.includes(rule as never));
+      const t3 = byRule("token_recurrence");
+      const h2 = byRule("head_noun_paradigm");
+      const pfx = byRule("truncated_variant");
+      const only = (a: string[], ...rest: string[][]): string[] => a.filter((id) => !rest.some((r) => r.includes(id)));
+
+      console.log("\n--- MECHANISM ATTRIBUTION ---");
+      console.table([
+        { mechanism: "T3 token recurrence", moved: t3.length, exclusively: only(t3, h2, pfx).length },
+        { mechanism: "H2 head-noun paradigm", moved: h2.length, exclusively: only(h2, t3, pfx).length },
+        { mechanism: "prefix / truncated variant", moved: pfx.length, exclusively: only(pfx, t3, h2).length },
+        { mechanism: "T3 + H2", moved: t3.filter((id) => h2.includes(id)).length, exclusively: "-" },
+        { mechanism: "T3 + prefix", moved: t3.filter((id) => pfx.includes(id)).length, exclusively: "-" },
+        { mechanism: "all three", moved: t3.filter((id) => h2.includes(id) && pfx.includes(id)).length, exclusively: "-" },
+        { mechanism: "TOTAL moved out of People", moved: movedOutOfPeople.length, exclusively: "-" },
+      ]);
+
+      console.log(`\n--- EVERY ITEM MOVED OUT OF PEOPLE (${movedOutOfPeople.length}), with destination and reason ---`);
+      console.table(movedOutOfPeople.map((id) => {
+        const e = ev(id)!;
+        return {
+          value: byId.get(id)?.displayValue ?? id,
+          destination: TYPE_CHECK_SECTION_LABELS[proposedType(id)],
+          rules: e.rules.join("+"),
+          why: explainCrossCandidateForProfile(e)[0] ?? "",
+        };
+      }));
+
+      /* THE STOP-CONDITION MEASUREMENT. Cross-candidate evidence establishes
+       * that something is not a person. It does NOT establish what it IS. A
+       * unit with no independently supported semantic type has no truthful
+       * Type Check destination, and routing it to Other/Miscellaneous is the
+       * "relocating garbage" outcome Andrew ruled out. */
+      const toUndetermined = movedOutOfPeople.filter((id) => proposedType(id) === UNDETERMINED_SECTION);
+      const realDestination = movedOutOfPeople.filter((id) => proposedType(id) !== UNDETERMINED_SECTION && proposedType(id) !== "other");
+      // §7 BUG CHECK: nothing may reach Other merely because no type was found.
+      const noDestination = movedOutOfPeople.filter((id) => proposedType(id) === "other");
+      console.log("\n--- DESTINATION AUDIT (the §4 / §12 stop condition) ---");
+      console.table([
+        { outcome: "People -> an INDEPENDENTLY SUPPORTED semantic type", units: realDestination.length },
+        { outcome: "People -> Undetermined (rejected hypothesis, no replacement)", units: toUndetermined.length },
+        { outcome: "People -> Other  *** BUG if non-zero ***", units: noDestination.length },
+        { outcome: "retained in People", units: retainedInPeople.length },
+      ]);
+      if (noDestination.length > 0) {
+        console.log(`   *** BUG: ${noDestination.length} item(s) fell to Other with no supported type: ${noDestination.map((id) => byId.get(id)?.displayValue).join(", ")}`);
+      }
+      console.log(`\n   People -> Undetermined (${toUndetermined.length}): ${toUndetermined.map((id) => byId.get(id)?.displayValue).join(" | ")}`);
+      console.log(`\n   RETAINED IN PEOPLE (${retainedInPeople.length}): ${retainedInPeople.map((id) => byId.get(id)?.displayValue).join(" | ")}`);
+      console.log(`   supported destinations: ${realDestination.map((id) => `${byId.get(id)?.displayValue} -> ${TYPE_CHECK_SECTION_LABELS[proposedType(id)]}`).join(" | ") || "(none)"}`);
+
+      /* ===== CENSUS NAME EVIDENCE (AG, 2026-08-10) ======================= */
+      const censusEv = workspace.getCensusNameEvidence();
+      console.log("\n--- CENSUS NAME EVIDENCE ---");
+      {
+        const personTypedAll = (state.detection?.candidates ?? []).filter((c) => c.detectedType === "person");
+        const censusProtected = personTypedAll.filter((c) => censusEv.has(c.id));
+        // CENSUS-ONLY: the gate would NOT have protected these without Census.
+        const censusOnly = censusProtected.filter((c) => {
+          const cats2 = cats(c.id).map((x) => x.replace(/_/g, "-"));
+          const pos = (state.quality?.assessmentByCandidate[c.id]?.positiveReasons ?? []).map((x) => x.replace(/_/g, "-"));
+          const existing = ["known-personal-name-token", "known-first-name", "known-name-structure", "known-surname",
+            "surname-given-structure", "initials-with-surname", "ambiguous-lexical-token"];
+          const ctxRules = workspace.getContextualEvidence()?.byCandidate?.[c.id]?.rules ?? [];
+          return !existing.some((e) => cats2.includes(e) || pos.includes(e)) && !pos.includes("nearby-title") && ctxRules.length === 0;
+        });
+        console.table([
+          { measure: "person-typed candidates", units: personTypedAll.length },
+          { measure: "Census name STRUCTURE found", units: censusProtected.length },
+          { measure: "  of those, CENSUS-ONLY protection (nothing else protected them)", units: censusOnly.length },
+        ]);
+        console.log(`   CENSUS-ONLY protections: ${censusOnly.map((c) => `${c.displayValue} [${censusEv.get(c.id)?.structure}]`).join(" | ") || "(none)"}`);
+        const byStructure = new Map<string, string[]>();
+        for (const c of censusProtected) {
+          const k = censusEv.get(c.id)!.structure;
+          const l = byStructure.get(k) ?? [];
+          l.push(c.displayValue);
+          byStructure.set(k, l);
+        }
+        console.table([...byStructure.entries()].map(([structure, v]) => ({ structure, units: v.length, examples: v.slice(0, 8).join(" | ") })));
+      }
+
+      /* ===== GNIS PLACE EVIDENCE (AG, 2026-08-10) ======================== */
+      const gnisEv = workspace.getGnisPlaceEvidence();
+      console.log("\n--- GNIS PLACE EVIDENCE (Standard pack, Policy B) ---");
+      {
+        const withGnis = (state.detection?.candidates ?? []).filter((c) => gnisEv.has(c.id));
+        const strong = withGnis.filter((c) => gnisEv.get(c.id)!.strength === "strong");
+        const weak = withGnis.filter((c) => gnisEv.get(c.id)!.strength === "weak");
+        const conflict = strong.filter((c) => censusEv.has(c.id));
+        console.table([
+          { measure: "candidates with a Standard GNIS match", units: withGnis.length },
+          { measure: "  STRONG place evidence", units: strong.length },
+          { measure: "  WEAK (Policy-B downgraded)", units: weak.length },
+          { measure: "  STRONG + Census person structure = CONFLICT", units: conflict.length },
+        ]);
+        const trace = (c: (typeof withGnis)[number]): void => {
+          const g = gnisEv.get(c.id)!;
+          console.log(`   ${c.displayValue}`);
+          console.log(`      GNIS exact:        yes ("${g.normalized}")`);
+          console.log(`      class:             ${g.featureClasses.join(", ")}`);
+          console.log(`      multi-token:       yes`);
+          console.log(`      Census structure:  ${g.censusPersonStructure}`);
+          console.log(`      both roles Top1000:${g.suppressionReason ? " yes -> DOWNGRADED" : " no"}`);
+          console.log(`      GNIS strength:     ${g.strength.toUpperCase()}`);
+          console.log(`      routed to:         ${TYPE_CHECK_SECTION_LABELS[proposedType(c.id)]}  (GNIS does NOT route -- see below)`);
+          console.log(`      explanation:       ${explainGnisForProfile(g)[0] ?? ""}`);
+        };
+        for (const c of strong.slice(0, 20)) trace(c);
+        for (const c of weak.slice(0, 10)) trace(c);
+        console.log("\n   *** GNIS evidence is CARRIED, NOT ROUTED. Two stop conditions were hit:");
+        console.log("       (1) SemanticTypeId has no Place/Geography member;");
+        console.log("       (2) semanticTypeFor is first-match-wins and cannot hold PERSON + PLACE");
+        console.log("           simultaneously -- a `places` branch would encode arbitrary precedence.");
+        console.log("       Reported rather than patched. See 20260810-gnis-place-integration.md.");
+      }
+
+      console.log("\n--- PERSON PROTECTION ---");
+      const personTyped = (state.detection?.candidates ?? []).filter((c) => c.detectedType === "person");
+      console.table([
+        { measure: "person-typed candidates", units: personTyped.length },
+        { measure: "protected by independent person evidence", units: [...protectedIds].length },
+        { measure: "eligible for cross-candidate interpretation", units: personTyped.length - [...protectedIds].length },
+        { measure: "of those, cross-candidate evidence fired", units: Object.keys(cross.byCandidate).length },
+      ]);
+      const WITNESSES = ["Amy Miller", "Jeffrey Lam", "Bobbie Galaz", "Chelsye Angelina", "Perias, Nelly",
+        "Yamada, Tamara", "Cobb, Christopher", "Chriztopher Johnson", "Diana", "Sarah",
+        "Goodloe, Andrew", "Collier, Tanesha", "Giancarlo Banuelos", "Fox, Liudmila"];
+      console.log("\n--- FROZEN WITNESS VERIFICATION (real people) ---");
+      console.table(WITNESSES.map((w) => {
+        const c = personTyped.find((x) => x.displayValue === w);
+        if (!c) return { witness: w, present: false, protectedBy: "-", crossEvidence: "-", stillPeople: "-" };
+        return {
+          witness: w, present: true,
+          protectedBy: protectedIds.has(c.id) ? "gate" : "(eligible)",
+          census: censusEv.get(c.id)?.structure ?? "-",
+          gnis: gnisEv.get(c.id)?.strength ?? "none",
+          crossEvidence: cross.byCandidate[c.id]?.rules.join("+") ?? "none",
+          section: TYPE_CHECK_SECTION_LABELS[proposedType(c.id)],
+          stillPeople: proposedType(c.id) === "people",
+        };
+      }));
+      const lost = WITNESSES.map((w) => personTyped.find((x) => x.displayValue === w))
+        .filter((c): c is NonNullable<typeof c> => Boolean(c))
+        .filter((c) => priorType(c.id) === "people" && proposedType(c.id) !== "people");
+      const COLLISIONS = ["San Diego", "San Marcos", "Last Day", "Staff Ad", "Angeles, CA",
+        "Happy Birthday Eve", "Level, Early", "From Melissa", "Fire Marshall", "Reason Code",
+        "Go Live", "Dear All", "Dear Student", "Good Morning"];
+      console.log("\n--- CENSUS COLLISION WITNESSES (name-like, but NOT people) ---");
+      console.log("   Census may PROTECT these from automatic reinterpretation. It must never CLASSIFY them as people.");
+      console.table(COLLISIONS.map((w) => {
+        const c = personTyped.find((x) => x.displayValue === w);
+        if (!c) return { witness: w, present: false, census: "-", section: "-" };
+        return {
+          witness: w, present: true,
+          census: censusEv.get(c.id)?.structure ?? "none",
+          protectedBy: protectedIds.has(c.id) ? "gate" : "(eligible)",
+          section: TYPE_CHECK_SECTION_LABELS[proposedType(c.id)],
+        };
+      }));
+      const collisionInPeople = COLLISIONS.map((w) => personTyped.find((x) => x.displayValue === w))
+        .filter((c): c is NonNullable<typeof c> => Boolean(c))
+        .filter((c) => proposedType(c.id) === "people");
+      console.log(`   collision witnesses routed to People: ${collisionInPeople.length} -- ${collisionInPeople.map((c) => c.displayValue).join(", ") || "(none)"}`);
+      console.log("   (non-zero is EXPECTED and safe: Census protects them from reinterpretation, it does not classify them.)");
+
+      console.log(lost.length === 0
+        ? "   NAME RISK: none. No frozen real-person witness leaves People."
+        : `   *** NAME RISK -- STOP CONDITION HIT: ${lost.map((c) => c.displayValue).join(", ")} ***`);
+
+      /* ===== WHY IS "OTHER / MISCELLANEOUS" POPULATED? (AG, 2026-08-10) ====
+       * ANALYSIS ONLY. Nothing below changes any routing -- Other is
+       * deliberately untouched by this pass.
+       *
+       * The structural fact that frames every number: `semanticTypeFor` has
+       * exactly ONE `return "other"`, at the very end, reached only when every
+       * positive branch has failed. There is no affirmative "this IS
+       * miscellaneous" classification anywhere in the codebase. So the answer
+       * to "how many are here on affirmative evidence" is ZERO by
+       * construction, and the useful question is which KIND of fallback each
+       * one is.
+       */
+      console.log("\n\n=========== OTHER / MISCELLANEOUS: WHY IS EACH ITEM HERE? ===========");
+      {
+        const otherIds = (state.semanticTypes ?? []).find((g) => g.typeId === "other")?.candidateIds ?? [];
+        const NAME_EVIDENCE = ["known-personal-name-token", "known-first-name", "known-name-structure", "known-surname"];
+        const SHAPE = ["strong-name-structure", "surname-given-structure", "initials-with-surname"];
+        const ORDINARY = ["greeting-or-courtesy", "interjection-casual", "expanded-common-language-token", "common-english-word",
+          "common-verb", "all-common-dictionary-words", "pronoun-or-determiner", "sentence-fragment", "sentence-fragment-word"];
+        const MALFORMED = ["ocr-artifact", "implausible-capitalization", "abbreviation", "common-abbreviation", "no-alpha-tokens", "too-short-single-token"];
+
+        const rowsOther = otherIds.map((id) => {
+          const c = byId.get(id);
+          const a = state.quality?.assessmentByCandidate[id];
+          const reasons = (a?.reasons ?? []).map((r) => r.replace(/_/g, "-"));
+          const classifications = (a?.filterRules ?? []).map((r) => r.replace(/_/g, "-"));
+          const seen = cats(id);
+          // MASKED: the reasons carry evidence that WOULD have routed this
+          // elsewhere, but qualityCategoriesOf returned filterRules instead,
+          // so semanticTypeFor never saw it.
+          const maskedName = reasons.some((r) => NAME_EVIDENCE.includes(r)) && !seen.some((r) => NAME_EVIDENCE.includes(r));
+          const maskedShape = reasons.some((r) => SHAPE.includes(r)) && !seen.some((r) => SHAPE.includes(r));
+          return {
+            id, value: c?.displayValue ?? id, detectedType: c?.detectedType ?? "?",
+            reasons, classifications, seen, maskedName, maskedShape,
+            weakShape: reasons.includes("weak-name-structure"),
+            ordinary: classifications.some((r) => ORDINARY.includes(r)),
+            malformed: classifications.some((r) => MALFORMED.includes(r)),
+            occ: c?.occurrenceIds.length ?? 0,
+          };
+        });
+
+        const fam = [
+          { id: "O1 MASKED NAME EVIDENCE -- misrouted PEOPLE, not Undetermined", pick: (r: (typeof rowsOther)[number]) => r.maskedName },
+          { id: "O2 MASKED NAME SHAPE -- shape hidden by a dictionary hit", pick: (r: (typeof rowsOther)[number]) => !r.maskedName && r.maskedShape },
+          { id: "O3 NON-ASCII NAME -- quality's name regexes are ASCII-only", pick: (r: (typeof rowsOther)[number]) => !r.maskedName && !r.maskedShape && r.weakShape && /[^ -]/.test(r.value) },
+          { id: "O4 ORDINARY LANGUAGE -- affirmative lexical evidence, no semantic home", pick: (r: (typeof rowsOther)[number]) => !r.maskedName && !r.maskedShape && r.ordinary },
+          { id: "O5 MALFORMED / ABBREVIATION artifacts", pick: (r: (typeof rowsOther)[number]) => !r.maskedName && !r.maskedShape && !r.ordinary && r.malformed },
+          { id: "O6 NO EVIDENCE AT ALL -- pure fallthrough", pick: (r: (typeof rowsOther)[number]) => !r.maskedName && !r.maskedShape && !r.ordinary && !r.malformed },
+        ];
+        const assigned = new Set<string>();
+        console.log(`   Other / Miscellaneous holds ${rowsOther.length} entities.`);
+        console.log(`   AFFIRMATIVE "other" interpretations: 0 -- semanticTypeFor has one return "other", and it is the fallthrough.\n`);
+        console.table(fam.map((f) => {
+          const hit = rowsOther.filter((r) => f.pick(r) && !assigned.has(r.id));
+          for (const r of hit) assigned.add(r.id);
+          return { family: f.id, entities: hit.length, examples: hit.slice(0, 6).map((r) => r.value).join(" | ") };
+        }));
+        const recompute = new Set<string>();
+        for (const f of fam) for (const r of rowsOther.filter((x) => f.pick(x))) recompute.add(`${f.id}::${r.id}`);
+        for (const f of fam) {
+          const hit = rowsOther.filter((r) => [...recompute].some((k) => k === `${f.id}::${r.id}`));
+          console.log(`\n   ${f.id} (${hit.length}):`);
+          console.log(`      ${hit.slice(0, 60).map((r) => r.value).join(" | ")}${hit.length > 60 ? ` … +${hit.length - 60}` : ""}`);
+        }
+
+        console.log("\n--- CONFLICTING EVIDENCE: the reasons say one thing, the categories another ---");
+        const conflicted = rowsOther.filter((r) => r.maskedName || r.maskedShape);
+        console.table(conflicted.slice(0, 40).map((r) => ({
+          value: r.value, occ: r.occ,
+          maskedBy: r.classifications.join(","),
+          hiddenEvidence: r.reasons.filter((x) => NAME_EVIDENCE.includes(x) || SHAPE.includes(x)).join(","),
+          wouldRouteTo: "people",
+        })));
+
+        console.log("\n--- COUNTERFACTUAL: if ONLY unsupported fallback cases moved to Undetermined ---");
+        const o1 = rowsOther.filter((r) => r.maskedName || r.maskedShape).length;
+        const nonAscii = rowsOther.filter((r) => !r.maskedName && !r.maskedShape && r.weakShape && /[^ -]/.test(r.value)).length;
+        const fallback = rowsOther.length - o1 - nonAscii;
+        console.table([
+          { move: "O1/O2 masked evidence -> belongs in PEOPLE (a defect fix, not a move)", entities: o1 },
+          { move: "O3 non-ASCII names -> belongs in PEOPLE (regex defect)", entities: nonAscii },
+          { move: "O4/O5/O6 rejected hypothesis, no supported type -> Undetermined", entities: fallback },
+          { move: "Other / Miscellaneous remaining", entities: 0 },
+        ]);
+        console.log("   NOTE: that last row is 0 because NOTHING in Other is there on affirmative evidence.");
+        console.log("   Reported, NOT implemented. Other is untouched by this pass.");
+      }
+
+      return { movedOutOfPeople: movedOutOfPeople.length, toUndetermined: toUndetermined.length, realDestination: realDestination.length, fellToOther: noDestination.length, retainedInPeople: retainedInPeople.length, nameRisk: lost.length };
+    },
+    profile: (): unknown => {
+      const state = dispatcher.getState();
+      const run = workspace.getResidualGateRun();
+      if (!run) { console.log("No gate run (restored session)."); return null; }
+      const cands = state.detection?.candidates ?? [];
+      const byId = new Map(cands.map((c) => [c.id, c]));
+      const ctxEv = workspace.getContextualEvidence();
+      const occById = new Map((state.detection?.occurrences ?? []).map((o) => [o.id, o]));
+
+      const tokens = (v: string): string[] => v.trim().split(/\s+/).filter(Boolean);
+      const cats = (id: string): string[] => {
+        const a = state.quality?.assessmentByCandidate[id];
+        if (!a) return [];
+        return (a.filterRules.length ? a.filterRules : a.reasons).map((c) => c.replace(/_/g, "-"));
+      };
+      const val = (id: string): string => byId.get(id)?.displayValue ?? id;
+
+      /*
+       * RECONSTRUCT THE GATE'S OWN INPUTS, then VERIFY the reconstruction.
+       *
+       * Every counterfactual below re-runs the REAL evaluateCandidate over
+       * modified facts, so a "would release" number is the gate's own answer
+       * rather than a heuristic that resembles it. That only means anything
+       * if the reconstruction reproduces the actual run, so it is checked
+       * against run.resolved/run.retained before any of it is reported --
+       * five reconstruction assumptions have already been wrong this session.
+       */
+      const ambiguityIds = new Set((state.grouping?.ambiguityProposals ?? []).map((p) => p.candidateId));
+      const groupIds = new Set((state.grouping?.entityGroupProposals ?? []).flatMap((g) => g.candidateIds));
+      const gateInputs = {
+        candidates: cands,
+        assessmentByCandidate: state.quality?.assessmentByCandidate ?? {},
+        contextualByCandidate: ctxEv?.byCandidate ?? {},
+        decidedCandidateIds: new Set<string>(),
+        automaticallyResolvedIds: new Set<string>(),
+        ambiguityProposalCandidateIds: ambiguityIds,
+        entityGroupMemberIds: groupIds,
+      } as Parameters<typeof buildFactsForProfile>[0];
+      const baseFacts = buildFactsForProfile(gateInputs);
+      const baseResolved = new Set(baseFacts.filter((f) => evaluateForProfile(f).kind === "resolve").map((f) => f.candidateId));
+      const actualResolved = new Set(run.resolutions.map((r) => r.candidateId));
+      const fidelity = baseResolved.size === actualResolved.size && [...baseResolved].every((id) => actualResolved.has(id));
+      console.log(`=== Retained-population profile (${run.retained.length} retained) ===`);
+      console.log(`reconstruction fidelity: ${fidelity ? "EXACT" : `DIVERGENT (rebuilt ${baseResolved.size} vs actual ${actualResolved.size}) -- treat every counterfactual below as suspect`}`);
+
+      /** Re-runs the gate with `mutate` applied to each candidate's facts and
+       *  returns how many ADDITIONAL candidates resolve. */
+      const counterfactual = (mutate: (f: ProfileGateFacts) => ProfileGateFacts): { released: number; values: string[] } => {
+        const values: string[] = [];
+        for (const f of baseFacts) {
+          if (baseResolved.has(f.candidateId)) continue;
+          if (evaluateForProfile(mutate({ ...f })).kind === "resolve") values.push(val(f.candidateId));
+        }
+        return { released: values.length, values };
+      };
+
+      // ================= 1. DOCUMENT-DERIVED NAME EVIDENCE =================
+      const witnessIndex = buildWitnessIndex(cands, {
+        isInstitutionalPhrase: (id: string) => cats(id).some((c) => INSTITUTIONAL_WITNESS.includes(c)),
+        carriesOrdinaryLanguageEvidence: (id: string) => cats(id).some((c) => ORDINARY.includes(c)),
+      });
+      const nameHeld = run.retained.filter((r) => r.because.includes("recognized as a name")).map((r) => r.candidateId);
+      const bySource = new Map<string, string[]>();
+      const witnessRows: Array<{ token: string; witness: string; witnessCats: string }> = [];
+      for (const id of nameHeld) {
+        const c = byId.get(id);
+        const isStatic = cats(id).some((x) => STATIC_NAME_CATEGORIES.includes(x));
+        const ev = c ? documentNameEvidenceForProfile(c, { ambiguityProposalCandidateIds: ambiguityIds, entityGroupMemberIds: groupIds }, witnessIndex) : { has: false, sources: [] as string[] };
+        const keys = [...(isStatic ? ["static lexicon"] : []), ...ev.sources];
+        for (const k of keys.length ? keys : ["(none -- unexplained)"]) {
+          const list = bySource.get(k) ?? []; list.push(val(id)); bySource.set(k, list);
+        }
+        if (ev.sources.includes("full-name-token") && !isStatic) {
+          const w = (ev as { witness?: string }).witness ?? "?";
+          witnessRows.push({ token: val(id), witness: w, witnessCats: cats(cands.find((x) => x.displayValue === w)?.id ?? "").slice(0, 3).join(",") });
+        }
+      }
+      const show = (title: string, m: Map<string, string[]>, n = 8): void => {
+        console.log(`\n--- ${title} ---`);
+        console.table([...m.entries()].sort((a, b) => b[1].length - a[1].length)
+          .map(([k, v]) => ({ reason: k, count: v.length, examples: v.slice(0, n).join(", ") })));
+      };
+      show(`1. "recognized as a name" (${nameHeld.length}) -- by SOURCE (non-exclusive)`, bySource);
+      console.log(`\n--- 1b. every full-name-token retention and the phrase that witnessed it (${witnessRows.length}) ---`);
+      console.table(witnessRows);
+
+      // ================= 2. CONTEXTUAL PERSON EVIDENCE =====================
+      const ctxHeld = run.retained.filter((r) => r.because.includes("contextual evidence")).map((r) => r.candidateId);
+      const ctxRows: Array<{ value: string; rules: string; context: string }> = [];
+      for (const id of ctxHeld) {
+        const per = ctxEv?.byCandidate?.[id]?.perOccurrence ?? [];
+        const first = per[0];
+        ctxRows.push({
+          value: val(id),
+          rules: (ctxEv?.byCandidate?.[id]?.rules ?? []).join(",").replace(/contextual_/g, ""),
+          context: (first ? occById.get(first.occurrenceId)?.context : "")?.slice(0, 96) ?? "",
+        });
+      }
+      console.log(`\n--- 2. contextual person evidence (${ctxHeld.length}) -- EVERY unit with its live context ---`);
+      console.table(ctxRows);
+
+      // ================= 3. MULTI-TOKEN, BY PRODUCTION EVIDENCE ============
+      const multi = run.retained.filter((r) => r.because === "multi-token phrase").map((r) => r.candidateId);
+      const multiClass = new Map<string, string[]>();
+      for (const id of multi) {
+        const v = val(id);
+        const c = cats(id);
+        const commaForm = /^[^,]+,\s+\S/.test(v);
+        const cls =
+          c.some((x) => INSTITUTIONAL_WITNESS.includes(x)) ? "A/B institutional (production categories)"
+          : c.includes("surname-given-structure") ? "C last-first, structure category agrees"
+          : commaForm ? "C? comma form WITHOUT structure category"
+          : c.some((x) => STATIC_NAME_CATEGORIES.includes(x)) ? "C person (static name evidence)"
+          : c.some((x) => ORDINARY.includes(x)) ? "A ordinary phrase (production categories)"
+          : c.includes("strong-name-structure") || c.includes("moderate-frequency-bonus") ? "E ambiguous (name-SHAPE only, no name evidence)"
+          : "E ambiguous (no evidence either way)";
+        const list = multiClass.get(cls) ?? []; list.push(v); multiClass.set(cls, list);
+      }
+      show(`3. multi-token phrases (${multi.length}) -- classified by PRODUCTION evidence`, multiClass, 10);
+      const commaNoStructure = multiClass.get("C? comma form WITHOUT structure category") ?? [];
+      console.log(`   comma forms lacking surname_given_structure (the 'Tuesday, March' class): ${commaNoStructure.join(" | ")}`);
+      console.log(`   full ambiguous list: ${[...(multiClass.get("E ambiguous (name-SHAPE only, no name evidence)") ?? []), ...(multiClass.get("E ambiguous (no evidence either way)") ?? [])].join(" | ")}`);
+
+      // ================= 4. ALIAS / ENTITY FAMILIES over ALL residual ======
+      const residualIds = run.retained.map((r) => r.candidateId);
+      const norm = (v: string): string => v.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim();
+      const exact = new Map<string, string[]>();
+      for (const id of residualIds) { const k = norm(val(id)); const l = exact.get(k) ?? []; l.push(val(id)); exact.set(k, l); }
+      const exactFamilies = [...exact.entries()].filter(([, v]) => v.length > 1);
+      const multiTokenResidual = residualIds.filter((id) => tokens(val(id)).length > 1);
+      const singleResidual = residualIds.filter((id) => tokens(val(id)).length === 1);
+      const containment = new Map<string, string[]>();
+      for (const sid of singleResidual) {
+        const t = norm(val(sid));
+        for (const mid of multiTokenResidual) {
+          if (norm(val(mid)).split(" ").includes(t)) {
+            const l = containment.get(val(mid)) ?? []; l.push(val(sid)); containment.set(val(mid), l);
+          }
+        }
+      }
+      console.log(`\n--- 4. alias / entity families across all ${residualIds.length} residual units ---`);
+      console.log(`   exact duplicate families (same normalized string): ${exactFamilies.length}, covering ${exactFamilies.reduce((n, [, v]) => n + v.length, 0)} units`);
+      console.table(exactFamilies.slice(0, 20).map(([k, v]) => ({ family: k, units: v.length, spellings: v.join(" | ") })));
+      const containedUnits = new Set([...containment.values()].flat());
+      console.log(`   single-token residual units whose token also appears inside a multi-token residual unit: ${containedUnits.size}`);
+      console.table([...containment.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 20).map(([k, v]) => ({ phrase: k, sharesTokensWith: v.join(", ") })));
+
+      // ================= 5. COUNTERFACTUALS (the real gate, re-run) ========
+      const CLITIC = /['’](s|ll|m|d|re|ve)$/i;
+      const staticOnly = (f: ProfileGateFacts): ProfileGateFacts => ({ ...f, hasKnownNameEvidence: cats(f.candidateId).some((x) => STATIC_NAME_CATEGORIES.includes(x)) });
+      const dropWitness = (f: ProfileGateFacts): ProfileGateFacts => {
+        const c = byId.get(f.candidateId);
+        if (!c) return f;
+        const isStatic = cats(f.candidateId).some((x) => STATIC_NAME_CATEGORIES.includes(x));
+        const ev = documentNameEvidenceForProfile(c, { ambiguityProposalCandidateIds: ambiguityIds, entityGroupMemberIds: groupIds }, witnessIndex);
+        const withoutToken = ev.sources.filter((s) => s !== "full-name-token").length > 0;
+        return { ...f, hasKnownNameEvidence: isStatic || withoutToken };
+      };
+      const dropClitic = (f: ProfileGateFacts): ProfileGateFacts =>
+        CLITIC.test(val(f.candidateId)) ? { ...f, hasContextualPersonEvidence: false } : f;
+      const rulesOf = (id: string): string[] => ctxEv?.byCandidate?.[id]?.rules ?? [];
+      const dropRule = (rule: string) => (f: ProfileGateFacts): ProfileGateFacts => {
+        const r = rulesOf(f.candidateId);
+        return r.length > 0 && r.every((x) => x === rule) ? { ...f, hasContextualPersonEvidence: false } : f;
+      };
+      const rows = [
+        { correction: "A. drop ALL document-derived name evidence", ...counterfactual(staticOnly) },
+        { correction: "A1. drop only the full-name-token witness source", ...counterfactual(dropWitness) },
+        { correction: "B. contraction/clitic candidates lose contextual evidence", ...counterfactual(dropClitic) },
+        { correction: "C. drop contextual_human_subject (sole rule)", ...counterfactual(dropRule("contextual_human_subject")) },
+        { correction: "D. drop contextual_possessive (sole rule)", ...counterfactual(dropRule("contextual_possessive")) },
+        { correction: "E. drop contextual_direct_address (sole rule)", ...counterfactual(dropRule("contextual_direct_address")) },
+        { correction: "F. drop contextual_coordination (sole rule)", ...counterfactual(dropRule("contextual_coordination")) },
+        { correction: "G. A1 + B together (overlap-corrected)", ...counterfactual((f) => dropClitic(dropWitness(f))) },
+      ];
+      console.log("\n--- 5. COUNTERFACTUALS: the real gate re-run, additional units RESOLVED ---");
+      console.table(rows.map((r) => ({ correction: r.correction, releases: r.released, examples: r.values.slice(0, 10).join(", ") })));
+      return { bySource, witnessRows, ctxRows, multiClass, exactFamilies: exactFamilies.length, rows };
+    },
+    /*
+     * ALL EVIDENCE CHANNELS, FAMILY-GENERIC (AG, 2026-08-10).
+     *
+     *     __docscrub.channels()          every family, side by side
+     *     __docscrub.channels("Levy")    one phrase, full determination path
+     *
+     * Read-only. Decides nothing, changes nothing.
+     *
+     * ═════════ WHY THIS EXISTS ALONGSIDE `referenceEvidence()` ═════════
+     *
+     * `referenceEvidence()` below grew a hand-written ~60-line block per
+     * evidence family (higher-ed, then medical as 6a/6b/6c). Six domain packs
+     * were in flight on 2026-08-10 and more are coming; continuing that
+     * pattern means every future pack copy-pastes another block into the same
+     * function, in the same file, which is a merge conflict per pack forever.
+     *
+     * This one reads `workspace.getReferenceEvidence()` and iterates whatever
+     * families `engines/knowledge/ReferenceEvidence.ts` reports. ADDING A
+     * FAMILY REQUIRES NO EDIT HERE. `referenceEvidence()` is deliberately left
+     * untouched -- it is a working instrument with per-family detail, and
+     * rewriting it while three integrations are in flight would trade a merge
+     * conflict for a behavioural risk. It can be retired once its per-family
+     * detail is no longer wanted.
+     *
+     * ═════════ WHAT SECTION 3 IS FOR, AND WHY IT IS THE POINT ═════════
+     *
+     * Counting hits flatters a dataset. Counting the candidates where two
+     * INDEPENDENT families disagree is what tests one. Nothing here resolves
+     * those disagreements, and nothing in production reads them: the whole
+     * purpose is to measure conflict BEFORE any combination rule is written.
+     */
+    channels: (phrase?: string): unknown => {
+      /* SINGLE-PHRASE MODE: the audit trail for one string, which is the
+       * question "why did DocScrub consider this X?" answered directly. */
+      if (typeof phrase === "string") {
+        const one = referenceEvidenceFor(phrase);
+        console.log(`=== REFERENCE EVIDENCE for "${phrase}" ===`);
+        const attesting = attestingChannels(one);
+        console.log(`   attesting channels: ${attesting.length === 0 ? "(none)" : attesting.join(", ")}`);
+        console.log("   NOTE: no attestation means these partial datasets did not list this phrase.");
+        console.log("         It is NOT a finding that the phrase is not a person, place or term.");
+        const rows = referenceEvidenceAuditRows(one);
+        if (rows.length > 0) {
+          console.log("\n--- the determination path, one row per attesting source ---");
+          console.table(rows.map((r) => ({
+            family: r.evidenceFamily,
+            subDomain: r.subDomain ?? "",
+            sourceFamily: r.sourceFamily,
+            matched: r.matchedTerm,
+            normalized: r.normalizedTerm,
+            hints: r.semanticHints,
+            attested: r.sourceAttested,
+            derived: r.derivedVariant,
+            parent: r.parentTerm ?? "",
+            risk: r.collisionRisk,
+            url: r.sourceUrl,
+          })));
+        }
+        console.log("\n--- entity reference channels (different question, different shape) ---");
+        console.table([
+          { channel: "census-name", found: one.censusName.supportsNameStructure, detail: one.censusName.structure },
+          { channel: "gnis-place", found: one.gnisPlace.strength !== "none", detail: one.gnisPlace.strength },
+        ]);
+        return one;
+      }
+
+      const state = dispatcher.getState();
+      const candidates = state.detection?.candidates ?? [];
+      if (candidates.length === 0) { console.log("No document loaded."); return null; }
+      const byCandidate = workspace.getReferenceEvidence();
+      const protectedIds = workspace.getPersonProtectedIds();
+      const sectionById = new Map<string, TypeCheckSectionId>();
+      for (const group of state.semanticTypes ?? []) for (const id of group.candidateIds) sectionById.set(id, group.typeId);
+
+      console.log("=== REFERENCE EVIDENCE CHANNELS ===");
+      console.log(`   ${candidates.length} candidates, every channel asked. Nothing below is read by production.`);
+
+      /* 1. COVERAGE, one row per family, derived from whatever families exist. */
+      const familyIds = terminologyChannelsOf(referenceEvidenceFor("")).map((c) => ({ id: c.id, label: c.label }));
+      console.log("\n--- 1. COVERAGE by evidence family ---");
+      console.table(familyIds.map(({ id, label }) => {
+        let hits = 0;
+        let highRisk = 0;
+        let singleToken = 0;
+        let derivedOnly = 0;
+        for (const candidate of candidates) {
+          const view = terminologyChannelsOf(byCandidate.get(candidate.id) ?? referenceEvidenceFor(candidate.displayValue))
+            .find((c) => c.id === id);
+          if (!view?.evidence) continue;
+          hits += 1;
+          if (view.evidence.highestCollisionRisk === "HIGH") highRisk += 1;
+          if (view.evidence.tokenCount === 1) singleToken += 1;
+          if (!view.evidence.hasSourceAttestedRow) derivedOnly += 1;
+        }
+        return { family: label, hits, ofCandidates: candidates.length, highRisk, singleToken, derivedOnly };
+      }));
+      console.log("   HIGH-risk and single-token hits are RETAINED, never filtered. The GNIS benchmark");
+      console.log("   found 7/7 single-token place hits were real people; that caution is carried as");
+      console.log("   evidence, not applied as a rule, because this layer cannot see the document.");
+
+      /* 2. EVERY HIT, with the family that produced it. */
+      const hitRows: Array<Record<string, unknown>> = [];
+      for (const candidate of candidates) {
+        const channels = byCandidate.get(candidate.id) ?? referenceEvidenceFor(candidate.displayValue);
+        for (const view of terminologyChannelsOf(channels)) {
+          if (!view.evidence) continue;
+          hitRows.push({
+            value: candidate.displayValue,
+            section: sectionById.get(candidate.id) ?? "(unassigned)",
+            family: view.id,
+            subDomains: view.evidence.subDomains.join("/"),
+            matched: view.evidence.matchedTerm,
+            tokens: view.evidence.tokenCount,
+            hints: view.evidence.semanticHints.join("/"),
+            sources: view.evidence.sourceFamilies.join("/"),
+            rows: view.evidence.attestationRows,
+            sourceAttested: view.evidence.hasSourceAttestedRow,
+            risk: view.evidence.highestCollisionRisk,
+          });
+        }
+      }
+      console.log(`\n--- 2. EVERY HIT (${hitRows.length} family-hits across all candidates) ---`);
+      console.table(hitRows);
+
+      /*
+       * 3. THE LOAD-BEARING SECTION: candidates where independent families
+       * disagree. Under the current architecture person evidence wins outright
+       * and every terminology hit is inert -- which is correct today, and
+       * exactly the case a combination layer must be able to represent as a
+       * CONFLICT rather than silently resolve.
+       */
+      const conflicts: Array<Record<string, unknown>> = [];
+      for (const candidate of candidates) {
+        const channels = byCandidate.get(candidate.id) ?? referenceEvidenceFor(candidate.displayValue);
+        const attesting = attestingChannels(channels);
+        const terminology = attesting.filter((c) => c !== "census-name" && c !== "gnis-place");
+        const person = protectedIds.has(candidate.id) || channels.censusName.supportsNameStructure;
+        const place = channels.gnisPlace.strength !== "none";
+        if (terminology.length === 0) continue;
+        if (terminology.length < 2 && !person && !place) continue;
+        conflicts.push({
+          value: candidate.displayValue,
+          section: sectionById.get(candidate.id) ?? "(unassigned)",
+          terminologyFamilies: terminology.join(" + "),
+          personEvidence: person,
+          censusStructure: channels.censusName.structure,
+          personProtected: protectedIds.has(candidate.id),
+          placeEvidence: place ? channels.gnisPlace.strength : "",
+        });
+      }
+      console.log(`\n--- 3. CONFLICTS: ${conflicts.length} candidates where independent channels disagree ---`);
+      console.table(conflicts);
+      console.log("   Person evidence currently wins outright and every terminology hit is inert.");
+      console.log("   That is correct today. Whether it should remain so is the combination-layer question.");
+      console.log("   Use __docscrub.channels(\"<phrase>\") for the full determination path of any one row.");
+
+      return { candidates: candidates.length, familyHits: hitRows.length, conflicts: conflicts.length };
+    },
+    /*
+     * MULTI-INTERPRETATION PROFILES, Phase A (AG, 2026-08-10).
+     *
+     *     __docscrub.interpret()            the whole document, summarised
+     *     __docscrub.interpret("Major")     one candidate, full determination path
+     *
+     * Read-only. Decides nothing, changes nothing, and is the only consumer of
+     * `workspace.getInterpretationProfiles()` in the running app.
+     *
+     * ═════════ WHAT TO LOOK AT, AND WHY ═════════
+     *
+     * Section 1 is reassurance: most candidates are not ambiguous, and this
+     * says by how much. Section 3 is the actual instrument -- the candidates
+     * where two or more readings are AFFIRMATIVELY supported, grouped by which
+     * readings collide. That grouping is the shape any future combination
+     * policy has to be written against, and it is measured here before any
+     * such policy exists.
+     *
+     * Section 6 is the one to read hardest. It isolates candidates whose ONLY
+     * support for a person reading is `token-membership` -- the weakest claim
+     * in the system, the one measured to protect 80/106 non-people. If a
+     * future rule is ever allowed to demote a person reading, that population
+     * is where it would have to start, and its size and contents should be
+     * known before anyone proposes one.
+     *
+     * The current Type Check section is shown alongside each row. Where a
+     * contested candidate sits in exactly one section, that is the
+     * single-answer collapse this layer exists to make visible -- not a bug in
+     * the routing, which is behaving exactly as specified.
+     */
+    interpret: (phrase?: string): unknown => {
+      const state = dispatcher.getState();
+      const candidates = state.detection?.candidates ?? [];
+      if (candidates.length === 0) { console.log("No document loaded."); return null; }
+      const profiles = workspace.getInterpretationProfiles();
+      const sectionById = new Map<string, TypeCheckSectionId>();
+      for (const group of state.semanticTypes ?? []) for (const id of group.candidateIds) sectionById.set(id, group.typeId);
+
+      /* SINGLE-CANDIDATE MODE: the whole determination path for one phrase. */
+      if (typeof phrase === "string") {
+        const wanted = phrase.trim().toLocaleLowerCase();
+        const matches = candidates.filter((c) => c.displayValue.trim().toLocaleLowerCase() === wanted);
+        if (matches.length === 0) {
+          console.log(`No candidate in this document has the display value "${phrase}".`);
+          console.log("This diagnostic reads PROFILES, which are per-candidate -- context and document");
+          console.log("evidence do not exist for a phrase the document does not contain.");
+          return null;
+        }
+        for (const candidate of matches) {
+          const profile = profiles.get(candidate.id);
+          if (!profile) continue;
+          console.log(`=== INTERPRETATION PROFILE: "${candidate.displayValue}" ===`);
+          console.log(`    detected as: ${candidate.detectedType}`);
+          console.log(`    Type Check section (production, unchanged): ${sectionById.get(candidate.id) ?? "(unassigned)"}`);
+          console.log(`    outcome: ${profile.outcome}`);
+          const rows: Array<Record<string, unknown>> = [];
+          for (const interpretation of profile.interpretations) {
+            for (const signal of interpretation.signals) {
+              rows.push({
+                reading: interpretation.domain === undefined ? interpretation.id : `${interpretation.id} [${interpretation.domain}]`,
+                signalId: signal.signalId,
+                class: signal.class,
+                provenance: signal.provenance,
+                detail: signal.detail,
+              });
+            }
+          }
+          if (rows.length === 0) console.log("    (no affirmative evidence supports any reading)");
+          else console.table(rows);
+          console.log(explainInterpretationProfile(profile).join("\n"));
+        }
+        return matches.map((c) => profiles.get(c.id));
+      }
+
+      const all = candidates.map((c) => profiles.get(c.id)).filter((p): p is InterpretationProfile => p !== undefined);
+
+      console.log("=== MULTI-INTERPRETATION PROFILES (Phase A -- inert) ===");
+      console.log(`    ${all.length} candidates. Nothing below is read by any production decision.`);
+
+      /* 1. OUTCOME DISTRIBUTION. */
+      console.log("\n--- 1. OUTCOME ---");
+      const outcomes = new Map<string, number>();
+      for (const p of all) outcomes.set(p.outcome, (outcomes.get(p.outcome) ?? 0) + 1);
+      console.table([...outcomes.entries()].map(([outcome, count]) => ({
+        outcome,
+        candidates: count,
+        share: `${((count / all.length) * 100).toFixed(1)}%`,
+      })));
+      console.log("    unsupported = no affirmative evidence at all (thin evidence).");
+      console.log("    contested   = two or more readings AFFIRMATIVELY supported (genuine ambiguity).");
+      console.log("    These are different kinds of not-knowing and must not be merged.");
+
+      /* 2. WHICH READINGS ARE SUPPORTED AT ALL. */
+      console.log("\n--- 2. SUPPORTED READINGS ---");
+      const perReading = new Map<string, number>();
+      for (const p of all) {
+        for (const i of p.interpretations) {
+          const key = i.domain === undefined ? i.id : `${i.id} [${i.domain}]`;
+          perReading.set(key, (perReading.get(key) ?? 0) + 1);
+        }
+      }
+      console.table([...perReading.entries()].sort((a, b) => b[1] - a[1]).map(([reading, count]) => ({ reading, candidates: count })));
+
+      /* 3. THE INSTRUMENT: contested populations, grouped by what collides. */
+      console.log("\n--- 3. CONTESTED POPULATIONS, by which readings collide ---");
+      const byContest = new Map<string, InterpretationProfile[]>();
+      for (const p of all) {
+        if (p.outcome !== "contested") continue;
+        const key = contestKey(p);
+        const bucket = byContest.get(key) ?? [];
+        bucket.push(p);
+        byContest.set(key, bucket);
+      }
+      console.table([...byContest.entries()].sort((a, b) => b[1].length - a[1].length).map(([key, group]) => ({
+        collision: key,
+        candidates: group.length,
+        involvesPerson: key.split("+").includes("person"),
+        examples: group.slice(0, 4).map((p) => p.value).join(", "),
+      })));
+
+      /* 4. THE PRIVACY-CONSEQUENTIAL SUBSET. */
+      const personContested = all.filter(contestsPerson);
+      console.log(`\n--- 4. PERSON-CONTESTED: ${personContested.length} candidates where a person reading competes ---`);
+      console.table(personContested.slice(0, 40).map((p) => ({
+        value: p.value,
+        section: sectionById.get(p.candidateId) ?? "",
+        readings: interpretationIdsOf(p).join(" + "),
+        personSupport: (p.interpretations.find((i) => i.id === "person")?.signals ?? []).map((s) => s.class).join("/"),
+      })));
+      if (personContested.length > 40) console.log(`    (${personContested.length - 40} more not shown)`);
+
+      /* 5. SIGNAL CLASS COVERAGE -- which claim shapes are doing the work. */
+      console.log("\n--- 5. SIGNAL CLASSES IN USE ---");
+      const perClass = new Map<string, number>();
+      for (const p of all) for (const i of p.interpretations) for (const s of i.signals) {
+        perClass.set(s.class, (perClass.get(s.class) ?? 0) + 1);
+      }
+      console.table(SIGNAL_CLASS_ORDER.map((c) => ({
+        class: c,
+        signals: perClass.get(c) ?? 0,
+        claim: SIGNAL_CLASSES[c].claim,
+      })));
+
+      /* 6. READ THIS ONE HARDEST. */
+      const tokenOnlyPerson = all.filter((p) => {
+        const person = p.interpretations.find((i) => i.id === "person");
+        return person !== undefined && person.signals.every((s) => s.class === "token-membership");
+      });
+      console.log(`\n--- 6. PERSON READINGS RESTING ONLY ON TOKEN MEMBERSHIP: ${tokenOnlyPerson.length} ---`);
+      console.log("    The weakest claim in the system, measured to protect 80/106 non-people.");
+      console.log("    Nothing acts on this today. It is the population a demotion rule would have to");
+      console.log("    justify itself against, and it is sized here BEFORE any such rule is proposed.");
+      console.table(tokenOnlyPerson.slice(0, 40).map((p) => ({
+        value: p.value,
+        section: sectionById.get(p.candidateId) ?? "",
+        otherReadings: interpretationIdsOf(p).filter((i) => i !== "person").join(" + ") || "(none)",
+      })));
+      if (tokenOnlyPerson.length > 40) console.log(`    (${tokenOnlyPerson.length - 40} more not shown)`);
+
+      /* 7. THIN EVIDENCE, kept distinct from ambiguity throughout. */
+      const unsupported = all.filter((p) => p.outcome === "unsupported");
+      console.log(`\n--- 7. UNSUPPORTED (thin evidence, NOT ambiguity): ${unsupported.length} ---`);
+      console.table(unsupported.slice(0, 25).map((p) => ({ value: p.value, section: sectionById.get(p.candidateId) ?? "" })));
+      if (unsupported.length > 25) console.log(`    (${unsupported.length - 25} more not shown)`);
+
+      console.log("\n    Use __docscrub.interpret(\"<phrase>\") for one candidate's full determination path.");
+      return {
+        candidates: all.length,
+        contested: [...byContest.values()].reduce((s, g) => s + g.length, 0),
+        personContested: personContested.length,
+        tokenOnlyPerson: tokenOnlyPerson.length,
+        unsupported: unsupported.length,
+      };
+    },
+    /*
+     * INTERPRETATION EXPORT (AG, 2026-08-10).
+     *
+     *     copy(__docscrub.exportInterpretations())
+     *
+     * Serializes the loaded document's interpretation population to a JSON
+     * string for `investigation/p6-population-report.ts`. Read-only: reads
+     * three already-derived values and formats them. It computes nothing,
+     * decides nothing, and touches no routing, recommendation, scoring,
+     * classification or persistence path.
+     *
+     * WHY IT EXISTS: every Person measurement so far ran against an offline
+     * proxy in which `occurrence-context` and `document-consistency` fire on
+     * zero candidates, because neither can be reproduced without a loaded
+     * document. This is the smallest bridge from the real population to the
+     * existing harness.
+     *
+     * DETERMINISTIC: candidates are sorted by id, interpretations and signals
+     * keep their derivation order (which is already stable), and field order
+     * is fixed by construction. The same document produces byte-identical
+     * output on every run, so two exports can be diffed.
+     *
+     * EXPORTS ONLY WHAT THE HARNESS READS -- id, value, section, occurrence
+     * count, and the interpretation profile. No document text, no occurrence
+     * context strings, no decisions, no session state.
+     */
+    exportInterpretations: (): string => {
+      const state = dispatcher.getState();
+      const candidates = state.detection?.candidates ?? [];
+      if (candidates.length === 0) {
+        console.log("No document loaded.");
+        return "[]";
+      }
+      const profiles = workspace.getInterpretationProfiles();
+      const sectionById = new Map<string, TypeCheckSectionId>();
+      for (const group of state.semanticTypes ?? []) for (const id of group.candidateIds) sectionById.set(id, group.typeId);
+
+      const exported = [...candidates]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((candidate) => {
+          const profile = profiles.get(candidate.id);
+          return {
+            candidateId: candidate.id,
+            value: candidate.displayValue,
+            section: sectionById.get(candidate.id) ?? null,
+            occurrenceCount: candidate.occurrenceIds.length,
+            interpretations: (profile?.interpretations ?? []).map((interpretation) => ({
+              id: interpretation.id,
+              domain: interpretation.domain ?? null,
+              signals: interpretation.signals.map((signal) => ({
+                signalId: signal.signalId,
+                class: signal.class,
+                provenance: signal.provenance,
+                lineage: [...signal.lineage],
+              })),
+            })),
+          };
+        });
+
+      const json = JSON.stringify(exported, null, 2);
+      console.log(`Exported ${exported.length} candidates (${json.length.toLocaleString()} chars).`);
+      console.log("Save as investigation/data/interpretation-population.json and run:");
+      console.log("  node --experimental-strip-types --experimental-loader ./verify/ts-loader.mjs \\");
+      console.log("       investigation/p6-population-report.ts investigation/data/interpretation-population.json");
+      return json;
+    },
+    /*
+     * DOMAIN REFERENCE EVIDENCE -- the benchmark instrument (AG, 2026-08-10).
+     *
+     *     __docscrub.referenceEvidence()
+     *
+     * Read-only. Decides nothing, changes nothing, and is deliberately the
+     * ONLY consumer of the inert domain-reference evidence families in the
+     * running app -- no production path reads them, by design (see
+     * engines/knowledge/HigherEdTerminologyEvidence.ts's and
+     * engines/knowledge/MedicalEvidence.ts's contracts, and
+     * domain/semanticTypes.ts's `higherEdTerminologyAttested` /
+     * `medicalTerminologyAttested`).
+     *
+     * It exists so the configurations can be measured on a real document
+     * BEFORE any combination rule is written:
+     *
+     *     1. baseline                  the live assignment, as shipped
+     *     2. geography evidence only   GNIS landed in this tree after this
+     *                                  diagnostic was first written and is
+     *                                  computed per candidate
+     *                                  (workspace.getGnisPlaceEvidence()), so
+     *                                  the slot is live. Nothing routes on it.
+     *     3. higher-ed evidence only   sections 2-4 below
+     *     3b. medical evidence only    section 6 below (AG, 2026-08-10)
+     *     4. combined                  blocked on a combination layer that can
+     *                                  represent a CONFLICT rather than a
+     *                                  winner -- which is now four families'
+     *                                  worth of the same finding
+     *
+     * THE ROW THAT MATTERS IS SECTION 4, not the hit count. A reference
+     * dataset is only interesting where it DISAGREES with person evidence,
+     * and the whole design question is whether those disagreements are
+     * conflicts to surface or noise to drop. Counting hits would flatter the
+     * dataset; counting collisions is what tests it.
+     */
+    referenceEvidence: (): unknown => {
+      const state = dispatcher.getState();
+      const candidates = state.detection?.candidates ?? [];
+      if (candidates.length === 0) { console.log("No document loaded."); return null; }
+      const hed = workspace.getHigherEdTerminologyEvidence();
+      const med = workspace.getMedicalEvidence();
+      const census = workspace.getCensusNameEvidence();
+      const protectedIds = workspace.getPersonProtectedIds();
+      const sectionById = new Map<string, TypeCheckSectionId>();
+      for (const group of state.semanticTypes ?? []) for (const id of group.candidateIds) sectionById.set(id, group.typeId);
+
+      console.log("=== DOMAIN REFERENCE EVIDENCE ===");
+      console.log(`   higher-ed: ${HIGHER_ED_EVIDENCE_SOURCE} -- ${HIGHER_ED_EVIDENCE_ROW_COUNT} rows over ${HIGHER_ED_EVIDENCE_TERM_COUNT} terms`);
+      console.log(`   medical:   ${MEDICAL_EVIDENCE_SOURCE} -- ${MEDICAL_EVIDENCE_ROW_COUNT} rows over ${MEDICAL_EVIDENCE_TERM_COUNT} terms`);
+
+      console.log("\n--- 1. CONFIGURATIONS ---");
+      console.table([
+        { config: "1. baseline", status: "live", note: "the shipped assignment; every section below is measured against it" },
+        { config: "2. geography only", status: "live, inert", note: "GNIS computed per person-typed candidate; nothing routes on it" },
+        { config: "3. higher-ed only", status: "live, inert", note: "computed per candidate; no production path consumes it" },
+        { config: "3b. medical only", status: "live, inert", note: "computed per candidate; no production path consumes it (section 6)" },
+        { config: "4. combined", status: "BLOCKED", note: "on a deterministic evidence-combination layer that can represent conflict" },
+      ]);
+
+      const hits = candidates.filter((c) => hed.has(c.id));
+      console.log(`\n--- 2. COVERAGE: ${hits.length} of ${candidates.length} candidates carry higher-ed terminology evidence ---`);
+      const bySection = new Map<string, number>();
+      for (const c of hits) {
+        const key = sectionById.get(c.id) ?? "(unassigned)";
+        bySection.set(key, (bySection.get(key) ?? 0) + 1);
+      }
+      console.table([...bySection.entries()].sort((a, b) => b[1] - a[1]).map(([section, n]) => ({ section, hits: n })));
+
+      console.log("\n--- 3. EVERY HIT, with the provenance a combination layer would weigh ---");
+      console.table(hits.map((c) => {
+        const e = hed.get(c.id)!;
+        return {
+          value: c.displayValue,
+          section: sectionById.get(c.id) ?? "(unassigned)",
+          matched: e.attestations[0]?.term ?? "",
+          tokens: e.tokenCount,
+          hints: e.semanticHints.join("/"),
+          families: e.sourceFamilies.length,
+          rows: e.attestations.length,
+          sourceAttested: e.hasSourceAttestedRow,
+          risk: e.highestCollisionRisk,
+        };
+      }));
+
+      /*
+       * THE LOAD-BEARING SECTION. A candidate appearing here carries BOTH
+       * higher-ed terminology attestation AND independent person evidence.
+       * Under the current architecture person evidence wins outright and the
+       * terminology hit is inert -- which is the correct behaviour today and
+       * exactly the case a future combination layer must be able to represent
+       * as a CONFLICT rather than silently resolve. Same architectural gap
+       * the GNIS benchmark identified from the geographic side (§13).
+       */
+      const collisions = hits.filter((c) => protectedIds.has(c.id) || census.has(c.id));
+      console.log(`\n--- 4. COLLISIONS: ${collisions.length} candidates carry higher-ed evidence AND person evidence ---`);
+      console.table(collisions.map((c) => {
+        const e = hed.get(c.id)!;
+        return {
+          value: c.displayValue,
+          section: sectionById.get(c.id) ?? "(unassigned)",
+          risk: e.highestCollisionRisk,
+          hedTokens: e.tokenCount,
+          personProtected: protectedIds.has(c.id),
+          censusStructure: census.get(c.id)?.structure ?? "none",
+        };
+      }));
+      console.log("   Person evidence currently wins outright and the terminology hit is inert.");
+      console.log("   That is correct today. Whether it should remain so is the combination-layer question.");
+
+      const highRisk = hits.filter((c) => hed.get(c.id)!.highestCollisionRisk === "HIGH");
+      const singleToken = hits.filter((c) => hed.get(c.id)!.tokenCount === 1);
+      console.log("\n--- 5. THE TWO RISK POPULATIONS ---");
+      console.log(`   HIGH collision risk : ${highRisk.length}  -> ${highRisk.map((c) => c.displayValue).slice(0, 20).join(", ")}`);
+      console.log(`   single-token hits   : ${singleToken.length}  -> ${singleToken.map((c) => c.displayValue).slice(0, 20).join(", ")}`);
+      console.log("   Both populations are RETAINED, not filtered. The GNIS benchmark found 7/7 single-token");
+      console.log("   place hits were real people; the same caution applies here and is carried as evidence,");
+      console.log("   not applied as a rule, because this layer cannot see the surrounding document.");
+
+      /*
+       * ====================================================================
+       * 6. MEDICAL/HEALTHCARE TERMINOLOGY (AG, 2026-08-10)
+       * ====================================================================
+       *
+       * Same instrument, second reference family, printed alongside rather
+       * than merged: the point of the exercise is to see whether independent
+       * families AGREE, and merging them here would answer that question by
+       * construction.
+       *
+       * 6c IS THE ROW THAT MATTERS, for the same reason section 4 is. A
+       * candidate appearing there carries medical attestation AND independent
+       * person evidence. Person evidence wins outright today and the
+       * terminology hit is inert -- correct now, and exactly the case a
+       * combination layer must be able to hold as a CONFLICT.
+       *
+       * NOTHING HERE MAY BE READ AS A CLINICAL STATEMENT. These are counts of
+       * PHRASES matching a terminology pack. A candidate listed in 6b is a
+       * string that appears in CDC/CMS/MeSH vocabulary; it is not a finding
+       * about anyone's health, and no column below reports one.
+       */
+      const medHits = candidates.filter((c) => med.has(c.id));
+      console.log(`\n--- 6a. MEDICAL COVERAGE: ${medHits.length} of ${candidates.length} candidates carry medical terminology evidence ---`);
+      const medBySection = new Map<string, number>();
+      for (const c of medHits) {
+        const key = sectionById.get(c.id) ?? "(unassigned)";
+        medBySection.set(key, (medBySection.get(key) ?? 0) + 1);
+      }
+      console.table([...medBySection.entries()].sort((a, b) => b[1] - a[1]).map(([section, n]) => ({ section, hits: n })));
+
+      console.log("\n--- 6b. EVERY MEDICAL HIT, with the provenance a combination layer would weigh ---");
+      console.table(medHits.map((c) => {
+        const e = med.get(c.id)!;
+        return {
+          value: c.displayValue,
+          section: sectionById.get(c.id) ?? "(unassigned)",
+          matched: e.attestations[0]?.term ?? "",
+          tokens: e.tokenCount,
+          hints: e.semanticHints.join("/"),
+          families: e.sourceFamilies.join("/"),
+          rows: e.attestations.length,
+          sourceAttested: e.hasSourceAttestedRow,
+          abbreviation: e.hasAbbreviationRow,
+          expansions: e.sourceExpansions.join(" | "),
+          risk: e.highestCollisionRisk,
+        };
+      }));
+
+      const medCollisions = medHits.filter((c) => protectedIds.has(c.id) || census.has(c.id));
+      console.log(`\n--- 6c. COLLISIONS: ${medCollisions.length} candidates carry medical evidence AND person evidence ---`);
+      console.table(medCollisions.map((c) => {
+        const e = med.get(c.id)!;
+        return {
+          value: c.displayValue,
+          section: sectionById.get(c.id) ?? "(unassigned)",
+          risk: e.highestCollisionRisk,
+          medTokens: e.tokenCount,
+          abbreviation: e.hasAbbreviationRow,
+          personProtected: protectedIds.has(c.id),
+          censusStructure: census.get(c.id)?.structure ?? "none",
+        };
+      }));
+      console.log("   Person evidence currently wins outright and the terminology hit is inert.");
+      console.log("   That is correct today. Whether it should remain so is the combination-layer question.");
+
+      const medHighRisk = medHits.filter((c) => med.get(c.id)!.highestCollisionRisk === "HIGH");
+      const medAbbrev = medHits.filter((c) => med.get(c.id)!.hasAbbreviationRow);
+      const medSingleToken = medHits.filter((c) => med.get(c.id)!.tokenCount === 1);
+      console.log("\n--- 6d. THE THREE RISK POPULATIONS ---");
+      console.log(`   HIGH collision risk : ${medHighRisk.length}  -> ${medHighRisk.map((c) => c.displayValue).slice(0, 20).join(", ")}`);
+      console.log(`   abbreviation rows   : ${medAbbrev.length}  -> ${medAbbrev.map((c) => c.displayValue).slice(0, 20).join(", ")}`);
+      console.log(`   single-token hits   : ${medSingleToken.length}  -> ${medSingleToken.map((c) => c.displayValue).slice(0, 20).join(", ")}`);
+      console.log("   All three are RETAINED, not filtered. Where the source supplies an expansion it is");
+      console.log("   printed above as PROVENANCE -- what one source page wrote -- never as a resolution of");
+      console.log("   what the short form means in this document. That is a different layer.");
+
+      /*
+       * 6e. THE CROSS-FAMILY VIEW -- the reason this diagnostic prints families
+       * side by side instead of one at a time. Any candidate listed here is
+       * simultaneously attested by two or more independent reference datasets,
+       * which no single-winner interpretation can represent at all.
+       *
+       * READ THROUGH `workspace.getReferenceEvidence()` AND `attestingChannels`
+       * DELIBERATELY, rather than by re-combining the per-family maps above.
+       * That fan-out landed from concurrent work while this section was being
+       * written and is the right seam: a first draft of this block hand-rolled
+       * the same union over four families, which would have gone stale the
+       * moment a fifth arrived -- and legal and finance arrived the same day.
+       * Going through the shared channel view means the next pack appears here
+       * with no edit to this file.
+       */
+      const channelsById = workspace.getReferenceEvidence();
+      const multiFamily = candidates
+        .map((c) => {
+          const channels = channelsById.get(c.id);
+          return {
+            value: c.displayValue,
+            section: sectionById.get(c.id) ?? "(unassigned)",
+            channels: channels ? attestingChannels(channels).join(" + ") : "(not gathered)",
+            count: channels ? attestingChannels(channels).length : 0,
+            personEvidenced: protectedIds.has(c.id) || census.has(c.id),
+          };
+        })
+        .filter((r) => r.count > 1 || (r.count === 1 && r.personEvidenced));
+      console.log(`\n--- 6e. CANDIDATES CARRYING MORE THAN ONE FAMILY OF EVIDENCE: ${multiFamily.length} ---`);
+      console.table(multiFamily);
+      console.log("   Every row here is a candidate about which two or more independent deterministic");
+      console.log("   datasets both have something to say, or which carries reference attestation AND");
+      console.log("   person evidence. `semanticTypeFor` returns ONE id and therefore cannot represent");
+      console.log("   this at all -- it can only pick. Fourth family, same finding.");
+      console.log("   The channel order in that column is declaration order and is NOT a precedence.");
+
+      return {
+        total: candidates.length,
+        higherEd: { hits: hits.length, collisions: collisions.length, highRisk: highRisk.length, singleToken: singleToken.length },
+        medical: { hits: medHits.length, collisions: medCollisions.length, highRisk: medHighRisk.length, abbreviations: medAbbrev.length, singleToken: medSingleToken.length },
+        multiFamily: multiFamily.length,
+      };
+    },
+    /*
+     * PHASE 1: IS DOCSCRUB DAMAGING TEXT? (AG, 2026-08-09)
+     *
+     * Classifies every detected occurrence by whether its span ends inside a
+     * word that continues in the parsed text. Answers A (all source-
+     * authentic) / B (all ours) / C (mixed) from the document itself rather
+     * than from anyone's reading of the code.
+     *
+     * Read-only: builds probes from `Occurrence.context` and reports. It
+     * changes no state and decides nothing -- the fix, if any, waits on what
+     * this says.
+     */
+    truncations: (): unknown => {
+      const state = dispatcher.getState();
+      const occurrences = state.detection?.occurrences ?? [];
+      const candidatesById = new Map((state.detection?.candidates ?? []).map((c) => [c.id, c]));
+      const probes: TruncationProbe[] = [];
+      const labels: string[] = [];
+      for (const occ of occurrences) {
+        const built = probeFromContext(occ.context, occ.text);
+        if (!built) continue;
+        probes.push(built);
+        labels.push(candidatesById.get(occ.candidateId)?.displayValue ?? occ.text);
+      }
+      const report = reportTruncations(probes);
+      const answer = report.defects.length === 0 ? "A (all source-authentic)" : report.sourceLiterals.length === 0 ? "B (all DocScrub-produced)" : "C (mixed)";
+      console.log(`=== Truncation origin over ${report.total} occurrences ===`);
+      console.log(`ANSWER: ${answer}`);
+      console.table(report.byOrigin);
+      const worst = report.defects.filter((d) => d.origin === "severed").slice(0, 40);
+      if (worst.length > 0) {
+        console.log(`\n--- SEVERED (DocScrub cut a word that continues) : ${report.byOrigin.severed} total, first ${worst.length} ---`);
+        console.table(worst.map((d) => ({ fragment: d.text, continues: d.continuation })));
+      }
+      const ceiling = report.defects.filter((d) => d.origin === "token-ceiling").slice(0, 20);
+      if (ceiling.length > 0) {
+        console.log(`\n--- TOKEN-CEILING (FALLBACK_PERSON_RE 4-token bound) : ${report.byOrigin["token-ceiling"]} total ---`);
+        console.table(ceiling.map((d) => ({ fragment: d.text, dropped: d.continuation })));
+      }
+      void labels;
+      return report;
+    },
+  };
+  (window as unknown as Record<string, unknown>)["__docscrub"] = diagnostics;
 }

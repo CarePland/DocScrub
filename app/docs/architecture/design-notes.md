@@ -17,6 +17,98 @@ a full findings doc; link to the relevant `docs/detection/*.md` for detail.
 
 ---
 
+**v2026-08-10.01** -- Preliminary local-AI semantic evidence prototype.
+When explicitly enabled against a localhost model endpoint, Item Check can
+show a small accessible `AI` provenance badge and use strong,
+non-conflicting local-AI semantic evidence to route ambiguous People
+residue into the existing term sections. The reviewer still makes every
+decision; `__docscrub.aiPeople()` reports the benchmark details. See
+`docs/detection/local-ai-semantic-evidence-prototype.md`.
+
+**v2026-08-08.09** -- Proposal-only category shortcuts now recover from
+focus-pane / parked-domain-cursor drift. Section-scope shortcuts use the
+last rendered sectioned stage as their UI fallback, and group-scope
+`Opt`/`Alt+C/R` rehydrates the active proposal id from the focused
+`data-proposal-id` card before resolving the visible category action. This
+keeps Numeric-style proposal categories answering the `Redact all` keycap
+and keeps `Opt`/`Alt` category arrows moving the category the reviewer is
+actually looking at.
+
+**v2026-08-08.08** -- Single-item category completion now gets the same fast feedback grammar as bulk completion: the decided item pulses, the completed category or active Review Zone pulses green, and only then does the existing advance move on. Zone-scoped section actions also pulse when they complete the painted Zone even if the category still has more work.
+
+**v2026-08-08.07** -- Bulk review actions now reuse the existing decision-colored acknowledgement pulse for exactly the items whose visible decision changed. When a section action completes a category, the category heading and section pill briefly pulse green before the existing section-advance path moves to the next incomplete work.
+
+**v2026-08-08.06** -- Section-scope shortcuts now resolve proposal-only
+categories from the rendered sectioned queue when the domain row cursor is
+parked elsewhere. This restores `Opt`+arrow section movement and
+`Opt+C`/`Opt+R` structural-group actions on Numeric-style categories, and
+lets those action chords run even while focus is in the sticky chrome.
+
+**v2026-08-08.05** -- Refresh restore now saves and restores the visible
+sectioned-queue category and proposal-card cursor. Ambiguity/triage
+proposal-only categories could previously reload on a stale candidate
+cursor from another category because the UI snapshot carried stage/item
+state but not the rendered category/card selection.
+
+**v2026-08-08.04** -- Decision-tinted triage rows now fill with the action
+color instead of showing only a colored border. The alternating row-color
+rules were more specific than the generic `.decision-tinted` surface, so
+handled proposal rows could keep a grey/white fill. Triage rows now restate
+the same shared decision tint at row-level specificity.
+
+**v2026-08-08.03** -- Compact relationship proposal rows now show handled
+state using the unified decision color system. The row derives the proposal
+summary from its member decisions, applies the dominant action's
+`decisionClass(...)`, and uses the shared `.decision-tinted` surface, so
+the right-side proposal list colors match the action colors already used
+by candidate rows, group rows, type rows, and the full proposal card.
+
+**v2026-08-08.02** -- Proposal-grid arrow movement now preserves proposal
+ids as proposal targets. Numeric and other proposal-only categories had
+punctuated proposal ids; a global string escape made the "is this target a
+proposal?" lookup fail, so Down could hand a proposal id to the candidate
+cursor and jump back to a stale category. The lookup now uses the app's CSS
+attribute escape helper and keeps the card cursor active.
+
+**v2026-08-08.01** -- Ambiguity Check section jumps and proposal-only
+categories now obey the hard Enter/Esc depth model. `Opt`/`Alt` section
+navigation returns keyboard focus to Review mode so the next plain arrow
+moves the selected review unit, and relationship proposal cards no longer
+use Down-arrow to enter inner buttons or checkboxes. Enter enters the
+focus pane; Esc exits it; arrows stay movement.
+
+**v2026-08-06.03** -- Local recent documents are now account-aware and
+archive-first. A signed-in reviewer sees active local sessions owned by
+that account; older pre-account sessions remain on disk but are hidden from
+active recents. "Archive" hides a document without deleting local bytes,
+"View archived" shows archived sessions, and "Restore" returns one to
+active recents. Future Projects/Folders should sit above this same local
+session boundary: project metadata may become account/organization metadata,
+but source documents, filenames, paths, detected values, replacements,
+snippets, and per-item decision content must stay out of Supabase unless a
+separate privacy decision changes the model.
+
+**v2026-08-06.02** -- Internal Admin now has a compact Metrics area backed
+by privacy-safe Supabase aggregates. DocScrub submits only numeric usage
+counts, timestamps, status, export counts, app version, organization id, and
+an opaque local usage-session UUID -- never document text, filenames,
+detected values, replacements, snippets, local paths, or per-item decision
+content. Admin access is separate from organization ownership via
+`profiles.is_internal_admin`.
+
+**v2026-08-06.01** -- Account onboarding now starts from the Supabase auth
+foundation and uses a minimal wizard: Welcome, Account, Ready. Ready is the
+normal end state with a centered "Start using DocScrub" action. Choosing
+"Invite others to join your Organization." branches into an inserted
+Invite Team step and then a second end state named Complete; while that
+branch is active, the original Ready step/pill is hidden, and Back from
+Invite Team restores the original three-step path. Invite Team creates
+pending organization-member records only; no invitation emails are sent.
+Before rollout, add a polished confirmation when Back would discard filled
+invite rows. Once pending members are created, the flow must remain
+irreversible to Ready because the user completed a different onboarding
+branch.
+
 **v2026-08-03.08** -- The time estimate's observed pace becomes a MEDIAN
 rather than a mean (AG). Decision times are a tight cluster of a few
 seconds with a long right tail of distraction; a mean prices a ninety-
@@ -48,13 +140,13 @@ of the review work avoided, in time. Laid out differently on purpose --
 number at the same size as Made/Avoided/Fewer, with a wrapping phrase
 beside it ("3.4 · days of work avoided") rather than a stacked one-word
 label, because it is the only MODELED number in a panel of exact counts.
-Built to understate, deliberately: it multiplies avoided decision UNITS
-(not occurrences, which would price the cheapest work in the document at
-full rate and yield "3 weeks" from an afternoon) by the reviewer's OWN
+Built to understate, deliberately: it multiplies the same avoided
+occurrence-level reviews shown in the `Avoided` cell by the reviewer's OWN
 observed pace, measured only across consecutive individual per-item
-decisions, with idle gaps discarded rather than capped and wall-clock
-rather than working-day units. It is absent entirely until there is an
-honest basis -- fewer than three observed individual decisions, or nothing
+decisions, using the median so short distractions do not inflate the
+figure, with idle gaps discarded rather than capped and wall-clock rather
+than working-day units. It is absent entirely until there is an honest
+basis -- fewer than three observed individual decisions, or nothing
 avoided, renders nothing. An "i" control opens a plain-language
 explanation beneath the panel naming the measured pace, the arithmetic,
 and the direction of the error. See

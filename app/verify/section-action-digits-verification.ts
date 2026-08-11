@@ -90,7 +90,7 @@ console.log("\nCHORDS AND SEVERITY ARE BOTH DERIVED FROM THE DECLARED OPERATION"
   const all: SectionAction[] = Object.values(AMBIGUITY_TIER_ACTIONS).flatMap((tiers) => Object.values(tiers ?? {}).flat());
   const find = (label: string): SectionAction | undefined => all.find((a) => a.label === label);
   check("Redact all answers Opt+R", sectionActionChord(find("Redact all")!) === "R");
-  check("a conclusion-named Ignore answers Opt+N -- the chord follows the OP, never the wording", sectionActionChord(find("These are all words, not names")!) === "N");
+  check("a conclusion-named Ignore answers Opt+I -- the chord follows the canonical Ambiguity/Item decision contract", sectionActionChord(find("These are all words, not names")!) === "I");
   check("a Keep-op conclusion answers Opt+K", sectionActionChord(find("Keep abbreviations")!) === "K");
   // accept-suggestions is the population digits exist for: each item takes
   // its OWN suggestion, so no single letter describes the action.

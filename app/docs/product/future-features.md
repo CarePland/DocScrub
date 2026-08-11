@@ -1,7 +1,7 @@
 # Future Features
 
 Status: canonical
-Last updated: 2026-08-01
+Last updated: 2026-08-08
 
 How to read this document: a holding area for product concepts Andrew has
 articulated but explicitly deferred — not scheduled, not scoped into
@@ -16,6 +16,27 @@ removed from here) when it becomes a real Larger-feature specification
 backlog item; this document is not the historical record of that
 graduation, so no banner is left behind — the entry is just deleted once
 its content lives somewhere authoritative.
+
+---
+
+## Deferred Known Issues
+
+### Decision Tracker counts one global acronym action as multiple Made decisions
+
+**Status: Known issue — deferred; not scheduled for immediate implementation.**
+
+**Observed 2026-08-08.** In Ambiguity Check's Acronyms section, using the
+global "apply to all" command on three acronym examples increased the
+Decision Tracker's **Made** total by three. That contradicts the tracker
+contract: **Made counts human decisions, not affected items**, so one
+reviewer command that applies the same disposition to all three acronym
+examples should count as one human decision.
+
+This is minor enough to leave out of the current UI-tuning pass, but it
+should be revisited during a later "what still needs doing" sweep. The
+future fix should audit structural/acronym/global apply paths against the
+Decision Tracker invariant documented in `../product/glossary.md`: "Treat
+all this way" is one decision even when it resolves multiple items.
 
 ---
 

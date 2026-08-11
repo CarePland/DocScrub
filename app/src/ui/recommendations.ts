@@ -177,7 +177,10 @@ export function hasKnownNameEvidence(facts: RecommendationFacts): boolean {
 
 const CALENDAR_CATEGORIES = ["calendar-term", "calendar-abbreviation", "season-or-academic-term"];
 
-const COMMON_WORD_CATEGORIES = [
+/** Exported (2026-08-09) so residualReviewGate.ts's copy can be asserted
+ *  equal to it -- see that module's ORDINARY_LANGUAGE_CATEGORIES for why the
+ *  copy exists and why an unchecked one is dangerous. */
+export const COMMON_WORD_CATEGORIES = [
   "expanded-common-language-token",
   "common-english-word",
   "common-verb",

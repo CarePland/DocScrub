@@ -113,7 +113,10 @@ import {
  *  _dictionary_rules below iterates these keys to build an ordered
  *  `classifications` list that flows into QualityResult.reasons. */
 const QUALITY_DICTIONARY_KEYS: string[] = Object.keys(QUALITY_DICTIONARIES_DATA);
-const QUALITY_DICTIONARIES = new Map<string, Set<string>>(
+/** Exported (2026-08-09) for the contextual-person Guard 1, which builds its
+ *  "cannot be a person" set from these lexicons rather than declaring a
+ *  blacklist -- see contextual-person-evidence.ts. */
+export const QUALITY_DICTIONARIES = new Map<string, Set<string>>(
   QUALITY_DICTIONARY_KEYS.map((rule) => [rule, new Set(QUALITY_DICTIONARIES_DATA[rule])])
 );
 
@@ -191,17 +194,44 @@ function dedupe(values: string[]): string[] {
 // TITLE_RE = re.compile(r"\b(?:dr|mr|mrs|ms|prof|professor|judge|dean)\.?\s+\[?", re.IGNORECASE)
 const TITLE_RE = /\b(?:dr|mr|mrs|ms|prof|professor|judge|dean)\.?\s+\[?/i;
 
+/*
+ * ORACLE DEVIATION #9 -- UNICODE NAME SHAPE (AG, 2026-08-10).
+ *
+ * Python's name-shape regexes are ASCII-only (`[A-Z]`, `[A-Za-z'’.-]`), and
+ * the port copied them faithfully. The DETECTOR does not share that limit --
+ * patterns.ts matches `\p{Lu}\p{Ll}` -- so every accented name is detected and
+ * then fails its own shape test:
+ *
+ *     Yazmine Guzman   strong_name_structure   -> People
+ *     Yazmine Guzmań  weak_name_structure     -> Other
+ *     José Martínez    weak_name_structure     -> Other
+ *     Ana Núñez        weak_name_structure     -> Other
+ *
+ * That is not a scoring judgment, it is a character-class defect, and it
+ * systematically disadvantages exactly the population a redaction tool most
+ * needs to protect. The classes below are widened to `\p{Lu}` / `\p{L}\p{M}`
+ * with the `u` flag; the STRUCTURE each regex tests is unchanged, and no ASCII
+ * input changes its answer.
+ *
+ * Display text is never touched -- this is a matching change only.
+ *
+ * CLASSIFICATION: correctness fix. Pinned in both directions by
+ * verify/unicode-name-shape-verification.ts.
+ */
+const NAME_UPPER = "\\p{Lu}";
+const NAME_REST = "[\\p{L}\\p{M}'’.-]";
+
 // LAST_FIRST_RE = re.compile(r"^[A-Z][A-Za-z'’.-]+,\s*[A-Z][A-Za-z'’.-]+(?:\s+[A-Z]{1,4})?$")
-const LAST_FIRST_RE = /^[A-Z][A-Za-z'’.-]+,\s*[A-Z][A-Za-z'’.-]+(?:\s+[A-Z]{1,4})?$/;
+const LAST_FIRST_RE = new RegExp(`^${NAME_UPPER}${NAME_REST}+,\\s*${NAME_UPPER}${NAME_REST}+(?:\\s+${NAME_UPPER}{1,4})?$`, "u");
 
-// INITIAL_SURNAME_RE = re.compile(r"^(?:[A-Z]\.\s*)+[A-Z][A-Za-z'’.-]+$")
-const INITIAL_SURNAME_RE = /^(?:[A-Z]\.\s*)+[A-Z][A-Za-z'’.-]+$/;
+// INITIAL_SURNAME_RE = re.compile(r"^(?:[A-Z]\.\s*)+[A-Z][A-Za-z'’.-]+$")   -- deviation #9
+const INITIAL_SURNAME_RE = new RegExp(`^(?:${NAME_UPPER}\\.\\s*)+${NAME_UPPER}${NAME_REST}+$`, "u");
 
-// SURNAME_INITIALS_RE = re.compile(r"^[A-Z][A-Za-z'’.-]+,\s*[A-Z]{1,4}$")
-const SURNAME_INITIALS_RE = /^[A-Z][A-Za-z'’.-]+,\s*[A-Z]{1,4}$/;
+// SURNAME_INITIALS_RE = re.compile(r"^[A-Z][A-Za-z'’.-]+,\s*[A-Z]{1,4}$")   -- deviation #9
+const SURNAME_INITIALS_RE = new RegExp(`^${NAME_UPPER}${NAME_REST}+,\\s*${NAME_UPPER}{1,4}$`, "u");
 
-// TWO_NAME_RE = re.compile(r"^[A-Z][A-Za-z'’.-]{1,}(?:\s+[A-Z][A-Za-z'’.-]{1,}){1,3}$")
-const TWO_NAME_RE = /^[A-Z][A-Za-z'’.-]{1,}(?:\s+[A-Z][A-Za-z'’.-]{1,}){1,3}$/;
+// TWO_NAME_RE = re.compile(r"^[A-Z][A-Za-z'’.-]{1,}(?:\s+[A-Z][A-Za-z'’.-]{1,}){1,3}$")   -- deviation #9
+const TWO_NAME_RE = new RegExp(`^${NAME_UPPER}${NAME_REST}{1,}(?:\\s+${NAME_UPPER}${NAME_REST}{1,}){1,3}$`, "u");
 
 // BAD_CAPS_RE = re.compile(r"^[a-z]|[A-Z]{3,}[a-z]")
 const BAD_CAPS_RE = /^[a-z]|[A-Z]{3,}[a-z]/;
@@ -212,8 +242,10 @@ const OCR_ARTIFACT_RE = /(?:[A-Za-z]\d|\d[A-Za-z]|[_\\/]{2,}|[A-Z]{2,}[a-z]{1,2}
 // ACRONYM_RE = re.compile(r"^(?:[A-Z]{2,10}|[A-Z]{1,6}\d{1,4}|(?:[A-Z]\.){2,}|[A-Z]{2,10}(?:[-/][A-Z0-9]{1,6})+|[A-Z]{2,10}-\d{1,6})$")
 const ACRONYM_RE = /^(?:[A-Z]{2,10}|[A-Z]{1,6}\d{1,4}|(?:[A-Z]\.){2,}|[A-Z]{2,10}(?:[-/][A-Z0-9]{1,6})+|[A-Z]{2,10}-\d{1,6})$/;
 
-// _tokens: re.findall(r"[A-Za-z][A-Za-z'’.-]*", ...)
-const TOKEN_RE = /[A-Za-z][A-Za-z'’.-]*/g;
+// _tokens: re.findall(r"[A-Za-z][A-Za-z'’.-]*", ...)   -- deviation #9
+// Widened with the same reasoning: an ASCII-only tokenizer split "Guzmán"
+// into "Guzm" and "n", so no lexicon lookup could ever match an accented name.
+const TOKEN_RE = /[\p{L}][\p{L}\p{M}'’.-]*/gu;
 
 // _near_title's before_match regex (candidate_quality.py line 693)
 const NEAR_TITLE_BEFORE_RE = /(?:^|[\s:;,.])(?:dr|mr|mrs|ms|prof|professor|judge|dean)\.?\s+\[?$/i;
@@ -308,15 +340,54 @@ function appearsInEmail(displayValue: string, occurrences: Occurrence[]): boolea
 }
 
 // def _near_title(candidate: Candidate) -> bool:
-function nearTitle(occurrences: Occurrence[]): boolean {
+/*
+ * ============================================================================
+ * DELIBERATE ORACLE DEVIATION #6 -- nearby_title SCOPE (AG, 2026-08-09)
+ *
+ * Python's rule is `NEAR_TITLE_BEFORE_RE.test(before) || TITLE_RE.test(context)`.
+ * The second branch tests the WHOLE 140-character context window, so a title
+ * anywhere in it fires -- after the candidate, in a different sentence, or
+ * belonging to somebody else entirely:
+ *
+ *   before  anywhere  fires
+ *   true    true      true   "Dr. [Garcia] will review it"          <- correct
+ *   false   true      true   "[The] Reg audit report came in.  Dr. Garcia will..."
+ *   false   true      true   "[Grades] are due Friday, per Dean Martinez"
+ *   false   true      true   "[Morning] everyone -- Dr. Lopez is out today"
+ *   false   true      true   "[Andrew] met with Dr. Garcia"
+ *
+ * The last row states the defect most plainly: the rule attributes ONE
+ * PERSON'S HONORIFIC TO A DIFFERENT CANDIDATE. On Andrew's live document it
+ * was the sole remaining reason "The" was held as "recognized as a name",
+ * and it explains the whole observed family -- Last, Thank, Grades, Morning.
+ *
+ * THE DEVIATION: the whole-context branch is deleted. Title evidence now
+ * requires the honorific to be ATTACHED TO or IMMEDIATELY PRECEDING this
+ * candidate:
+ *
+ *   1. `NEAR_TITLE_BEFORE_RE` on the text before the candidate -- unchanged,
+ *      and the branch that was always right.
+ *   2. the candidate's OWN text beginning with a title ("Dr. Garcia" detected
+ *      as one candidate). Added deliberately: it was previously carried by
+ *      the whole-context branch, and deleting that without this replacement
+ *      would have LOST a legitimate signal rather than narrowed a bad one.
+ *
+ * Classification: this is a PRECISION FIX, not a behaviour change -- the
+ * oracle's answer is a false claim about the document ("a title is near this
+ * candidate" when it is near a different one), and the evidence layer's
+ * credibility is what the whole residual gate rests on.
+ * ============================================================================
+ */
+function nearTitle(displayValue: string, occurrences: Occurrence[]): boolean {
+  // 2. Attached: the candidate itself carries the honorific.
+  if (TITLE_RE.test(displayValue)) return true;
+  // 1. Immediately preceding, in this occurrence's own context.
   for (const occurrence of occurrences) {
     const context = occurrence.context;
     const bracketIndex = context.indexOf("[");
     const sliceEnd = bracketIndex >= 0 ? bracketIndex : context.length;
     const before = context.slice(0, sliceEnd);
-    if (NEAR_TITLE_BEFORE_RE.test(before) || TITLE_RE.test(context)) {
-      return true;
-    }
+    if (NEAR_TITLE_BEFORE_RE.test(before)) return true;
   }
   return false;
 }
@@ -340,7 +411,7 @@ function positiveEvidence(candidate: Candidate, occurrences: Occurrence[]): stri
   const reasons: string[] = [];
   if (candidate.detectedType !== "person") reasons.push("deterministic_non_person_type");
   if (appearsInEmail(candidate.displayValue, occurrences)) reasons.push("email_address_evidence");
-  if (nearTitle(occurrences)) reasons.push("nearby_title");
+  if (nearTitle(candidate.displayValue, occurrences)) reasons.push("nearby_title");
   if (signatureEvidence(candidate.displayValue, occurrences)) reasons.push("signature_or_email_header_context");
   return reasons;
 }
@@ -449,7 +520,11 @@ const LEXICAL_WORD_RULES = [
   "greeting_or_courtesy",
   "interjection_casual",
 ];
-const LEXICAL_WORDS = new Set<string>();
+/** Exported (2026-08-09) for the People-routing investigation's read-only
+ *  diagnostic. Exporting a constant changes no behaviour; the alternative
+ *  was rebuilding this union in the diagnostic, which is exactly the
+ *  duplicate-lexicon drift the comment above exists to prevent. */
+export const LEXICAL_WORDS = new Set<string>();
 for (const rule of LEXICAL_WORD_RULES) {
   for (const term of QUALITY_SINGLE_TERMS.get(rule) ?? []) LEXICAL_WORDS.add(term);
 }
@@ -875,12 +950,67 @@ function scoreCandidateQualityCore(
     return filterResult(reasons, filterRules, weights, reviewThreshold, classifications);
   }
 
+  /*
+   * REPRESENTATION DEFECT #1 -- ORACLE DEVIATION #8 (AG, 2026-08-10).
+   *
+   * The known-given-name lookup used to live INSIDE the TWO_NAME_RE branch
+   * below, which is unreachable for `Surname, Given` input because the
+   * LAST_FIRST_RE branch returns first. Same person, two spellings, two
+   * different evidence records:
+   *
+   *   Christopher Cobb    strong_name_structure + known_personal_name_token
+   *   Cobb, Christopher   surname_given_structure                  <- nothing
+   *
+   * `christopher`, `nelly`, `tamara` and `andrew` are ALL already in
+   * KNOWN_GIVEN_NAMES. The lexicon has the answer and the branch never
+   * asked. That is a REPRESENTATION defect, not a scoring judgment: the
+   * evidence exists, is already trusted for the other spelling, and simply
+   * never got attached. Hoisting the lookup above both branches makes one
+   * fact reach the candidate regardless of name ordering.
+   *
+   * NOT a new heuristic and NOT a dictionary widening -- KNOWN_GIVEN_NAMES
+   * is untouched. Nothing here consults a new source.
+   *
+   * DEVIATION CLASSIFICATION: correctness / representation consistency.
+   * Python's `score_candidate_quality()` shares the branch order, so this
+   * diverges from the oracle deliberately. It is recorded here and pinned by
+   * verify/last-first-name-evidence-verification.ts, whose load-bearing half
+   * asserts that first-last spellings are byte-identical to before.
+   *
+   * BLAST RADIUS, measured rather than assumed -- see that suite:
+   *   score            94 -> 99 (clamped) for an affected candidate
+   *   status/label     unchanged (both sides are already Strong / ToReview)
+   *   categories       gain `known_personal_name_token`, so
+   *                    hasKnownNameEvidence() becomes true for these
+   *   archetype        unchanged: every archetype gate that reads name
+   *                    evidence also requires personTokenCount <= 1, and a
+   *                    last-first candidate has two tokens
+   *   review tier      may move null -> "needs-review" where identity
+   *                    options exist -- the intended correction
+   *   semanticTypeFor  unchanged (surname-given-structure already routed
+   *                    these to `people`)
+   *   residual gate    unchanged (rule 1 is single-token-only)
+   *   confidence copy  "Likely name-shaped text. No name evidence was
+   *                    found." -> "Almost certainly a person's name."
+   *                    This is deviation #7 working correctly for the first
+   *                    time on this population, not a regression.
+   */
+  let hasKnownGivenNameToken = false;
+  for (const t of tokenSet) {
+    if (KNOWN_GIVEN_NAMES_SET.has(t)) {
+      hasKnownGivenNameToken = true;
+      break;
+    }
+  }
+
   if (LAST_FIRST_RE.test(text)) {
+    const structureReasons = ["surname_given_structure"];
+    if (hasKnownGivenNameToken) structureReasons.push("known_personal_name_token");
     return scoredResult(
       {
-        reasons: [...reasons, ...positiveReasons, ...classifications, "surname_given_structure"],
+        reasons: [...reasons, ...positiveReasons, ...classifications, ...structureReasons],
         explanation: "Strong surname, given-name structure",
-        positiveReasons: [...positiveReasons, "surname_given_structure"],
+        positiveReasons: [...positiveReasons, ...structureReasons],
         filterRules: classifications,
       },
       weights,
@@ -902,14 +1032,9 @@ function scoreCandidateQualityCore(
   }
 
   if (TWO_NAME_RE.test(text)) {
+    // The lookup itself is hoisted above LAST_FIRST_RE (see deviation #8).
+    // This branch's behaviour is byte-identical to before.
     const structureReasons = ["strong_name_structure"];
-    let hasKnownGivenNameToken = false;
-    for (const t of tokenSet) {
-      if (KNOWN_GIVEN_NAMES_SET.has(t)) {
-        hasKnownGivenNameToken = true;
-        break;
-      }
-    }
     if (hasKnownGivenNameToken) structureReasons.push("known_personal_name_token");
 
     if (isHeadingLike(occurrences, blocksById) && positiveReasons.length === 0) {
