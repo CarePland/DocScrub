@@ -1615,26 +1615,56 @@ async function main(): Promise<void> {
     "scope: the parked cursor stands the activation treatment down without losing position (dashed outline rule present)",
     indexHtml.includes(".triage-row-focused.triage-row-parked { box-shadow: none; border-style: dashed; }")
   );
-  console.log("--- Group Check focus panel / cell standardization checks ---");
+  console.log("--- Group Check focus panel / cell standardization checks (2026-08-11: real split) ---");
   check(
-    "group check: focused group composes a focus-panel adapter without changing the renderer's group action path",
-    appSource.includes('const groupCell = el("div", { class: "group-cell group-review-cell" });') &&
-      appSource.includes('if (isFocused) groupCell.classList.add("group-focus-panel");') &&
-      indexHtml.includes(".group-focus-panel {") &&
-      indexHtml.includes("background: var(--focus-panel-surface);")
+    "group check: non-focused groups are routed to a compact-cell renderer before any focused-detail markup is built",
+    appSource.includes("if (!isFocused) {") &&
+      appSource.includes("renderCompactGroupCell(cells, group, display, state, session);") &&
+      appSource.includes("function renderCompactGroupCell(")
   );
   check(
-    "group check: focused panel is only a visual adapter; existing member/split workflow remains in the same groupCell",
+    "group check: the focused group's groupCell no longer carries the retired adapter classes",
+    appSource.includes('const groupCell = el("div", { class: "group-cell" });') &&
+      !appSource.includes('"group-cell group-review-cell"') &&
+      !appSource.includes('groupCell.classList.add("group-focus-panel")') &&
+      !appSource.includes('groupCell.classList.add("group-cell-wide")')
+  );
+  check(
+    "group check: pane joins the shared focus-panel-max/focus-panel-surface selector groups (fills workspace height like scope-inspector/triage-focus-pane/type-focus-pane)",
+    // .scope-inspector stays the trailing selector in both groups (not
+    // reordered) so it remains the literal ".scope-inspector {" the
+    // pre-existing "scope: the inspector overflows vertically..." check
+    // above depends on -- .group-focus-pane is inserted just before it.
+    /\.triage-focus-pane,\s*\n\s*\.type-focus-pane,\s*\n\s*\.group-focus-pane,\s*\n\s*\.scope-inspector \{\s*\n\s*min-height: 0;\s*\n\s*max-height: var\(--focus-panel-max\);/.test(indexHtml) &&
+      /\.triage-focus-pane,\s*\n\s*\.type-focus-pane,\s*\n\s*\.group-focus-pane,\s*\n\s*\.scope-inspector \{\s*\n\s*background: var\(--focus-panel-surface\);/.test(indexHtml)
+  );
+  check(
+    "group check: focus-left/cells-right structural grid mirrors .type-split (panel first at 2fr, cells second at 3fr)",
+    indexHtml.includes(".group-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 0.75rem; align-items: start; }") &&
+      appSource.includes('const split = el("div", { class: "item-list group-split" });') &&
+      appSource.includes("split.appendChild(pane);") &&
+      appSource.includes("split.appendChild(cells);")
+  );
+  check(
+    "group check: focused panel is a visual restyle only; existing member/split workflow remains in the same groupCell",
     appSource.includes('class: "separate-these-row"') &&
       appSource.includes('"Separate these"') &&
       appSource.includes('groupCell.appendChild(members);') &&
       appSource.includes('attachRovingGridNav([row, members], rovingGrid, group.groupId, group.candidateIds);')
   );
   check(
-    "group check: remaining groups keep compact review-cell treatment and two-column layout",
-    indexHtml.includes(".group-review-cell:not(.group-focus-panel) > .group-row") &&
-      indexHtml.includes(".group-list { display: grid; grid-template-columns: 1fr 1fr;") &&
-      indexHtml.includes(".group-focus-panel {\n        order: -1;\n        grid-column: 1 / -1;")
+    "group check: compact cells carry no action buttons, only click-to-focus",
+    (() => {
+      const start = appSource.indexOf("function renderCompactGroupCell(");
+      const end = start === -1 ? -1 : appSource.indexOf("\n}\n", start);
+      const fn = start === -1 || end === -1 ? "" : appSource.slice(start, end);
+      return (
+        fn.length > 0 &&
+        fn.includes('type: "selectItem", itemId: group.groupId') &&
+        !fn.includes("group-row-actions") &&
+        !fn.includes("button(")
+      );
+    })()
   );
   check(
     "group check: this pass does not add Option/global bulk action grammar to Group Check",

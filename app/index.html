@@ -2121,6 +2121,7 @@
       @media (min-width: 1240px) {
         .triage-focus-pane,
         .type-focus-pane,
+        .group-focus-pane,
         .scope-inspector {
           min-height: 0;
           max-height: var(--focus-panel-max);
@@ -2234,6 +2235,7 @@
          --surface-canvas was introduced for. */
       .triage-focus-pane,
       .type-focus-pane,
+      .group-focus-pane,
       .scope-inspector {
         background: var(--focus-panel-surface);
         border-radius: 8px;
@@ -2657,60 +2659,53 @@
          aggressive" instruction. */
       .group-check-toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
       .group-sort-label { color: var(--text-muted); font-size: 0.85rem; }
-      /* 2026-07-30 feature spec: two columns arrive AUTOMATICALLY above a
-         window-width threshold (the manual toggle is gone). Row-major
-         auto-flow means DOM order reads across each row before moving
-         down, so Tab/advance order is the spec's "peruse a horizontal row
-         completely before moving to the next row" with zero JS. Each
-         .group-cell holds one group's row + member breakdown, so an
-         expanded group stays inside its own column; a Fix this panel
-         (.group-cell-wide) spans both. */
-      .group-list { display: flex; flex-direction: column; gap: 0.4rem; }
+      /* GROUP CHECK LAYOUT: SHARED FOCUS-PANEL GEOMETRY (AG, 2026-08-11).
+         Replaces the 2026-08-10 CSS-only adapter below (a single
+         `.group-list` grid faking a split with `order:-1`) with a real
+         split: "the standard review workspace geometry: fixed focus panel
+         on the left, compact cells on the right... consistent with the
+         emerging Item/Ambiguity layout." `.group-split` is a fourth copy
+         of the `.triage-split`/`.type-split` grid (panel first/left, cells
+         second/right, 2fr/3fr) -- see .type-split's own comment for why the
+         one `.focus-split` this repo could compose from hasn't been
+         extracted yet; this pass follows that existing precedent rather
+         than doing the extraction as a side effect of an unrelated change.
+
+         `.group-focus-pane` joins the `--focus-panel-max`/
+         `--focus-panel-surface` selector groups above (search "IT IS KNOWN
+         INCOMPLETE" and "AG, 2026-08-06") so the panel fills the workspace
+         height exactly like `.scope-inspector`/`.triage-focus-pane`/
+         `.type-focus-pane` do -- one definition, four readers. It does NOT
+         join those groups' `.detail-panel`/`.detail-title-name` font-size
+         rules: the focused group's markup is `.group-row` +
+         `.group-members`/`.not-quite-panel`, not `.detail-panel`, so those
+         two rules would be inert here.
+
+         Only the currently focused group ever renders inside
+         `.group-focus-pane`, with its existing row/actions/Not
+         Quite/split-member markup unchanged (see renderGroupStage,
+         app.ts). Every other group renders into `.group-cells` as a
+         `.group-compact-cell` -- name, count, decision pills, confidence
+         or a reviewed check, no buttons (per AG: "cells 1 or 2 columns to
+         right sans buttons"); it reuses the plain `.item-row` surface and
+         the app-wide `.decision-tinted` rule rather than inventing new
+         ones. Clicking a cell focuses that group (selectItem), which is
+         what moves its detail into the pane on the next render.
+
+         This retires `.group-list`'s page-width 2-column grid,
+         `.group-cell-wide`, `.group-review-cell`, and `.group-focus-panel`
+         together -- both the CSS and the JS that referenced them are gone
+         in this same pass, so nothing here is orphaned. */
+      .group-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 0.75rem; align-items: start; }
+      @media (max-width: 1239.98px) { .group-split { grid-template-columns: minmax(0, 1fr); } }
+      .group-focus-pane { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+      .group-focus-pane-empty { color: var(--text-muted); font-size: 0.85rem; }
       .group-cell { display: flex; flex-direction: column; gap: 0.4rem; align-self: start; }
-      @media (min-width: 1280px) {
-        .group-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
-        .group-cell-wide { grid-column: 1 / -1; }
-      }
-      /* GROUP CHECK STANDARDIZATION PASS (2026-08-10). Group Check keeps
-         its own semantics -- one group is the decision unit, K/C/R/I/F act
-         on that focused group, and the member split workflow remains under
-         the same wrapper. These classes only adapt the existing row/member
-         markup to the shared review language: focused group = focus-panel
-         surface; remaining groups = compact cells. */
-      .group-review-cell { min-width: 0; }
-      .group-focus-panel {
-        order: -1;
-        grid-column: 1 / -1;
-        background: var(--focus-panel-surface);
-        border-radius: 8px;
-        padding: 0.5rem 0.6rem;
-        margin-bottom: 0.35rem;
-      }
-      .group-focus-panel > .group-row {
-        padding: 0.72rem 0.78rem;
-        background: var(--surface);
-        border-color: var(--accent);
-        box-shadow: 0 0 0 2px var(--accent-soft);
-      }
-      .group-focus-panel > .group-row.decision-tinted { background: var(--decision-tint); border-color: var(--decision-border); }
-      .group-focus-panel > .group-row .group-row-label { font-size: 1.32rem; }
-      .group-review-cell:not(.group-focus-panel) > .group-row {
-        min-width: 0;
-        cursor: pointer;
-      }
-      .group-review-cell:not(.group-focus-panel) > .group-row:hover { border-color: var(--accent); }
-      /* Interaction/layout half of the same pass. The compact cell must
-         not let a long group name push the action cluster out of its
-         column, and the focused panel already supplies its own indent, so
-         the nested member list and Not Quite panel drop the standalone
-         left margins they carry when they sit under a bare cell. Child
-         combinators keep these off the split-member rows, which reuse
-         .group-row-actions inside .group-members. */
-      .group-review-cell:not(.group-focus-panel) > .group-row > .group-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .group-review-cell:not(.group-focus-panel) > .group-row > .group-row-actions { flex-basis: 100%; justify-content: flex-end; }
-      .group-focus-panel > .group-row > .group-row-actions { flex-basis: 100%; margin-left: 0; }
-      .group-focus-panel > .group-members { margin-left: 0; padding: 0.15rem 0 0 0; }
-      .group-focus-panel > .not-quite-panel { margin-left: 0; }
+      .group-cells { display: grid; grid-template-columns: 1fr; gap: 0.4rem; align-content: start; min-width: 0; }
+      @media (min-width: 620px) { .group-cells { grid-template-columns: 1fr 1fr; } }
+      .group-compact-cell { cursor: pointer; min-width: 0; }
+      .group-compact-cell:hover { border-color: var(--accent); }
+      .group-compact-cell .group-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; }
       /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the name is the row.
          Counts (and the "n of m selected" note) sit beside it small and
          muted -- same primary/secondary split as the result cells. */

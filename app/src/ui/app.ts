@@ -1263,11 +1263,17 @@ const selectedCandidateIds = new Set<string>();
  *
  * 2026-07-30 feature spec: the manual 1-/2-column layout toggle
  * (`groupCheckLayout`) is REMOVED -- "above a certain window width the
- * screen allows two columns" is now automatic, a pure CSS media query on
- * `.group-list` (index.html). Sequential navigation (Tab / post-decision
- * advance / `]`-`[`) is DOM order, which in the row-major grid is exactly
- * the spec's "perusing a horizontal row completely before moving to the
- * next row" -- no JS knows or cares how many columns rendered.
+ * screen allows two columns" is now automatic, a pure CSS media query.
+ * Sequential navigation (Tab / post-decision advance / `]`-`[`) is DOM
+ * order -- no JS knows or cares how many columns rendered.
+ *
+ * SUPERSEDED IN PART (AG, 2026-08-11, Close Pairs layout pass): the
+ * row-major `.group-list` grid this comment originally described covered
+ * every group, focused or not. It is now `.group-split` (pane left, cells
+ * right) -- see renderGroupStage's own comment. The auto column count
+ * above survives, narrowed to `.group-cells` (the non-focused compact
+ * cards only); the pane always holds exactly one group, so it has no
+ * column count to automate.
  */
 let groupCheckSortOrder: GroupSortOrder = "confidence-desc";
 
@@ -11438,8 +11444,9 @@ function renderGroupCheckToolbar(container: HTMLElement, state: ReturnType<Works
   // Check's cover overlapping candidates and are not additive.
   appendReductionFigure(bar, groupReviewUnits(state));
   // 2026-07-30 feature spec: the manual 1-/2-column toggle is gone --
-  // column count is now automatic above a viewport-width threshold (a CSS
-  // media query on .group-list; see groupCheckSortOrder's doc comment).
+  // column count is now automatic above a width threshold (a CSS media
+  // query on .group-cells, see groupCheckSortOrder's doc comment for the
+  // 2026-08-11 update to what that grid now covers).
   container.appendChild(bar);
 }
 
@@ -11556,18 +11563,37 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
 
   renderGroupCheckToolbar(container, state);
 
-  // 2026-07-30 feature spec: `.group-list` flows into two columns above a
-  // viewport-width threshold automatically (CSS media query, row-major
-  // auto-flow -- so DOM order, and with it every sequential navigation
-  // path, reads across each row before dropping to the next). Each group's
-  // row + member breakdown wraps in one `.group-cell` so an expanded group
-  // stays inside its own column, exactly like the Python reference.
-  const list = el("div", { class: "item-list group-list" });
+  // GROUP CHECK LAYOUT (AG, 2026-08-11): real focus-left/cells-right split,
+  // replacing the 2026-08-10 CSS-only adapter that faked this inside a
+  // single `.group-list` grid. `pane` holds the one focused group's full
+  // detail (row, actions, Not Quite/split-member workflow -- all unchanged
+  // below); `cells` holds every OTHER group as a name/count/confidence
+  // compact card, no actions (renderCompactGroupCell). Proven safe to gate
+  // on `isFocused` alone: `notQuiteOpenHere` and `splitActiveHere` can only
+  // ever be true for the focused group (notQuite is read directly off
+  // `state.focus.target.panel.kind`; startSplitReview explicitly moves
+  // focus to the group before opening its split session) -- so a
+  // non-focused group never has full-detail state to lose by skipping
+  // straight to the compact branch. Per AG's explicit instruction, this
+  // pass does not add Zone or global/bulk-action semantics to Group Check;
+  // "if there is a separate product reason to add [them] later, treat that
+  // as its own decision" -- see renderGroupCheckToolbar/handleGroupUseKey
+  // for the (still absent) precedent Item Check's Zone uses.
+  const split = el("div", { class: "item-list group-split" });
+  const pane = el("div", { class: "group-focus-pane" });
+  const cells = el("div", { class: "group-cells" });
+  let anyFocused = false;
   for (const groupId of visibleGroupIds(state)) {
     const group = groupsById.get(groupId);
     if (!group) continue;
-    const groupCell = el("div", { class: "group-cell group-review-cell" });
     const display: GroupDisplayDecision = session ? groupDisplayDecision(group, session) : { kind: "undecided", summary: UNDECIDED_SUMMARY };
+    const isFocused = state.focus?.target.stage === "group-check" && state.focus.target.itemId === group.groupId;
+    if (!isFocused) {
+      renderCompactGroupCell(cells, group, display, state, session);
+      continue;
+    }
+    anyFocused = true;
+    const groupCell = el("div", { class: "group-cell" });
     const notQuiteOpenHere = notQuite?.groupId === group.groupId;
     // SPLIT REVIEW MODE (AG, 2026-08-02): while this group's split
     // session is active, the group is SUSPENDED -- "we're no longer
@@ -11585,16 +11611,11 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     // so exactly one group row is expanded at any moment and the view
     // advances the instant a decision lands.
     const isAcknowledging = isAcknowledged({ kind: "group", groupId: group.groupId });
-    const isFocused = state.focus?.target.stage === "group-check" && state.focus.target.itemId === group.groupId;
+    // Always true here (the `!isFocused` branch above already returned) --
+    // kept as its own variable rather than inlined below since every
+    // downstream `isExpanded` check pre-dates this pass and a broader
+    // rename is out of scope for a layout-only change.
     const isExpanded = isFocused;
-    // GROUP CHECK STANDARDIZATION PASS (2026-08-10): the focused unit here
-    // is already a GROUP, so this adapter deliberately keeps the existing
-    // group row, action buttons, subset checkboxes, Not Quite panel, and
-    // split-member workflow intact. The visual standardization is applied
-    // by composing the same focus-panel surface tokens used by Ambiguity /
-    // Item/Type inspector columns onto the focused group's existing
-    // wrapper; non-focused groups keep the compact review-cell treatment.
-    if (isFocused) groupCell.classList.add("group-focus-panel");
     // GROUP CHECK PYTHON-PARITY REVISION: the checked subset only matters
     // while Not Quite is closed for THIS group -- Not Quite's own per-member
     // granularity supersedes it entirely for that group (see
@@ -11896,7 +11917,6 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
       }
       panel.appendChild(button("Done fixing", () => dispatchAndRender({ family: "review", type: "completeNotQuite", groupId: group.groupId })));
       panel.appendChild(button("Exit (Escape)", () => dispatchAndRender({ family: "review", type: "exitNotQuite", groupId: group.groupId })));
-      groupCell.classList.add("group-cell-wide");
       groupCell.appendChild(panel);
     } else if (isExpanded && splitActiveHere) {
       // SPLIT REVIEW MODE (AG, 2026-08-02): each member is an INDEPENDENT
@@ -12065,9 +12085,58 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
         }
       }
     }
-    list.appendChild(groupCell);
+    pane.appendChild(groupCell);
   }
-  container.appendChild(list);
+  if (!anyFocused) {
+    // Reachable if focus is resting somewhere other than group-check (e.g.
+    // this render fires before the stage's own arrivalTarget lands focus
+    // on a group -- see enterClosePairs) or the focused group was just
+    // filtered out of visibleGroupIds. Group Check's own stage entry
+    // always lands on a real group when one exists, so this is a safety
+    // net, not the common case.
+    pane.appendChild(el("p", { class: "group-focus-pane-empty" }, "Select a group to review its details."));
+  }
+  split.appendChild(pane);
+  split.appendChild(cells);
+  container.appendChild(split);
+}
+
+/** Non-focused Group Check cell (AG, 2026-08-11, Close Pairs layout pass):
+ *  name, count, decision pills, and confidence/reviewed-check -- no
+ *  checkbox, no actions. Reuses the plain `.item-row` surface and the
+ *  app-wide `.decision-tinted` rule (see index.html) rather than
+ *  duplicating the focused row's styling, since a compact cell has none of
+ *  the states (pending editor, Not Quite, split review) that justify the
+ *  focused row's extra classes. Clicking anywhere on the cell focuses the
+ *  group (selectItem); that alone moves its full detail into the pane on
+ *  the next render, which is the entire "expand" interaction here -- there
+ *  is no separate expand/collapse state for a compact cell to hold. */
+function renderCompactGroupCell(
+  container: HTMLElement,
+  group: EntityGroupProposal,
+  display: GroupDisplayDecision,
+  state: ReturnType<WorkspaceCommandDispatcher["getState"]>,
+  session: ReviewSession | null | undefined
+): void {
+  const cell = el("div", { class: "item-row group-compact-cell", "data-item-id": group.groupId });
+  if (display.summary.dominant) cell.classList.add(decisionClass(display.summary.dominant), "decision-tinted");
+  cell.addEventListener("click", () => {
+    dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: group.groupId });
+    render();
+  });
+  const label = el("span", { class: "group-row-label" }, group.canonicalName);
+  label.appendChild(el("span", { class: "row-count" }, ` (${group.candidateIds.length})`));
+  cell.appendChild(label);
+  appendDecisionPills(cell, display.summary);
+  cell.title = decisionSummaryDescription(display.summary);
+  if (display.kind === "uniform") {
+    cell.appendChild(el("span", { class: "reviewed-check", title: `Reviewed -- ${decisionDisplayLabel(display.decision)}` }, "✓"));
+  } else {
+    cell.appendChild(
+      renderConfidenceBadge(groupRowConfidence(group, state, group.candidateIds), "confidence-plain", groupNeedsAttention(group, display, state, session ?? null))
+    );
+  }
+  container.appendChild(cell);
 }
 
 const REPLACEMENT_STRATEGY_LABELS: Record<ReplacementStrategy, string> = {
