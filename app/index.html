@@ -1461,6 +1461,24 @@
          (.group-cell-wide) spans both. */
       .group-list { display: flex; flex-direction: column; gap: 0.4rem; }
       .group-cell { display: flex; flex-direction: column; gap: 0.4rem; align-self: start; }
+      /* GROUP CHECK STANDARDIZATION PASS (2026-08-10): this pass is only
+         focus panel + cells. The renderer keeps Group Check's group-scoped
+         decision handlers, roving member controls, and split workflow; CSS
+         makes the focused group read like the established detail/focus
+         panel and makes the rest read like the standardized review cells.
+         A focused group spans the grid because it is the active work unit,
+         while non-focused groups remain compact two-column cells. */
+      .group-cell-focused { grid-column: 1 / -1; order: -1; }
+      .group-review-cell { min-width: 0; padding: 0.5rem 0.7rem; }
+      .group-review-cell:hover { border-color: var(--accent); }
+      .group-review-cell .group-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .group-review-cell .group-row-actions { flex-basis: 100%; justify-content: flex-end; }
+      .group-focus-panel { align-items: flex-start; gap: 0.55rem 0.75rem; padding: 0.85rem 1rem; border-radius: 8px; }
+      .group-focus-panel .group-row-label { font-size: 1.3rem; }
+      .group-focus-panel .group-row-actions { flex-basis: 100%; margin-left: 0; }
+      .group-focus-panel > .confidence-plain, .group-focus-panel > .reviewed-check, .group-focus-panel > .decision-pills { margin-left: auto; }
+      .group-cell-focused .group-members { margin-left: 0; padding: 0.15rem 0 0 0; }
+      .group-cell-focused .not-quite-panel { margin-left: 0; }
       @media (min-width: 1280px) {
         .group-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: start; }
         .group-cell-wide { grid-column: 1 / -1; }

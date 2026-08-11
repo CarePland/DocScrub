@@ -10169,6 +10169,7 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     const isAcknowledging = isAcknowledged({ kind: "group", groupId: group.groupId });
     const isFocused = state.focus?.target.stage === "group-check" && state.focus.target.itemId === group.groupId;
     const isExpanded = isFocused;
+    if (isFocused) groupCell.classList.add("group-cell-focused");
     // GROUP CHECK PYTHON-PARITY REVISION: the checked subset only matters
     // while Not Quite is closed for THIS group -- Not Quite's own per-member
     // granularity supersedes it entirely for that group (see
@@ -10180,6 +10181,18 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     // RX-01: same stable row-lookup contract as candidate rows -- see
     // renderCandidateStage's `data-item-id` note.
     const row = el("div", { class: "item-row group-row", "data-item-id": group.groupId });
+    // GROUP CHECK STANDARDIZATION PASS (2026-08-10): the same row builder
+    // now feeds two presentation surfaces. The focused group wears the
+    // focus-panel treatment; every other group wears the standardized
+    // review-cell treatment. This is deliberately presentation-only:
+    // group-level actions, checked-subset behavior, Fix this, and the
+    // expanded member workflow below still use the existing handlers.
+    row.classList.add(isFocused ? "group-focus-panel" : "group-review-cell");
+    row.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest?.("button, input, select, textarea, a")) return;
+      dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: group.groupId });
+      render();
+    });
     // PENDING-DECISION PREVIEW (AG, 2026-07-30): an open Change/Redact
     // editor previews the target outcome's scheme immediately (row tint +
     // solid button below) so the reviewer knows they are "moving towards a
@@ -10267,10 +10280,6 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     // muted grey color."
     const label = el("span", { class: "group-row-label" }, group.canonicalName);
     label.appendChild(el("span", { class: "row-count" }, ` (${group.candidateIds.length})${selectionNote}`));
-    label.addEventListener("click", () => {
-      dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: group.groupId });
-      render();
-    });
     if (splitActiveHere) {
       row.classList.add("group-row-suspended");
       label.appendChild(el("span", { class: "split-badge" }, "Split Review Mode"));

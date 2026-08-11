@@ -1247,6 +1247,46 @@ async function main(): Promise<void> {
       appSource.includes('b.appendChild(el("span", {}, label));')
   );
 
+  // GROUP CHECK STANDARDIZATION PASS (2026-08-10): focused group panel +
+  // compact remaining group cells only. This pins the deliberate scope: the
+  // stage does not gain the Item/Zone global action model, and the existing
+  // member-splitting workflow remains rendered from the old branches.
+  console.log("--- Group Check focus panel/cell structural checks ---");
+  const groupCheckLegend = appSource.slice(appSource.indexOf('"group-check": ['), appSource.indexOf("  // TYPE CHECK", appSource.indexOf('"group-check": [')));
+  check(
+    "group check: focused group spans the two-column grid and uses a focus-panel presentation class",
+    indexHtml.includes(".group-cell-focused { grid-column: 1 / -1; order: -1; }") &&
+      indexHtml.includes(".group-focus-panel {") &&
+      appSource.includes('if (isFocused) groupCell.classList.add("group-cell-focused");') &&
+      appSource.includes('row.classList.add(isFocused ? "group-focus-panel" : "group-review-cell");')
+  );
+  check(
+    "group check: non-focused groups use the standardized compact review-cell treatment without replacing the group row renderer",
+    indexHtml.includes(".group-review-cell { min-width: 0; padding: 0.5rem 0.7rem; }") &&
+      indexHtml.includes(".group-review-cell .group-row-label") &&
+      appSource.includes('const row = el("div", { class: "item-row group-row", "data-item-id": group.groupId });')
+  );
+  check(
+    "group check: cell click only changes focus; existing buttons, inputs, and editors keep their own handlers",
+    appSource.includes('closest?.("button, input, select, textarea, a")') &&
+      appSource.includes('dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: group.groupId });')
+  );
+  check(
+    "group check: the pass did not add Option/global actions; bare group K/C/R/I/F remains the action model",
+    !groupCheckLegend.includes("Opt") &&
+      groupCheckLegend.includes('kseg("K", "Keep as-is")') &&
+      groupCheckLegend.includes('kseg("C", "Change")') &&
+      groupCheckLegend.includes('kseg("R", "Redact")') &&
+      groupCheckLegend.includes('kseg("I", "Ignore")') &&
+      groupCheckLegend.includes('kseg("F", "Fix this")')
+  );
+  check(
+    "group check: expanded-member workflow stayed in the same render path",
+    appSource.includes('keycapButton(1, "Separate these", () => startSplitReview(group))') &&
+      appSource.includes('keycapButton(memberIndex + 2, "Use", () => useGroupSpelling(group, candidate.displayValue))') &&
+      appSource.includes('const sourceBtn = button("Source", () => toggleSourcePanel(group.groupId, candidateId));')
+  );
+
   // REVIEW SCOPE, Pass 1 (AG, 2026-08-03). The single-scope-consumer
   // invariant is exactly the kind of arrangement a grep states and a
   // behavioral test can only sample: ONE resolver call site, every
