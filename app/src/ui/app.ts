@@ -11575,7 +11575,15 @@ function renderGroupStage(container: HTMLElement, state: ReturnType<WorkspaceCom
     // muted grey color."
     const label = el("span", { class: "group-row-label" }, group.canonicalName);
     label.appendChild(el("span", { class: "row-count" }, ` (${group.candidateIds.length})${selectionNote}`));
-    label.addEventListener("click", () => {
+    // GROUP CHECK STANDARDIZATION PASS (2026-08-10), interaction half:
+    // the whole non-interactive row area is the select target, not just
+    // the label. The compact cell already advertises `cursor: pointer`
+    // across the full row, so a label-only handler left most of that row
+    // showing a pointer that did nothing. The closest() guard leaves the
+    // row's own controls -- decision buttons, subset checkboxes, inline
+    // editors, links -- owning their own clicks.
+    row.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest?.("button, input, select, textarea, a")) return;
       dispatcher.dispatchNavigation({ family: "navigation", type: "selectItem", itemId: group.groupId });
       render();
     });

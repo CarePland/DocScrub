@@ -2699,6 +2699,18 @@
         cursor: pointer;
       }
       .group-review-cell:not(.group-focus-panel) > .group-row:hover { border-color: var(--accent); }
+      /* Interaction/layout half of the same pass. The compact cell must
+         not let a long group name push the action cluster out of its
+         column, and the focused panel already supplies its own indent, so
+         the nested member list and Not Quite panel drop the standalone
+         left margins they carry when they sit under a bare cell. Child
+         combinators keep these off the split-member rows, which reuse
+         .group-row-actions inside .group-members. */
+      .group-review-cell:not(.group-focus-panel) > .group-row > .group-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .group-review-cell:not(.group-focus-panel) > .group-row > .group-row-actions { flex-basis: 100%; justify-content: flex-end; }
+      .group-focus-panel > .group-row > .group-row-actions { flex-basis: 100%; margin-left: 0; }
+      .group-focus-panel > .group-members { margin-left: 0; padding: 0.15rem 0 0 0; }
+      .group-focus-panel > .not-quite-panel { margin-left: 0; }
       /* VISUAL HIERARCHY REFINEMENT (AG, 2026-08-01): the name is the row.
          Counts (and the "n of m selected" note) sit beside it small and
          muted -- same primary/secondary split as the result cells. */
