@@ -49,11 +49,11 @@ import { ReviewWorkspace } from "../workspace/Workspace.js";
 import { WorkspaceCommandDispatcher } from "../workspace/CommandDispatcher.js";
 import { deserializeWorkspaceSaveFile, serializeWorkspaceSaveFile, createWorkspaceSaveFile } from "../workspace/WorkspaceSaveFile.js";
 import { shouldIgnoreKeyboardEvent } from "../engines/navigation/keymap.js";
-import { isItemResolved, reviewableItemIdsForStage } from "../engines/navigation/stages.js";
+import { combineAmbiguityAndGroupStatus, isItemResolved, reviewableItemIdsForStage } from "../engines/navigation/stages.js";
 // PHASE 2 (2026-08-02): the conditional-workflow membership rule -- the
 // ONE derivation stage tabs, ⇧←/→ traversal, and the navigator all share.
 import { isStageActive } from "../engines/navigation/workflow.js";
-import type { WorkflowStage } from "../domain/FocusState.js";
+import type { WorkflowStage, StageStatus } from "../domain/FocusState.js";
 import { LEXICAL_WORDS as LEXICAL_WORDS_FOR_PROFILE } from "../engines/quality/scoring.js";
 import { scoreCandidateQuality as scoreCandidateQualityForProfile } from "../engines/quality/scoring.js";
 import { SEMANTIC_TYPE_LABELS, TYPE_CHECK_SECTION_LABELS, TYPE_CHECK_SECTION_EXPLANATIONS, UNDETERMINED_SECTION, buildSemanticTypeSummaries, semanticTypeFor as semanticTypeForProfile, type SemanticTypeId, type TypeCheckSectionId, type SemanticTypeSummary } from "../domain/semanticTypes.js";
@@ -3148,6 +3148,41 @@ function appendCandidateReduction(
   appendReductionFigure(host, candidateUnits(remainingCandidateIds, state));
 }
 
+/** CLOSE PAIRS MIGRATION (AG, 2026-08-10): the tab-bar view of
+ *  `state.stageStatuses` -- Group Check's raw entry dropped, Ambiguity
+ *  Check's replaced with the combined figure. `state.stageStatuses` itself
+ *  is left untouched (FocusNavigator.stageStatuses() / computeAllStageStatuses
+ *  still return the raw per-domain-stage truth every other consumer --
+ *  closePairsCategory() below, the status line -- still needs). */
+function displayStageStatuses(statuses: readonly StageStatus[]): StageStatus[] {
+  const ambiguity = statuses.find((s) => s.stage === "ambiguity-check");
+  const closePairs = statuses.find((s) => s.stage === "group-check");
+  return statuses
+    .filter((s) => s.stage !== "group-check")
+    .map((s) => (s.stage === "ambiguity-check" && ambiguity && closePairs ? combineAmbiguityAndGroupStatus(ambiguity, closePairs) : s));
+}
+
+/** CLOSE PAIRS MIGRATION: entering Ambiguity Check via its tab must not
+ *  strand the reviewer on an already-resolved ordinary candidate when the
+ *  only work left under this tab is Close Pairs -- the same "arrival owns
+ *  the first unresolved unit of ANY kind" rule category arrival already
+ *  applies within Ambiguity, extended across the tab boundary Close Pairs
+ *  now sits behind. Falls back to the ordinary "return to where the
+ *  reviewer was" tab behavior whenever ordinary Ambiguity still has its
+ *  own remaining work, unchanged from before this migration. */
+function enterAmbiguityCheck(): void {
+  const state = dispatcher.getState();
+  const ambiguityStatus = state.stageStatuses.find((s) => s.stage === "ambiguity-check");
+  const closePairsStatus = state.stageStatuses.find((s) => s.stage === "group-check");
+  const ambiguityHasWork = !!ambiguityStatus && ambiguityStatus.unresolvedCount + ambiguityStatus.unresolvedArtifactCount > 0;
+  const closePairsHasWork = !!closePairsStatus && closePairsStatus.unresolvedCount > 0;
+  if (!ambiguityHasWork && closePairsHasWork) {
+    dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: "group-check" });
+    return;
+  }
+  restoreStageFocus("ambiguity-check");
+}
+
 function renderStageTabs(container: HTMLElement, activeStage: WorkflowStage, statuses: ReturnType<WorkspaceCommandDispatcher["getState"]>["stageStatuses"]): void {
   const tabs = el("div", { class: "stage-tabs" });
   // CONDITIONAL WORKFLOW (AG, Phase 2, 2026-08-02): only stages in the
@@ -3166,7 +3201,13 @@ function renderStageTabs(container: HTMLElement, activeStage: WorkflowStage, sta
   // "long-term coupling between shortcut numbers and workflow order" --
   // numbered shortcuts could not have survived a variable stage list.
   // Tabs remain directly clickable, per the same authorization.
-  statuses
+  //
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): Group Check no longer renders
+  // a tab of its own -- displayStageStatuses() drops its raw entry and
+  // folds its counts into Ambiguity Check's (see combineAmbiguityAndGroupStatus,
+  // stages.ts). The reviewer reaches it exclusively through Ambiguity
+  // Check's Close Pairs category pill.
+  displayStageStatuses(statuses)
     // A FINISHED STAGE STAYS ON SCREEN (AG, 2026-08-03, live: "Ambiguity
     // Check just vanished when I finished it. That's going to be a problem
     // if someone wants to go back").
@@ -3223,7 +3264,10 @@ function renderStageTabs(container: HTMLElement, activeStage: WorkflowStage, sta
       // compare two numbers to learn something a single mark states.
       const complete = total > 0 && outstanding === 0;
       const label = complete ? `✓ ${STAGE_LABELS[status.stage]}` : `${STAGE_LABELS[status.stage]}${total > 0 ? ` (${completed}/${total})` : ""}`;
-      const isActive = status.stage === activeStage;
+      // CLOSE PAIRS MIGRATION: resting inside group-check (Close Pairs) is
+      // visually "standing in Ambiguity Check" -- there is no group-check
+      // tab left to disagree with it.
+      const isActive = status.stage === activeStage || (status.stage === "ambiguity-check" && activeStage === "group-check");
       const tab = el("button", { class: isActive ? "tab tab-active" : "tab", type: "button" });
       // Green is the app's completion hue everywhere else (section
       // headings, done rows); a finished tab wears the same one rather
@@ -3237,7 +3281,16 @@ function renderStageTabs(container: HTMLElement, activeStage: WorkflowStage, sta
         // Return to where the reviewer was in THIS stage, before the single
         // render below -- see restoreStageFocus. Clicking a tab you have
         // visited is a return, not a fresh arrival.
-        restoreStageFocus(status.stage);
+        //
+        // CLOSE PAIRS MIGRATION: Ambiguity Check's own arrival
+        // (arrivalTarget("ambiguity-check")) only ever looks at ordinary
+        // candidates/proposals -- it has no idea Close Pairs groups exist.
+        // enterAmbiguityCheck() is the one place that redirects into Close
+        // Pairs when that is the only remaining work under this tab, so
+        // the tab never strands the reviewer on an already-resolved
+        // ordinary row while unresolved groups sit unreachable behind it.
+        if (status.stage === "ambiguity-check") enterAmbiguityCheck();
+        else restoreStageFocus(status.stage);
         render();
       });
       // Deliberately NOT disabled -- an empty/not-yet-relevant stage is still
@@ -8831,6 +8884,17 @@ interface StageCategory {
   remaining: number;
   candidateIds: readonly string[];
   relationshipProposalIds: readonly string[];
+  /** CLOSE PAIRS MIGRATION (AG, 2026-08-10): absent (undefined) for every
+   *  ordinary sectioned-queue category, exactly as before this field
+   *  existed -- `"group"` marks the one category whose review unit is an
+   *  entity GROUP, not a candidate or proposal. `candidateIds`/
+   *  `relationshipProposalIds` are deliberately left empty for it (see
+   *  closePairsCategory()): every OTHER consumer of those two fields
+   *  expects ordinary candidate/proposal ids and must keep working
+   *  unmodified, so a group-kind category is inert to them rather than
+   *  quietly wrong. Consumers that must route Close Pairs differently
+   *  (currentStageCategoryId, jumpToStageCategory) check `kind` explicitly. */
+  kind?: "group";
 }
 
 function stageCategories(
@@ -8845,7 +8909,7 @@ function stageCategories(
   // See candidateIsResolvedInState.
   const { sections } = sectionedQueueModel(state, queueStage);
   const proposals = state.structuralRelationships?.proposals ?? [];
-  return sections.map((section) => {
+  const categories: StageCategory[] = sections.map((section) => {
     const proposalIds = section.relationshipProposalIds ?? [];
     const unaddressedProposals = proposalIds.filter((proposalId) => {
       if (state.reviewSession?.relationshipDismissals?.[proposalId]) return false;
@@ -8860,6 +8924,43 @@ function stageCategories(
       relationshipProposalIds: proposalIds,
     };
   });
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): Group Check's population,
+  // appended as one more Ambiguity Check category rather than a merge into
+  // the sectioned-queue shape above -- see closePairsCategory()'s own doc
+  // comment for why its candidateIds/relationshipProposalIds stay empty.
+  if (queueStage === "ambiguity-check") {
+    const closePairs = closePairsCategory(state);
+    if (closePairs) categories.push(closePairs);
+  }
+  return categories;
+}
+
+/** CLOSE PAIRS (AG, 2026-08-10): Group Check's existing population, read
+ *  through `state.stageStatuses` (the same domain-computed StageStatus
+ *  array every other stage-completion figure in this file already trusts)
+ *  rather than re-deriving group resolution locally -- there is exactly
+ *  ONE place that decides whether a group is resolved
+ *  (navigation/stages.ts's isItemResolved case "group-check"), and this
+ *  reuses it instead of adding a second copy in the UI layer.
+ *
+ *  Omitted entirely (returns null) when the document has no groups at all
+ *  -- matching how an ordinary section with zero candidates and zero
+ *  proposals already omits itself (buildAmbiguitySections). Present but
+ *  reading `(0)`/done when every group is resolved -- matching how a
+ *  finished ordinary category still shows its pill (§2 of the migration
+ *  brief: "behave consistently with empty/completed Ambiguity
+ *  categories"). */
+function closePairsCategory(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): StageCategory | null {
+  const groupStatus = state.stageStatuses.find((s) => s.stage === "group-check");
+  if (!groupStatus || groupStatus.itemCount === 0) return null;
+  return {
+    id: "close-pairs",
+    label: "Close Pairs",
+    kind: "group",
+    remaining: groupStatus.unresolvedCount,
+    candidateIds: [],
+    relationshipProposalIds: [],
+  };
 }
 
 /** Which category is on screen. Resolves EITHER cursor -- the card cursor
@@ -8868,6 +8969,11 @@ function stageCategories(
  *  on a candidate beside it. That single fact is what makes the two review-
  *  unit types one category rather than two. */
 function currentStageCategoryId(state: ReturnType<WorkspaceCommandDispatcher["getState"]>, categories: readonly StageCategory[]): string | null {
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): resting inside group-check
+  // means resting inside the Close Pairs category -- checked first and
+  // unconditionally, since group ids never appear in any candidateIds/
+  // relationshipProposalIds list for either cursor below to match.
+  if (state.focus?.target.stage === "group-check") return categories.find((c) => c.kind === "group")?.id ?? null;
   const cardId = activeStructuralProposalId();
   if (cardId) return categories.find((c) => c.relationshipProposalIds.includes(cardId))?.id ?? null;
   const itemId = state.focus?.target.itemId ?? null;
@@ -13436,7 +13542,15 @@ function legendSegmentEl(segment: LegendSegment): HTMLElement {
  * idea across the app rather than two coincidences.
  */
 function renderSectionPills(container: HTMLElement, state: ReturnType<WorkspaceCommandDispatcher["getState"]>, activeStage: WorkflowStage): void {
-  const queueStage = sectionedQueueStage(activeStage);
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): widened HERE ONLY, not inside
+  // sectionedQueueStage() itself -- that function also gates ⌥K/⌥C/⌥R/⌥I
+  // scope chords, digit shortcuts, and Zone semantics, none of which
+  // Close Pairs adopts (the migration brief is explicit: "Do not
+  // introduce Option/global bulk actions merely because Close Pairs now
+  // lives under Ambiguity"). The pill bar itself must still render while
+  // resting in Close Pairs, so the reviewer can switch back to an
+  // ordinary category without leaving Ambiguity Check.
+  const queueStage = activeStage === "group-check" ? "ambiguity-check" : sectionedQueueStage(activeStage);
   if (!queueStage) return;
   const categories = stageCategories(state, queueStage);
   if (categories.length === 0) return;
@@ -13457,7 +13571,9 @@ function renderSectionPills(container: HTMLElement, state: ReturnType<WorkspaceC
 }
 
 function stageHasSectionPills(state: ReturnType<WorkspaceCommandDispatcher["getState"]>, activeStage: WorkflowStage): boolean {
-  const queueStage = sectionedQueueStage(activeStage);
+  // CLOSE PAIRS MIGRATION: see the matching comment in renderSectionPills
+  // -- widened here only, not in sectionedQueueStage() itself.
+  const queueStage = activeStage === "group-check" ? "ambiguity-check" : sectionedQueueStage(activeStage);
   return queueStage !== null && stageCategories(state, queueStage).length > 0;
 }
 
@@ -13543,11 +13659,45 @@ function selectStageCategoryCursor(category: StageCategory, state = dispatcher.g
  *  the rendered list; a category holding nothing but proposals lands on a
  *  proposal, which is the case that made the old rows-only jump wrong. */
 function jumpToStageCategory(category: StageCategory): void {
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): the group-shaped category is
+  // reached via a domain stage change (focusStage into "group-check",
+  // which lands on the first unresolved group -- arrivalTarget, same
+  // arrival rule every top-level stage entry already uses), not through
+  // selectStageCategoryCursor/selectItem -- Close Pairs' units are group
+  // ids, not candidate ids, and Zone anchoring is deliberately not part
+  // of its (non-sectioned-queue) interaction model.
+  if (category.kind === "group") {
+    enterClosePairs();
+    return;
+  }
+  const priorState = dispatcher.getState();
+  if (priorState.focus?.target.stage === "group-check") {
+    // Leaving Close Pairs for an ordinary Ambiguity category: re-enter
+    // ambiguity-check first so selectStageCategoryCursor's selectItem
+    // dispatch below resolves the candidate id against the right item
+    // universe (itemIdsForStage("group-check", ...) holds group ids, and
+    // would reject it).
+    dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: "ambiguity-check" });
+  }
   if (!selectStageCategoryCursor(category)) return;
   const state = dispatcher.getState();
   const targetKey = currentReviewDisplayTargetKey(state.focus?.target.stage ?? null, state.focus?.target.itemId ?? null, state);
   const queueStage = sectionedQueueStage(state.focus?.target.stage ?? undefined);
   if (targetKey && queueStage) activeZoneAnchorBySection.set(`${queueStage}:${category.id}`, targetKey);
+  render();
+}
+
+/** Enter the Close Pairs category: a domain stage-focus into "group-check"
+ *  (a real WorkflowStage, unchanged, even though it has no top-level tab
+ *  -- see workflow.ts's navigableWorkflowStages), landing on the first
+ *  unresolved group via the same arrivalTarget rule every stage entry
+ *  uses. A no-op re-render if focus is already resting there (e.g. the
+ *  Close Pairs pill clicked while already inside it). */
+function enterClosePairs(): void {
+  const state = dispatcher.getState();
+  if (state.focus?.target.stage !== "group-check") {
+    dispatcher.dispatchNavigation({ family: "navigation", type: "focusStage", stage: "group-check" });
+  }
   render();
 }
 
@@ -14991,9 +15141,15 @@ function handleStageArrowKey(event: KeyboardEvent): boolean {
   const landed = dispatcher.getState();
   const stage = landed.focus?.target.stage;
   if (stage) {
-    const activeStages = landed.stageStatuses.filter(isStageActive).map((s) => s.stage);
-    const position = activeStages.indexOf(stage);
-    setStatus(`Stage: ${STAGE_LABELS[stage]}${position !== -1 ? ` — ${position + 1} of ${activeStages.length}` : ""}.`); // RX-18
+    // CLOSE PAIRS MIGRATION: group-check no longer has a top-level
+    // position of its own -- resting inside it (Close Pairs) reports the
+    // same position/label as resting anywhere else in Ambiguity Check.
+    const displayStage = stage === "group-check" ? "ambiguity-check" : stage;
+    const activeStages = displayStageStatuses(landed.stageStatuses)
+      .filter(isStageActive)
+      .map((s) => s.stage);
+    const position = activeStages.indexOf(displayStage);
+    setStatus(`Stage: ${STAGE_LABELS[displayStage]}${position !== -1 ? ` — ${position + 1} of ${activeStages.length}` : ""}.`); // RX-18
   }
   render();
   return true;

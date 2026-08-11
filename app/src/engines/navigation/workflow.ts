@@ -46,7 +46,7 @@ import type { StageStatus, WorkflowStage } from "../../domain/FocusState.js";
 import { WORKFLOW_STAGE_ORDER } from "../../domain/FocusState.js";
 import type { ReviewSession } from "../../domain/ReviewSession.js";
 import type { DetectionGroupingContext } from "../DetectionGroupingContext.js";
-import { computeStageStatus } from "./stages.js";
+import { ambiguityDisplayStatus, computeStageStatus } from "./stages.js";
 
 /** The stages a document's workflow always ends with, work or no work --
  *  "inherently required for completion" (verification and export are not
@@ -71,10 +71,62 @@ export function isStageActive(status: StageStatus): boolean {
   return REQUIRED_STAGES.has(status.stage) || status.unresolvedCount + status.unresolvedArtifactCount > 0;
 }
 
-/** The active workflow, in canonical order, derived fresh. Never empty:
- *  qa/output are always members. */
+/**
+ * CLOSE PAIRS MIGRATION (AG, 2026-08-10): the status `isStageActive` is
+ * evaluated against, per stage. For every stage except `"ambiguity-check"`
+ * this is just `computeStageStatus` unchanged. For `"ambiguity-check"` it
+ * is `ambiguityDisplayStatus` -- the combined Ambiguity-plus-Close-Pairs
+ * figure (stages.ts) -- so that Ambiguity Check's own activeness already
+ * reflects Group Check's population without a second predicate anywhere
+ * else needing to know that. `"group-check"`'s OWN entry is intentionally
+ * left untouched here (raw `computeStageStatus`): it still needs to answer
+ * "is group-check itself a legitimate place to rest focus" on its own
+ * terms -- see `activeWorkflowStages`'s doc comment below for why that
+ * distinction matters. */
+function navigationStatus(stage: WorkflowStage, context: DetectionGroupingContext, session: ReviewSession): StageStatus {
+  return stage === "ambiguity-check" ? ambiguityDisplayStatus(context, session) : computeStageStatus(stage, context, session);
+}
+
+/**
+ * The set of stages that remain legitimate places for FOCUS TO REST,
+ * derived fresh. Never empty: qa/output are always members.
+ *
+ * CLOSE PAIRS MIGRATION (AG, 2026-08-10): this list still includes
+ * `"group-check"` on its own individual merits -- a reviewer may be
+ * mid-review inside the Close Pairs category (where `FocusTarget.stage`
+ * is literally `"group-check"`, unchanged, so every existing keymap/render
+ * gate keyed on that literal keeps firing), and `reconcile()` must not
+ * evict them just because Group Check no longer has a top-level tab.
+ * `"ambiguity-check"`'s own membership now ALSO reflects Group Check's
+ * population (via `navigationStatus`/`ambiguityDisplayStatus`): a reviewer
+ * resting on ordinary Ambiguity content is not evicted onward while Close
+ * Pairs work remains, even after every ordinary candidate/proposal is
+ * resolved -- this is what keeps "ordinary Ambiguity reaches 100%, Close
+ * Pairs doesn't" from silently advancing the reviewer past unresolved
+ * work. See `navigableWorkflowStages` below for the DIFFERENT list used
+ * for top-level tabs/traversal, where Group Check is never a stop of its
+ * own. */
 export function activeWorkflowStages(context: DetectionGroupingContext, session: ReviewSession): WorkflowStage[] {
-  return WORKFLOW_STAGE_ORDER.filter((stage) => isStageActive(computeStageStatus(stage, context, session)));
+  return WORKFLOW_STAGE_ORDER.filter((stage) => isStageActive(navigationStatus(stage, context, session)));
+}
+
+/**
+ * The stages that get a TOP-LEVEL STOP: a tab, a Shift+Left/Right
+ * traversal target, or an initial-landing candidate. Identical to
+ * `activeWorkflowStages` except Group Check is never a member -- its work
+ * already inflates `"ambiguity-check"`'s own membership above, and the
+ * reviewer reaches it exclusively through Ambiguity Check's Close Pairs
+ * category, never by navigating "to Group Check" as its own destination.
+ *
+ * Deliberately NOT used by `reconcile()`'s stage-validity check (which
+ * keeps using `activeWorkflowStages`): a reviewer already resting inside
+ * `"group-check"` must stay there while it has work, even though it is no
+ * longer something `moveStage`/tabs will navigate TO. Conflating the two
+ * lists was the exact failure mode flagged before this change shipped --
+ * see this module's own history and `app.ts`'s "A FINISHED STAGE STAYS ON
+ * SCREEN" note for the earlier instance of the same class of bug. */
+export function navigableWorkflowStages(context: DetectionGroupingContext, session: ReviewSession): WorkflowStage[] {
+  return activeWorkflowStages(context, session).filter((stage) => stage !== "group-check");
 }
 
 /**

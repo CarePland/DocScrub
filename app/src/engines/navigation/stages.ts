@@ -302,3 +302,78 @@ export function computeStageStatus(stage: WorkflowStage, context: DetectionGroup
 export function computeAllStageStatuses(context: DetectionGroupingContext, session: ReviewSession): StageStatus[] {
   return WORKFLOW_STAGE_ORDER.map((stage) => computeStageStatus(stage, context, session));
 }
+
+/**
+ * CLOSE PAIRS MIGRATION (AG, 2026-08-10): Group Check is no longer a
+ * top-level stage of its own -- its population now reviews inside
+ * Ambiguity Check as the "Close Pairs" category (user-facing name only;
+ * the domain stage identity `"group-check"` is unchanged and still governs
+ * `itemIdsForStage`/`isItemResolved`/focus targets for that machinery, see
+ * this file's own top doc comment). This function is the ONE place that
+ * composes Ambiguity Check's user-facing status from its own candidates/
+ * proposals PLUS Group Check's groups, for anything that needs to answer
+ * "does Ambiguity Check (Close Pairs included) still have work" or "how
+ * much of it is done."
+ *
+ * WHY ADDITIVE, RAW COUNTS -- NOT A MERGED PERCENTAGE OF DIFFERENT UNITS.
+ * `itemCount`/`unresolvedCount` are already a sum across two unlike-shaped
+ * traversal kinds within ambiguity-check itself (candidates and, via
+ * `unresolvedArtifactCount`, structural-relationship proposals) -- see
+ * `computeStageStatus`'s own "ALL REMAINING WORK" comment. Adding a third
+ * countable unit kind (entity groups) is the same pattern, not a new one:
+ * every unit counted is one atomic thing a reviewer must decide, so the sum
+ * stays honest. What this function deliberately does NOT do is average or
+ * blend COMPLETION PERCENTAGES of the two stages (that would divide by
+ * different denominators measuring different kinds of progress) -- see
+ * `documentScores.ts`'s pooled-fraction rationale for why raw-unit sums and
+ * blended percentages are not interchangeable, and why this function only
+ * ever does the former.
+ *
+ * WHY A SEPARATE FUNCTION RATHER THAN CHANGING `computeStageStatus`
+ * ITSELF. `computeStageStatus("ambiguity-check", ...)` remains the raw,
+ * single-stage domain truth other consumers may still legitimately need
+ * (e.g. a future feature that wants ambiguity-only numbers). This function
+ * is the explicit "as displayed under the Close Pairs reorg" composition,
+ * called from exactly the places that need the combined answer:
+ * navigation/workflow.ts's `activeWorkflowStages` (so Ambiguity Check
+ * remains a legitimate place to rest focus, and keeps its tab, for as long
+ * as EITHER ordinary ambiguity OR Close Pairs has work) and the UI's tab/
+ * pill rendering (app.ts calls `combineAmbiguityAndGroupStatus` directly,
+ * over the two `StageStatus` entries it already has in
+ * `state.stageStatuses`, rather than reconstructing a NavigationContext to
+ * call this function a second time -- same rule, two entry points, so the
+ * two callers can never compute it differently).
+ */
+export function ambiguityDisplayStatus(context: DetectionGroupingContext, session: ReviewSession): StageStatus {
+  return combineAmbiguityAndGroupStatus(computeStageStatus("ambiguity-check", context, session), computeStageStatus("group-check", context, session));
+}
+
+/** The one combine rule behind `ambiguityDisplayStatus` above, factored out
+ *  so a caller that already holds both `StageStatus` values (as app.ts's
+ *  `state.stageStatuses` always does) can reuse it without recomputing
+ *  either half from context/session. `ambiguity` and `closePairs` must be
+ *  the `"ambiguity-check"` and `"group-check"` statuses respectively --
+ *  not enforced by the type (both are plain `StageStatus`) because the
+ *  UI-layer caller passes values already known to satisfy it. */
+export function combineAmbiguityAndGroupStatus(ambiguity: StageStatus, closePairs: StageStatus): StageStatus {
+  const itemCount = ambiguity.itemCount + closePairs.itemCount;
+  const unresolvedCount = ambiguity.unresolvedCount + closePairs.unresolvedCount;
+  // Group Check has no review-artifact axis of its own (reviewArtifactIdsForStage
+  // returns [] for every stage but ambiguity-check) -- ambiguity's own artifact
+  // figures already cover the whole combined stage.
+  const artifactCount = ambiguity.artifactCount;
+  const unresolvedArtifactCount = ambiguity.unresolvedArtifactCount;
+  const hasItems = ambiguity.hasItems || closePairs.hasItems;
+  const completion: StageCompletionStatus =
+    itemCount === 0 && artifactCount === 0 ? "empty" : unresolvedCount + unresolvedArtifactCount === 0 ? "complete" : "unresolved";
+  return {
+    stage: "ambiguity-check",
+    hasItems,
+    available: true,
+    completion,
+    itemCount,
+    unresolvedCount,
+    artifactCount,
+    unresolvedArtifactCount,
+  };
+}

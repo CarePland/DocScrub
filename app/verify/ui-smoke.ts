@@ -1656,6 +1656,47 @@ async function main(): Promise<void> {
     appSource.includes("reconcileScopeWidening(state);") && appSource.includes("function reconcileScopeWidening(")
   );
 
+  console.log("--- Close Pairs migration (2026-08-10): structural presence, not behavior ---");
+  console.log("    (app.ts has zero exports -- see the forensic audit -- so these are the");
+  console.log("    same source-text sanity checks this file already relies on elsewhere.");
+  console.log("    The actual navigation CONTRACT is behaviorally tested, with real engines");
+  console.log("    and no source-text matching, in close-pairs-migration-verification.ts.)");
+  check(
+    "stage tabs render a DISPLAY view that drops Group Check's own entry and folds it into Ambiguity Check's",
+    appSource.includes("function displayStageStatuses(") &&
+      appSource.includes('.filter((s) => s.stage !== "group-check")') &&
+      appSource.includes("displayStageStatuses(statuses)")
+  );
+  check(
+    "the Ambiguity tab absorbs group-check's status via the one shared combine rule (not a second copy)",
+    appSource.includes("combineAmbiguityAndGroupStatus")
+  );
+  check(
+    "Close Pairs is a distinct, group-shaped StageCategory -- not merged into the sectioned-queue shape",
+    appSource.includes('kind?: "group"') && appSource.includes("function closePairsCategory(") && appSource.includes('label: "Close Pairs"')
+  );
+  check(
+    "the category pill click handler routes Close Pairs through a stage-focus change, not selectItem",
+    appSource.includes('if (category.kind === "group")') && appSource.includes("function enterClosePairs(")
+  );
+  check(
+    "the currently-focused-category lookup recognizes resting inside group-check as resting inside Close Pairs",
+    appSource.includes('if (state.focus?.target.stage === "group-check") return categories.find((c) => c.kind === "group")')
+  );
+  check(
+    "sectionedQueueStage() itself is UNCHANGED -- Close Pairs still does not inherit Zone/chord/digit-shortcut grammar",
+    (() => {
+      const start = appSource.indexOf('function sectionedQueueStage(stage: WorkflowStage | undefined): "item-check" | "ambiguity-check" | null {');
+      const end = start === -1 ? -1 : appSource.indexOf("\n}", start);
+      const body = start === -1 || end === -1 ? "" : appSource.slice(start, end);
+      return body.includes('stage === "ambiguity-check"') && !body.includes('"group-check"');
+    })()
+  );
+  check(
+    "the pill bar's OWN widening for Close Pairs is scoped to renderSectionPills/stageHasSectionPills, not the shared predicate",
+    (appSource.match(/activeStage === "group-check" \? "ambiguity-check" : sectionedQueueStage\(activeStage\)/g) ?? []).length === 2
+  );
+
   console.log("--- Importing the real compiled UI module against a fake DOM ---");
   const { app } = installFakeDom();
   let threw: unknown = null;

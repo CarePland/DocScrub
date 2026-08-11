@@ -34,7 +34,7 @@ import type { CommandResult } from "../../domain/Commands.js";
 import type { FocusResumePosition } from "../../domain/FocusResumePosition.js";
 import type { OccurrenceClassificationResult } from "../OccurrenceClassifier.js";
 import { itemIdsForStage, isItemResolved } from "./stages.js";
-import { activeWorkflowStages, nearestActiveStage } from "./workflow.js";
+import { activeWorkflowStages, navigableWorkflowStages, nearestActiveStage } from "./workflow.js";
 import type { DetectionGroupingContext } from "../DetectionGroupingContext.js";
 
 export interface NavigationContext extends DetectionGroupingContext {
@@ -187,7 +187,18 @@ export function createInitialFocusState(context: NavigationContext, session: Rev
   // workflow actually begins with ("a workflow assembled for the document
   // in front of the reviewer"). nearestActiveStage from ambiguity-check ==
   // "first active stage overall", since ambiguity-check is canonical-first.
-  const active = activeWorkflowStages(context, session);
+  //
+  // CLOSE PAIRS MIGRATION (AG, 2026-08-10): navigableWorkflowStages, not
+  // activeWorkflowStages -- a fresh session must never land ON group-check
+  // itself (it is no longer a top-level destination), even though a
+  // document whose ONLY work is Close Pairs groups still opens onto
+  // ambiguity-check (navigableWorkflowStages keeps ambiguity-check a
+  // member in that case too, via ambiguityDisplayStatus). The UI layer's
+  // own category-arrival logic is what lands the reviewer on Close Pairs
+  // specifically once ambiguity-check's own candidate/proposal list is
+  // empty -- the same pattern it already uses to arrive on a
+  // proposal-only category.
+  const active = navigableWorkflowStages(context, session);
   return { target: arrivalTarget(nearestActiveStage("ambiguity-check", active), context, session), textInputActive: false };
 }
 
@@ -244,7 +255,20 @@ export function applyNavigationCommand(focus: FocusState, command: NavigationCom
       // transiently, before the next reconcile()), movement is computed
       // from its canonical position: "next" finds the first active stage
       // after it, "previous" the nearest active one before it.
-      const active = activeWorkflowStages(context, session);
+      //
+      // CLOSE PAIRS MIGRATION (AG, 2026-08-10): navigableWorkflowStages,
+      // not activeWorkflowStages -- Group Check is never a stage-to-stage
+      // destination; Shift+Left/Right must skip straight over it (to/from
+      // Ambiguity Check, which already carries Group Check's work in its
+      // own membership). Reaching Close Pairs is a category switch within
+      // Ambiguity Check, not a moveStage target. When focus currently
+      // rests IN group-check (Close Pairs), it is by construction absent
+      // from this navigable list, so it already falls into the
+      // "not itself active" branch below -- computed from group-check's
+      // OWN canonical position, which sits immediately after
+      // ambiguity-check, producing the same "next/previous stage relative
+      // to Ambiguity Check" result without a special case here.
+      const active = navigableWorkflowStages(context, session);
       const activeIndex = active.indexOf(target.stage);
       let nextStage: WorkflowStage;
       if (activeIndex !== -1) {
