@@ -178,7 +178,7 @@ import {
   type CategoryReviewState,
   type CategoryViewFacts,
 } from "./itemCheckCategoryView.js";
-import { groupDisplayDecision, groupLiveConfidence, memberLiveConfidence, candidateLiveConfidence, isRetiredByGroupCoverage, type GroupDisplayDecision, type LiveConfidence } from "../engines/review/coverage.js";
+import { groupDisplayDecision, groupLiveConfidence, memberLiveConfidence, candidateLiveConfidence, type GroupDisplayDecision, type LiveConfidence } from "../engines/review/coverage.js";
 import type { CandidateDecision, CandidateDecisionKind, ReviewSession } from "../domain/ReviewSession.js";
 import type { SessionSummary } from "../io/LocalSessionRepository.js";
 // REOPEN PROMPT (AG, 2026-08-03): document identity without parsing, so
@@ -12391,30 +12391,49 @@ function applyTypeBulk(
  *  blind stability contract: semanticTypeFor() is fixed at load time and
  *  never re-asked based on review state), counts always current.
  *
- *  RETIRED MEMBERS EXCLUDED (AG, 2026-08-10, "Covered by group" cleanup):
- *  a member whose occurrences are already fully covered by a resolved
- *  entity group -- resolved with no CandidateDecision of its own -- has no
- *  legitimate Type Check action left (Keep/Change/Redact/Ignore would all
- *  be redundant with the group's own decision), so it is left out of
- *  `items` entirely here, at the same population boundary
- *  reviewableItemIdsForStage() already uses for Item Check's work queue.
- *  This is retirement from Type Check's OWN population, not a change to
- *  the type-assignment stability contract above (still exactly one type
- *  per candidate, still decision-blind) and not a change to the document
- *  model: the candidate remains fully present in detection/session/group
- *  data, inspectable via its group's own Close Pairs/history detail, and
- *  reachable by widening Item Check (search or a decided-state preset) --
- *  only this stage's own remaining-work surface excludes it. A directly
- *  decided candidate (including an automatic resolution) is NOT retired by
- *  this check -- see isRetiredByGroupCoverage's own doc comment -- so it
- *  keeps rendering as an ordinary reviewed member row. */
+ *  RETIRED MEMBERS EXCLUDED (AG, 2026-08-10, "Covered by group" cleanup;
+ *  widened 2026-08-11 to every resolved member): a member with no
+ *  legitimate Type Check action left has no reason to keep occupying an
+ *  active-population row -- Keep/Change/Redact/Ignore would all be
+ *  redundant with a decision that already exists, whether that decision
+ *  is the candidate's OWN CandidateDecision (including an automatic
+ *  resolution) or its occurrences being fully covered by a resolved entity
+ *  group. Both cases are exactly `isItemResolvedInState("item-check", id,
+ *  state)` -- the SAME domain resolved predicate `reconcile()`'s advance,
+ *  Item Check's work queue (reviewableItemIdsForStage) and this file's own
+ *  "ONE 'IS THIS CANDIDATE FINISHED' TEST" already use, not a second rule:
+ *  see coverage.ts's `resolvedStatusOf`, whose `hasDirectCandidateDecision`
+ *  branch and covered-occurrence branch both terminate in the same
+ *  `status: "resolved"`, so retiring on the combined predicate rather than
+ *  on `isRetiredByGroupCoverage` alone (group-coverage-without-a-decision
+ *  only) simply stops under-counting the other half of that same status.
+ *  A member is left out of `items` entirely here, at the same population
+ *  boundary reviewableItemIdsForStage() already uses for Item Check's work
+ *  queue. This is retirement from Type Check's OWN active-population
+ *  surface, not a change to the type-assignment stability contract above
+ *  (still exactly one type per candidate, still decision-blind) and not a
+ *  change to the document model: the candidate remains fully present in
+ *  detection/session/group data, inspectable via its group's own Close
+ *  Pairs/history detail, and reachable by widening Item Check (search or a
+ *  decided-state preset) -- only this stage's own remaining-work surface
+ *  excludes it. Because retirement is now the full resolved test, nothing
+ *  that survives into `items` can ever be decided, which is why `decided`
+ *  below is a literal `false` rather than a second call to the same
+ *  predicate: `buildSemanticTypeSummaries`' `decidedCount` (a generic,
+ *  independently-tested field other callers still rely on for a
+ *  mixed decided/undecided population) stays correct, it is just always
+ *  zero here by construction. Nothing is stored, so resetting or
+ *  unresolving a member (undoing its decision, reopening its covering
+ *  group) makes it reappear here on the very next render -- the same
+ *  "derive, never cache" guarantee `reviewableItemIdsForStage` documents
+ *  for Item Check's own queue. */
 function typeCheckSummaries(state: ReturnType<WorkspaceCommandDispatcher["getState"]>): SemanticTypeSummary[] {
   const items = (state.semanticTypes ?? []).flatMap((group) =>
     group.candidateIds.flatMap((id) => {
       const candidate = state.detection?.candidates.find((c) => c.id === id);
       if (!candidate) return [];
-      if (state.detection && state.reviewSession && isRetiredByGroupCoverage(state.reviewSession, state.detection, id)) return [];
-      return [{ id, type: group.typeId, occurrenceCount: candidate.occurrenceIds.length, decided: isItemResolvedInState("item-check", id, state) }];
+      if (isItemResolvedInState("item-check", id, state)) return [];
+      return [{ id, type: group.typeId, occurrenceCount: candidate.occurrenceIds.length, decided: false }];
     })
   );
   return buildSemanticTypeSummaries(items);
@@ -12696,15 +12715,16 @@ function renderTypeReviewSurface(container: HTMLElement, summary: SemanticTypeSu
   // never opens empty-handed -- the same fallback the People panel used
   // when it lived inline, preserved verbatim.
   const paneMemberId = activeMemberId ?? remaining[0] ?? summary.candidateIds[0] ?? null;
-  // GROUP-COVERED MEMBERS ALREADY GONE (AG, 2026-08-10): `summary.candidateIds`
-  // no longer contains a member retired by isRetiredByGroupCoverage (see
-  // typeCheckSummaries' doc comment) -- it was excluded before this summary
-  // was built, not filtered out of the render here. So `resolved && !decided`
-  // below can only be reached by an AUTOMATIC RESOLUTION now, never by group
-  // coverage; the "✓ Covered by group" label undersells that case slightly
-  // but is not newly wrong -- it already read that way for an automatic
-  // resolution before this change, and fixing that label is a separate,
-  // untouched concern.
+  // NO RESOLVED MEMBER SURVIVES HERE AT ALL (AG, 2026-08-10, widened
+  // 2026-08-11): `summary.candidateIds` no longer contains ANY resolved
+  // member -- direct decision, automatic resolution, or group coverage --
+  // see typeCheckSummaries' doc comment; retirement happens before this
+  // summary is built, not filtered out of the render here. So `resolved`
+  // below is now always false for every row this loop renders; the branch
+  // is kept rather than deleted because deleting dead-by-invariant code
+  // that documents its own invariant is exactly the kind of change that
+  // risks re-introducing the bug the invariant prevents, and this pass is
+  // scoped to the retirement boundary, not a render-loop cleanup.
   for (const candidateId of summary.candidateIds) {
     const candidate = state.detection?.candidates.find((c) => c.id === candidateId);
     if (!candidate) continue;

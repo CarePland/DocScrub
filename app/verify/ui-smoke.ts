@@ -1697,6 +1697,20 @@ async function main(): Promise<void> {
     (appSource.match(/activeStage === "group-check" \? "ambiguity-check" : sectionedQueueStage\(activeStage\)/g) ?? []).length === 2
   );
 
+  console.log("--- Type Check full retirement (2026-08-11): structural presence, not behavior ---");
+  console.log("    (see type-check-full-retirement-verification.ts for the real behavioral proof");
+  console.log("    of the underlying predicate; these are source-text checks that the WIDER");
+  console.log("    predicate is what typeCheckSummaries() actually calls.)");
+  check(
+    "typeCheckSummaries() retires on the full resolved predicate, not the narrower group-coverage-only one",
+    appSource.includes('if (isItemResolvedInState("item-check", id, state)) return [];') &&
+      !appSource.includes("isRetiredByGroupCoverage(state.reviewSession")
+  );
+  check(
+    "isRetiredByGroupCoverage is no longer imported or called in app.ts -- its own predicate is untouched in coverage.ts and still independently tested there, just no longer this call site's rule",
+    !appSource.includes("isRetiredByGroupCoverage,") && !appSource.includes("isRetiredByGroupCoverage(")
+  );
+
   console.log("--- Importing the real compiled UI module against a fake DOM ---");
   const { app } = installFakeDom();
   let threw: unknown = null;
