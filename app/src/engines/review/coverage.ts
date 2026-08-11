@@ -66,6 +66,49 @@ export function candidateResolvedStatus(session: ReviewSession, detection: Detec
 }
 
 /**
+ * RETIRED BY GROUP COVERAGE (AG, 2026-08-10, Type Check "Covered by group"
+ * cleanup): true iff `resolvedStatusOf` reached "resolved" WITHOUT a direct
+ * decision of the candidate's own -- the one case that can only happen
+ * because every occurrence is already accounted for by a resolved entity
+ * group (see this file's `coveredOccurrenceIdsByResolvedGroups`). This is
+ * NOT a new heuristic: it names the exact branch `resolvedStatusOf` already
+ * takes, the same one `candidateResolvedStatus` above computes -- reusing it
+ * rather than re-deriving the covered-occurrence threshold is what keeps
+ * this predicate unable to drift from the domain's one definition of
+ * "covered by group."
+ *
+ * EXCLUDES a candidate resolved by its OWN CandidateDecision or by an
+ * automatic resolution (both count as `hasDirectDecision` -- see
+ * `candidateResolvedStatus`'s own comment on why the two are not told
+ * apart). Those are genuinely decided, not merely "the group already
+ * settled it for me," and still belong in any surface counting reviewed
+ * work.
+ *
+ * EXCLUDES partial coverage by construction: `resolvedStatusOf` only
+ * returns "resolved" when EVERY occurrence is covered, so a candidate with
+ * even one uncovered occurrence reports false here and stays exactly where
+ * it already was -- retiring it would drop real, undecided occurrences out
+ * of review (see navigation/stages.ts's `reviewableItemIdsForStage` "PARTIAL
+ * COVERAGE STAYS" note, which this predicate must never contradict).
+ *
+ * PROVENANCE, established by the same probe `resolved-predicate-
+ * verification.ts` already ran: confirmGroup/redactGroup/ignoreGroup/
+ * flattenGroup all bulk-write a real CandidateDecision per member, so this
+ * predicate is false for their members -- they read as directly decided,
+ * correctly. The only member this returns true for today is a Not Quite
+ * CARRIED member: `completeNotQuite` folds every member into the group
+ * decision's `confirmedMemberCandidateIds` without giving a carried member
+ * its own CandidateDecision, which is exactly what "covered by group, no
+ * decision of its own" means.
+ */
+export function isRetiredByGroupCoverage(session: ReviewSession, detection: DetectionResult, candidateId: string): boolean {
+  const hasDirectDecision =
+    candidateId in session.candidateDecisions || Boolean(session.automaticResolutions?.[candidateId]);
+  if (hasDirectDecision) return false;
+  return candidateResolvedStatus(session, detection, candidateId).status === "resolved";
+}
+
+/**
  * DECISION TRACKER (AG, 2026-08-03): every candidate split into the ones
  * the reviewer has finished with and the ones still owed a decision, by
  * the SAME rule `candidateResolvedStatus` applies to one candidate --
